@@ -6,6 +6,10 @@ import time
 
 from scipy.integrate import solve_bvp
 from shapely import geometry #Used in initializing the LNEB method on the gs contour
+ 
+#Use Rbf in my NN code, but there are too many points here - Rbf runs out of system
+#memory and the Python console crashes
+from scipy.interpolate import interp2d, Rbf
 
 import pandas as pd
 import h5py
@@ -80,6 +84,42 @@ class Utilities:
                 else:
                     keys = keys + (value.name,)
         return keys
+    
+    @staticmethod
+    def initial_on_contour(coordMeshTuple,zz,nPts,debug=False):
+        """
+        Connects a straight line between the metastable state and the contour at
+        the same energy.
+        """
+        nCoords = len(coordMeshTuple)
+        
+        minInds = Utilities.find_local_minimum(zz)
+        startInds = tuple([minInds[cIter][np.argmax(zz[minInds])] for\
+                           cIter in range(nCoords)])
+        metaEneg = zz[startInds]
+        
+        #Pulled from PES code. Doesn't generalize to higher dimensions, but not
+        #an important issue rn.
+        fig, ax = plt.subplots()
+        ax.contourf(coordMeshTuple[0],coordMeshTuple[1],zz)
+        contour = ax.contour(coordMeshTuple[0],coordMeshTuple[1],zz,\
+                             levels=[metaEneg]).allsegs[0][0].T#Selects the actual curve
+        if not debug:
+            plt.close(fig)
+            
+        startPt = np.array([coordMeshTuple[tupInd][startInds] for tupInd in \
+                            range(nCoords)])
+        line = geometry.LineString(contour.T)
+        
+        approxFinalPt = np.array([1.5,1])
+        point = geometry.Point(*approxFinalPt)
+        finalPt = np.array(line.interpolate(line.project(point)))
+        # print(point.distance(line))
+            
+        initialPoints = np.array([np.linspace(startPt[cInd],finalPt[cInd],num=nPts) for\
+                                  cInd in range(nCoords)])
+        
+        return initialPoints
     
 class FileIO(): #Tried using inheritance here, but I think the static methods
                 #messed things up for some reason.
@@ -210,7 +250,7 @@ class LineIntegralNeb():
             springForce[:,i] = self.k*(diffScal[i] - diffScal[i-1])*tangents[:,i]
             
         springForce[:,0] = self.k*diffArr[:,0]
-        springForce[:,-1] = self.k*diffArr[:,-1]
+        springForce[:,-1] = -self.k*diffArr[:,-1] #Added minus sign here to fix endpoint behavior
         
         return springForce
     
@@ -302,16 +342,43 @@ class MinimizationAlgorithms(LineIntegralNeb):
         
         for step in range(0,maxIters):
             force = self.lneb.compute_force(allPts[step,:,:])
-            allForces[step+1,:,:] = force
+            allForces[step,:,:] = force
             allPts[step+1,:,:] = allPts[step,:,:] + allVelocities[step,:,:]*tStep\
                 + 1/2*force*tStep**2
             
             #Velocity update taken from "Classical and Quantum Dynamics in Condensed Phase Simulations",
             #page 397. Eric also updates with tStep * allForces[...]
             for ptIter in range(self.lneb.nPts):
-                if np.dot(allVelocities[step,:,ptIter],allForces[step+1,:,ptIter])>0:
+                if np.dot(allVelocities[step,:,ptIter],allForces[step,:,ptIter])>0:
                     allVelocities[step+1,:,ptIter] = \
-                        np.dot(allVelocities[step,:,ptIter],allForces[step+1,:,ptIter])*\
+                        np.dot(allVelocities[step,:,ptIter],allForces[step,:,ptIter])*\
+                            allForces[step,:,ptIter]/np.dot(allForces[step,:,ptIter],allForces[step+1,:,ptIter])
+                else:
+                    allVelocities[step+1,:,ptIter] = np.zeros(self.lneb.nCoords)\
+                
+        actions = np.array([self.action_func(pts) for pts in allPts[:]])
+        
+        return allPts, allVelocities, allForces, actions
+    
+    def verlet_minimization_v2(self,maxIters=1000,tStep=0.05):
+        allPts = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
+        allVelocities = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
+        allForces = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
+        
+        allPts[0,:,:] = self.lneb.initialPoints
+        allForces[0,:,:] = self.lneb.compute_force(allPts[0,:,:])
+        
+        for step in range(0,maxIters):
+            allPts[step+1] = allPts[step] + allVelocities[step]*tStep+1/2*allForces[step]*tStep**2
+            allForces[step+1] = self.lneb.compute_force(allPts[step+1])
+            allVelocities[step+1] = allVelocities[step]+(allForces[step]+allForces[step+1])/2*tStep
+            
+            #Velocity update taken from "Classical and Quantum Dynamics in Condensed Phase Simulations",
+            #page 397
+            for ptIter in range(self.lneb.nPts):
+                if np.dot(allVelocities[step+1,:,ptIter],allForces[step+1,:,ptIter])>0:
+                    allVelocities[step+1,:,ptIter] = \
+                        np.dot(allVelocities[step+1,:,ptIter],allForces[step+1,:,ptIter])*\
                             allForces[step+1,:,ptIter]/np.dot(allForces[step+1,:,ptIter],allForces[step+1,:,ptIter])
                 else:
                     allVelocities[step+1,:,ptIter] = np.zeros(self.lneb.nCoords)\
@@ -319,6 +386,22 @@ class MinimizationAlgorithms(LineIntegralNeb):
         actions = np.array([self.action_func(pts) for pts in allPts[:]])
         
         return allPts, allVelocities, allForces, actions
+    
+    def gradient_descent(self,maxIters=1000,tStep=0.05):
+        #Very clearly does not work...
+        allPts = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
+        allForces = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
+        
+        allPts[0] = self.lneb.initialPoints
+        
+        for step in range(0,maxIters):
+            allForces[step] = self.lneb.compute_force(allPts[step])
+            allPts[step+1] = allPts[step] + tStep * allForces[step]
+            
+        allForces[-1] = self.lneb.compute_force(allPts[-1])
+        actions = np.array([self.action_func(pts) for pts in allPts[:]])
+        
+        return allPts, allForces, actions
     
 class LineIntegralNeb_Validation:
     @staticmethod
@@ -573,12 +656,12 @@ class MinimizationAlgorithms_Validation:
         initialPoints = LineIntegralNeb_Validation._construct_initial_points()
         
         mass_test = LineIntegralNeb_Validation._define_mass()
-        k = 1
-        kappa = 1
+        k = 20
+        kappa = 20
         constraintEneg = potential(*initialPoints)[0]
         lneb = LineIntegralNeb(potential,mass_test,initialPoints,k,kappa,constraintEneg)
         
-        maxIters = 2000
+        maxIters = 5000
         allPts, allVelocities, allForces, actions = \
             MinimizationAlgorithms(lneb).verlet_minimization(maxIters=maxIters,tStep=0.1)
             
@@ -590,23 +673,242 @@ class MinimizationAlgorithms_Validation:
         zz = lneb.potential(*coordMeshTuple)
         
         fig, ax = plt.subplots()
-        ax.contour(coordMeshTuple[0],coordMeshTuple[1],zz,np.arange(-10,70,1),colors="k")
+        cf = ax.contourf(coordMeshTuple[0],coordMeshTuple[1],zz.clip(max=10),np.arange(-10,70,1),\
+                         cmap="gist_rainbow",levels=np.arange(0,10.5,0.5))
+        plt.colorbar(cf,ax=ax)
+        ax.contour(coordMeshTuple[0],coordMeshTuple[1],zz,levels=[constraintEneg],colors="k")
         for i in range(0,maxIters,50):
             ax.plot(allPts[i,0,:],allPts[i,1,:],ls="-",marker="o")
+            
+        # ax.scatter(initialPoints[0,0],initialPoints[1,0],marker="x",c="k")
+        
+        return None
+    
+    @staticmethod
+    def val_verlet_minimization_from_contour():
+        print(75*"-")
+        print("Test: val_verlet_minimization_from_contour")
+        
+        nPts = 12
+        
+        coordMeshTuple = np.meshgrid(np.arange(0,4,0.05),np.arange(-2,3.8,0.05))
+        zz = LineIntegralNeb_Validation.leps_plus_ho(*coordMeshTuple)
+        
+        eGS = LineIntegralNeb_Validation._get_egs()
+        potential = LineIntegralNeb_Validation._aux_pot(eGS)
+        
+        initialPoints = Utilities.initial_on_contour(coordMeshTuple,zz,nPts)
+        
+        mass_test = LineIntegralNeb_Validation._define_mass()
+        k = 20
+        kappa = 20
+        constraintEneg = potential(*initialPoints)[0]
+        print("Constraining energy to %.3f" %constraintEneg)
+        print("Initial points energy:")
+        print(potential(*initialPoints))
+        lneb = LineIntegralNeb(potential,mass_test,initialPoints,k,kappa,constraintEneg)
+        
+        maxIters = 500
+        allPts, allVelocities, allForces, actions = \
+            MinimizationAlgorithms(lneb).verlet_minimization(maxIters=maxIters,tStep=0.1)
+            
+        print("See plots")
+        fig, ax = plt.subplots()
+        ax.plot(np.arange(actions.shape[0]),actions)
+        
+        coordMeshTuple = np.meshgrid(np.arange(0,4,0.05),np.arange(-2,3.8,0.05))
+        zz = lneb.potential(*coordMeshTuple)
+        
+        fig, ax = plt.subplots()
+        cf = ax.contourf(coordMeshTuple[0],coordMeshTuple[1],zz.clip(max=10),np.arange(-10,70,1),\
+                         cmap="gist_rainbow",levels=np.arange(0,10.5,0.5))
+        plt.colorbar(cf,ax=ax)
+        
+        denseMeshTuple = np.meshgrid(np.arange(0,4,0.01),np.arange(-2,3.8,0.01))
+        denseZZ = lneb.potential(*denseMeshTuple)
+        ax.contour(denseMeshTuple[0],denseMeshTuple[1],denseZZ,levels=[constraintEneg],colors="k")
+        
+        for i in range(0,maxIters,int(maxIters/10)):
+            ax.plot(allPts[i,0,:],allPts[i,1,:],ls="-",marker="o")
+            
+        # ax.scatter(initialPoints[0,0],initialPoints[1,0],marker="x",c="k")
+        fig, ax = plt.subplots(nrows=2)
+        ax[0].plot(allPts[:,0,0],allPts[:,1,0],ls="-",marker="o")
+        ax[1].plot(np.arange(maxIters+1),lneb.potential(allPts[:,0,0],allPts[:,1,0]))
+        
+        return None
+    
+    @staticmethod
+    def val_verlet_minimization_v2():
+        print(75*"-")
+        print("Test: val_verlet_minimization_v2")
+        
+        eGS = LineIntegralNeb_Validation._get_egs()
+        potential = LineIntegralNeb_Validation._aux_pot(eGS)
+        
+        initialPoints = LineIntegralNeb_Validation._construct_initial_points()
+        
+        mass_test = LineIntegralNeb_Validation._define_mass()
+        k = 20
+        kappa = 20
+        constraintEneg = potential(*initialPoints)[0]
+        lneb = LineIntegralNeb(potential,mass_test,initialPoints,k,kappa,constraintEneg)
+        
+        maxIters = 5000
+        allPts, allVelocities, allForces, actions = \
+            MinimizationAlgorithms(lneb).verlet_minimization_v2(maxIters=maxIters,tStep=0.1)
+            
+        print("See plots")
+        fig, ax = plt.subplots()
+        ax.plot(np.arange(actions.shape[0]),actions)
+        
+        coordMeshTuple = np.meshgrid(np.arange(0,4,0.05),np.arange(-2,3.8,0.05))
+        zz = lneb.potential(*coordMeshTuple)
+        
+        fig, ax = plt.subplots()
+        cf = ax.contourf(coordMeshTuple[0],coordMeshTuple[1],zz.clip(max=10),np.arange(-10,70,1),\
+                         cmap="gist_rainbow",levels=np.arange(0,10.5,0.5))
+        plt.colorbar(cf,ax=ax)
+        ax.contour(coordMeshTuple[0],coordMeshTuple[1],zz,levels=[constraintEneg],colors="k")
+        for i in range(0,maxIters,50):
+            ax.plot(allPts[i,0,:],allPts[i,1,:],ls="-",marker="o")
+            
+        # ax.scatter(initialPoints[0,0],initialPoints[1,0],marker="x",c="k")
+        
+        return None
+    
+    @staticmethod
+    def val_verlet_minimization_v2_from_contour():
+        print(75*"-")
+        print("Test: val_verlet_minimization_v2_from_contour")
+        
+        nPts = 12
+        
+        coordMeshTuple = np.meshgrid(np.arange(0,4,0.05),np.arange(-2,3.8,0.05))
+        zz = LineIntegralNeb_Validation.leps_plus_ho(*coordMeshTuple)
+        
+        eGS = LineIntegralNeb_Validation._get_egs()
+        potential = LineIntegralNeb_Validation._aux_pot(eGS)
+        
+        initialPoints = Utilities.initial_on_contour(coordMeshTuple,zz,nPts)
+        
+        mass_test = LineIntegralNeb_Validation._define_mass()
+        k = 20
+        kappa = 20
+        constraintEneg = potential(*initialPoints)[0]
+        lneb = LineIntegralNeb(potential,mass_test,initialPoints,k,kappa,constraintEneg)
+        
+        maxIters = 1000
+        allPts, allVelocities, allForces, actions = \
+            MinimizationAlgorithms(lneb).verlet_minimization_v2(maxIters=maxIters,tStep=0.1)
+            
+        print("See plots")
+        fig, ax = plt.subplots()
+        ax.plot(np.arange(actions.shape[0]),actions)
+        
+        coordMeshTuple = np.meshgrid(np.arange(0,4,0.05),np.arange(-2,3.8,0.05))
+        zz = lneb.potential(*coordMeshTuple)
+        
+        fig, ax = plt.subplots()
+        cf = ax.contourf(coordMeshTuple[0],coordMeshTuple[1],zz.clip(max=10),np.arange(-10,70,1),\
+                         cmap="gist_rainbow",levels=np.arange(0,10.5,0.5))
+        plt.colorbar(cf,ax=ax)
+        
+        denseMeshTuple = np.meshgrid(np.arange(0,4,0.01),np.arange(-2,3.8,0.01))
+        denseZZ = lneb.potential(*denseMeshTuple)
+        ax.contour(denseMeshTuple[0],denseMeshTuple[1],denseZZ,levels=[constraintEneg],colors="k")
+        
+        for i in range(0,maxIters,50):
+            ax.plot(allPts[i,0,:],allPts[i,1,:],ls="-",marker="o")
+            
+        # ax.scatter(initialPoints[0,0],initialPoints[1,0],marker="x",c="k")
         
         return None
         
 def run_tests():
-    LineIntegralNeb_Validation.val___init__()
-    LineIntegralNeb_Validation.val__negative_gradient()
-    LineIntegralNeb_Validation.val__spring_force()
-    LineIntegralNeb_Validation.val__compute_tangents()
-    LineIntegralNeb_Validation.val_compute_force()
-    LineIntegralNeb_Validation.val_trapezoidal_action()
+    # LineIntegralNeb_Validation.val___init__()
+    # LineIntegralNeb_Validation.val__negative_gradient()
+    # LineIntegralNeb_Validation.val__spring_force()
+    # LineIntegralNeb_Validation.val__compute_tangents()
+    # LineIntegralNeb_Validation.val_compute_force()
+    # LineIntegralNeb_Validation.val_trapezoidal_action()
     
-    MinimizationAlgorithms_Validation.val_verlet_minimization()
+    MinimizationAlgorithms_Validation.val_verlet_minimization_from_contour()
+    # MinimizationAlgorithms_Validation.val_verlet_minimization_v2()
+    # MinimizationAlgorithms_Validation.val_verlet_minimization_v2_from_contour()
     
     print(75*"-")
+    
+    return None
+
+def _test_interp(interpFunc,q20Vals,q30Vals,actEneg):
+    denseQ20 = np.linspace(q20Vals[0],q20Vals[-1],num=2*len(q20Vals))
+    denseQ30 = np.linspace(q30Vals[0],q30Vals[-1],num=2*len(q30Vals))
+    denseEval = interpFunc(denseQ20,denseQ30)
+    
+    fig, ax = plt.subplots(ncols=2)
+    ax[0].contourf(actEneg.T)
+    ax[1].contourf(denseEval)
+    
+    return None
+
+def const_inertia(*coords):
+    return np.ones(coords[0].shape)
+
+def interp2d_wrapper(interp_func):
+    #So that the potential is in the form I'm using in LineIntegralNeb
+    def potential(*coords):
+        nCoords = len(coords)
+        
+        enegOut = np.zeros(coords[0].shape)
+        for ptIter in range(len(enegOut)):
+            enegOut[ptIter] = interp_func(*[coords[cIter][ptIter] for cIter in range(nCoords)])
+            # #Is this a good idea?
+            # if enegOut[ptIter] < 0:
+            #     enegOut[ptIter] = 10**(-6)
+            
+        return enegOut
+    
+    return potential
+
+def main():
+    fDir = "252U_Test_Case/"
+    fName = "252U_PES.h5"
+    dsets, attrs = FileIO.read_from_h5(fName,fDir)
+    
+    q20Vals = dsets["Q20"][:,0]
+    q30Vals = dsets["Q30"][0]
+    
+    interp_eneg = interp2d(q20Vals,q30Vals,dsets["PES"].T,kind="cubic")
+    potential = interp2d_wrapper(interp_eneg)
+    
+    nPts = 22
+    initialPoints = np.array((np.linspace(27,185,nPts),np.linspace(0,16.2,nPts)))
+    initialEnegs = potential(*initialPoints)
+    constraintEneg = initialEnegs[0]
+    print("Constraining to energy %.3f" % constraintEneg)
+    
+    k = 10
+    kappa = 10
+    lneb = LineIntegralNeb(potential,const_inertia,initialPoints,k,kappa,constraintEneg)
+    
+    maxIters = 5000
+    minObj = MinimizationAlgorithms(lneb)
+    allPts, allVelocities, allForces, actions = \
+        minObj.verlet_minimization_v2(maxIters=maxIters,tStep=0.1)
+        
+    fig, ax = plt.subplots()
+    ax.plot(actions)
+    
+    cbarRange = (-5,30)
+    fig, ax = plt.subplots()
+    cf = ax.contourf(dsets["Q20"],dsets["Q30"],dsets["PES"].clip(cbarRange[0],cbarRange[1]),\
+                     cmap="gist_rainbow",levels=np.linspace(cbarRange[0],cbarRange[1],25))
+    ax.contour(dsets["Q20"],dsets["Q30"],dsets["PES"],levels=[0,constraintEneg],\
+               colors=["black","white"])
+    plt.colorbar(cf,ax=ax)
+    for i in range(0,maxIters,int(maxIters/10)):
+        ax.plot(allPts[i,0,:],allPts[i,1,:],ls="-",marker="o")
     
     return None
 
