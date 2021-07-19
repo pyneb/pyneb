@@ -62,7 +62,7 @@ class Utilities:
     @staticmethod
     def find_base_dir():
         #Auto-config for my desktop or the HPCC
-        possibleHomeDirs = ["~/Research/ActionMinimization/"]
+        possibleHomeDirs = ["~/Research/ActionMinimization/","~/Documents/ActionMinimization/"]
         
         baseDir = None
         for d in possibleHomeDirs:
@@ -828,22 +828,11 @@ class MinimizationAlgorithms_Validation:
         for i in range(0,maxIters,50):
             ax.plot(allPts[i,0,:],allPts[i,1,:],ls="-",marker="o")
             
-        # ax.scatter(initialPoints[0,0],initialPoints[1,0],marker="x",c="k")
-        
         return None
         
 def run_tests():
-    # LineIntegralNeb_Validation.val___init__()
-    # LineIntegralNeb_Validation.val__negative_gradient()
-    # LineIntegralNeb_Validation.val__spring_force()
-    # LineIntegralNeb_Validation.val__compute_tangents()
-    # LineIntegralNeb_Validation.val_compute_force()
-    # LineIntegralNeb_Validation.val_trapezoidal_action()
-    
     MinimizationAlgorithms_Validation.val_verlet_minimization_from_contour()
-    # MinimizationAlgorithms_Validation.val_verlet_minimization_v2()
-    # MinimizationAlgorithms_Validation.val_verlet_minimization_v2_from_contour()
-    
+   
     print(75*"-")
     
     return None
@@ -870,9 +859,6 @@ def interp2d_wrapper(interp_func):
         enegOut = np.zeros(coords[0].shape)
         for ptIter in range(len(enegOut)):
             enegOut[ptIter] = interp_func(*[coords[cIter][ptIter] for cIter in range(nCoords)])
-            # #Is this a good idea?
-            # if enegOut[ptIter] < 0:
-            #     enegOut[ptIter] = 10**(-6)
             
         return enegOut
     
@@ -888,6 +874,7 @@ def gp_test():
     
     kernel = gp.kernels.RBF()
     interp_eneg = gp.GaussianProcessRegressor(kernel=kernel).fit(gpInput,gpOutput)
+    print("Completed regression")
     
     
     return None
@@ -963,5 +950,3 @@ def main():
     
     return None
 
-# main()
-gp_test()
