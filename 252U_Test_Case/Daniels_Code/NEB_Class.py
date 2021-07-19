@@ -10,6 +10,7 @@ from shapely import geometry #Used in initializing the LNEB method on the gs con
 #Use Rbf in my NN code, but there are too many points here - Rbf runs out of system
 #memory and the Python console crashes
 from scipy.interpolate import interp2d, Rbf
+import sklearn.gaussian_process as gp
 
 import pandas as pd
 import h5py
@@ -150,30 +151,34 @@ class FileIO(): #Tried using inheritance here, but I think the static methods
         return datDictOut, attrDictOut
     
     @staticmethod
-    def dump_to_hdf5(fname,optOutputs):
-        allPts, allVelocities, allForces, actions = optOutputs
-        
-        if os.path.isfile(fname+".h5"):
-            #Emergency output warning - in case I ever get careless
-            print("Warning: output file "+fname+" exists; storing instead as "+fname+"1")
-            fname = fname+"1"
-            
+    def dump_to_hdf5(fname,otpOutputsDict,paramsDictOfDicts):
         h5File = h5py.File(fname+".h5","w")
-        h5File.create_dataset("allPts",data=allPts)
-        h5File.create_dataset("allVelocities",data=allVelocities)
-        h5File.create_dataset("allForces",data=allForces)
-        h5File.create_dataset("actions",data=actions)
+        for key in otpOutputsDict.keys():
+            h5File.create_dataset(key,data=otpOutputsDict[key])
         
-        h5File.create_group("Optimization_Params")
-        h5File["Optimization_Params"].attrs.create("maxIters",self.maxIters)
-        h5File["Optimization_Params"].attrs.create("tStep",self.tStep)
-        h5File["Optimization_Params"].attrs.create("k",self.k)
-        h5File["Optimization_Params"].attrs.create("kappa",self.kappa)
-        h5File["Optimization_Params"].attrs.create("constraintEneg",self.constraintEneg)
+        for outerKey in paramsDictOfDicts:
+            h5File.create_group(outerKey)
+            for key in paramsDictOfDicts[outerKey].keys():
+                #Don't know if individual strings are converted automatically
+                if isinstance(paramsDictOfDicts[outerKey][key],str):
+                    custType = h5py.string_dtype("utf-8")
+                else:
+                    custType = type(paramsDictOfDicts[outerKey][key])
+                h5File[outerKey].attrs.create(key,paramsDictOfDicts[outerKey][key],\
+                                                   dtype=custType)
         
         h5File.close()
         
         return None
+    
+class CustomInterp2d(interp2d):
+    def __init__(self,*args,**kwargs):
+        self.kwargs = kwargs
+        super(CustomInterp2d,self).__init__(*args,**kwargs)
+        
+    #So that I can pull out a string representation, and kwargs
+    def __str__(self):
+        return "scipy.interpolate.interp2d"
     
 class LineIntegralNeb():
     def __init__(self,potential,mass,initialPoints,k,kappa,constraintEneg,\
@@ -361,6 +366,8 @@ class MinimizationAlgorithms(LineIntegralNeb):
         return allPts, allVelocities, allForces, actions
     
     def verlet_minimization_v2(self,maxIters=1000,tStep=0.05):
+        strRep = "MinimizationAlgorithms.verlet_minimization_v2"
+        
         allPts = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
         allVelocities = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
         allForces = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
@@ -385,7 +392,7 @@ class MinimizationAlgorithms(LineIntegralNeb):
                 
         actions = np.array([self.action_func(pts) for pts in allPts[:]])
         
-        return allPts, allVelocities, allForces, actions
+        return allPts, allVelocities, allForces, actions, strRep
     
     def gradient_descent(self,maxIters=1000,tStep=0.05):
         #Very clearly does not work...
@@ -871,31 +878,73 @@ def interp2d_wrapper(interp_func):
     
     return potential
 
-def main():
+def gp_test():
     fDir = "252U_Test_Case/"
     fName = "252U_PES.h5"
     dsets, attrs = FileIO.read_from_h5(fName,fDir)
     
+    gpInput = np.vstack((dsets["Q20"].flatten(),dsets["Q30"].flatten())).T
+    gpOutput = dsets["PES"].flatten()
+    
+    kernel = gp.kernels.RBF()
+    interp_eneg = gp.GaussianProcessRegressor(kernel=kernel).fit(gpInput,gpOutput)
+    
+    
+    return None
+
+def main():
+    startTime = time.time()
+    
+    lnebParamsDict = {"nPts":22,"k":10,"kappa":10}
+    
+    fDir = "252U_Test_Case/"
+    fName = "252U_PES.h5"
+    dsets, attrs = FileIO.read_from_h5(fName,fDir)
+    
+    #Only getting the unique values
     q20Vals = dsets["Q20"][:,0]
     q30Vals = dsets["Q30"][0]
     
-    interp_eneg = interp2d(q20Vals,q30Vals,dsets["PES"].T,kind="cubic")
+    #TODO: play around with different interpolation schemes (splines, GP, etc)
+    interp_eneg = CustomInterp2d(q20Vals,q30Vals,dsets["PES"].T,kind="quintic")
     potential = interp2d_wrapper(interp_eneg)
     
-    nPts = 22
+    interpArgsDict = interp_eneg.kwargs
+    interpArgsDict["function"] = interp_eneg.__str__()
+    
+    nPts = lnebParamsDict["nPts"]
     initialPoints = np.array((np.linspace(27,185,nPts),np.linspace(0,16.2,nPts)))
     initialEnegs = potential(*initialPoints)
     constraintEneg = initialEnegs[0]
+    
+    lnebParamsDict["constraintEneg"] = constraintEneg
     print("Constraining to energy %.3f" % constraintEneg)
     
-    k = 10
-    kappa = 10
+    k = lnebParamsDict["k"]
+    kappa = lnebParamsDict["kappa"]
     lneb = LineIntegralNeb(potential,const_inertia,initialPoints,k,kappa,constraintEneg)
     
     maxIters = 5000
+    tStep = 0.1
     minObj = MinimizationAlgorithms(lneb)
-    allPts, allVelocities, allForces, actions = \
-        minObj.verlet_minimization_v2(maxIters=maxIters,tStep=0.1)
+    allPts, allVelocities, allForces, actions, strRep = \
+        minObj.verlet_minimization_v2(maxIters=maxIters,tStep=tStep)
+        
+    endTime = time.time()
+    runTime = endTime - startTime
+    analyticsDict = {"runTime":runTime}
+        
+    optimParamsDict = {"maxIters":maxIters,"tStep":tStep,\
+                       "algorithm":strRep}
+        
+    allParamsDict = {"optimization":optimParamsDict,"lneb":lnebParamsDict,\
+                     "interpolation":interpArgsDict,"analytics":analyticsDict}
+    otpOutputsDict = {"allPts":allPts,"allVelocities":allVelocities,\
+                      "allForces":allForces,"actions":actions}
+    
+    fName = "Runs/"+str(int(startTime))
+    
+    FileIO.dump_to_hdf5(fName,otpOutputsDict,allParamsDict)
         
     fig, ax = plt.subplots()
     ax.plot(actions)
@@ -903,14 +952,16 @@ def main():
     cbarRange = (-5,30)
     fig, ax = plt.subplots()
     cf = ax.contourf(dsets["Q20"],dsets["Q30"],dsets["PES"].clip(cbarRange[0],cbarRange[1]),\
-                     cmap="gist_rainbow",levels=np.linspace(cbarRange[0],cbarRange[1],25))
+                      cmap="gist_rainbow",levels=np.linspace(cbarRange[0],cbarRange[1],25))
     ax.contour(dsets["Q20"],dsets["Q30"],dsets["PES"],levels=[0,constraintEneg],\
-               colors=["black","white"])
+                colors=["black","white"])
     plt.colorbar(cf,ax=ax)
     for i in range(0,maxIters,int(maxIters/10)):
         ax.plot(allPts[i,0,:],allPts[i,1,:],ls="-",marker="o")
+        
+    fig.savefig("Runs/"+str(int(startTime))+".png")
     
     return None
 
-run_tests()
-
+# main()
+gp_test()
