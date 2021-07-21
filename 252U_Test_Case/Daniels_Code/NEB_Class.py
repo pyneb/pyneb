@@ -9,7 +9,9 @@ from shapely import geometry #Used in initializing the LNEB method on the gs con
  
 #Use Rbf in my NN code, but there are too many points here - Rbf runs out of system
 #memory and the Python console crashes
+#TODO: namespace stuff here
 from scipy.interpolate import interp2d, Rbf
+from scipy import interpolate
 import sklearn.gaussian_process as gp
 
 import pandas as pd
@@ -122,6 +124,27 @@ class Utilities:
         
         return initialPoints
     
+    @staticmethod
+    def interpolated_action(eneg_func,mass_func,discretePath):
+        #TODO: actually compute the action here
+        tck, u = interpolate.splprep(discretePath,s=0.1)
+        smoothedValues = interpolate.splev(u,tck)
+        
+        return smoothedValues, tck
+    
+    @staticmethod
+    def standard_pes(xx,yy,zz):
+        #TODO: pull some (cleaner) options from ML_Funcs_Class
+        #Obviously not general - good luck plotting a 3D PES lol
+        fig, ax = plt.subplots()
+        #USE THIS COLORMAP FOR PESs - has minima in blue and maxima in red
+        cf = ax.contourf(xx,yy,zz.clip(-5,30),\
+                         cmap="Spectral_r",levels=np.linspace(-5,30,25))
+        plt.colorbar(cf,ax=ax)
+        
+        ax.set(xlabel=r"$Q_{20}$ (b)",ylabel=r"$Q_{30}$ (b${}^{3/2}$)")
+        return fig, ax
+    
 class FileIO(): #Tried using inheritance here, but I think the static methods
                 #messed things up for some reason.
     @staticmethod
@@ -179,6 +202,49 @@ class CustomInterp2d(interp2d):
     #So that I can pull out a string representation, and kwargs
     def __str__(self):
         return "scipy.interpolate.interp2d"
+    
+class LocalGPRegressor(gp.GaussianProcessRegressor):
+    def __init__(self,inDat,outDat,**gpKwargs):
+        super(LocalGPRegressor,self).__init__(**gpKwargs)
+        self.inDat = inDat
+        self.outDat = outDat
+    
+    def local_predict(self,predPts,nNeighbors=5,predictKWargs={}):
+        if not isinstance(nNeighbors,np.ndarray):
+            nNeighbors = nNeighbors*np.ones(self.inDat.shape[0])
+        if len(predPts.shape) == 1:
+            predPts = predPts.reshape((1,predPts.shape[0]))
+        
+        assert nNeighbors.shape[0] == self.inDat.shape[0]
+        assert predPts.shape[1] == self.inDat.shape[0]
+        
+        nPts, nDims = predPts.shape
+        predDat = np.zeros(nPts)
+        
+        #TODO: can optimize this a bit by first checking if predPts are close to
+        #each other, and using the same fitted GP for them if so
+        for ptIter in range(nPts):
+            boolList = []
+            for dimIter in range(nDims):
+                locMask = (np.abs(self.inDat[dimIter] - predPts[ptIter,dimIter]) < \
+                           nNeighbors[dimIter])
+                boolList.append(locMask)
+            boolMask = np.logical_and.reduce(np.array(boolList))
+            usedInds = tuple(np.argwhere(boolMask==True).T)
+            
+            locInDat = self.inDat[(slice(None),)+usedInds].T
+            locOutDat = self.outDat[usedInds]
+            
+            locFitGP = self.fit(locInDat,locOutDat)
+            
+            predDat[ptIter] = self.predict(predPts[ptIter].reshape((-1,nDims)))
+        
+        return predDat
+    
+    @staticmethod
+    def default_kernel():
+        #To be used later once I find out what works well
+        return None
     
 class LineIntegralNeb():
     def __init__(self,potential,mass,initialPoints,k,kappa,constraintEneg,\
@@ -339,6 +405,8 @@ class MinimizationAlgorithms(LineIntegralNeb):
         self.action_func = actionFuncsDict[actionFunc]
     
     def verlet_minimization(self,maxIters=1000,tStep=0.05):
+        strRep = "MinimizationAlgorithms.verlet_minimization"
+        
         allPts = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
         allVelocities = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
         allForces = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
@@ -363,7 +431,7 @@ class MinimizationAlgorithms(LineIntegralNeb):
                 
         actions = np.array([self.action_func(pts) for pts in allPts[:]])
         
-        return allPts, allVelocities, allForces, actions
+        return allPts, allVelocities, allForces, actions, strRep
     
     def verlet_minimization_v2(self,maxIters=1000,tStep=0.05):
         strRep = "MinimizationAlgorithms.verlet_minimization_v2"
@@ -409,6 +477,194 @@ class MinimizationAlgorithms(LineIntegralNeb):
         actions = np.array([self.action_func(pts) for pts in allPts[:]])
         
         return allPts, allForces, actions
+    
+    def _el_rhs(self,indepVar,depVar):
+        eps = 10**(-6)
+        
+        #depVar should be of shape (4,nPts) - 4 for (x0,x1,z0,z1); nPts for the size of the grid.
+        #Here, zi = dxi/dt.
+        funcOut = np.zeros(depVar.shape)
+        #funcOut row order is (x0',x1',z0',z1') = (z0,z1,z0',z1')
+        funcOut[0:2,:] = depVar[2:,:]
+        
+        #Not general here or anywhere else
+        targEval = self.lneb.targetFunc(*depVar[0:2])
+        targGrad = np.zeros(depVar.shape)
+        for coordIter in range(self.lneb.nCoords):
+            steps = depVar[0:2].copy()
+            steps[coordIter,:] += eps
+            evalAtSteps, _, _ = self.lneb.target_func(*steps)
+            targGrad[coordIter,:] = (evalAtSteps - targetFuncEval)/eps
+        
+        r = np.sqrt(depVar[2,:]**2 + depVar[3,:]**2)
+        
+        for gradIter in range(2):
+            funcOut[gradIter+2,:] = 1/targEval*targGrad[gradIter,:]*r**2 - \
+                depVar[gradIter+2,:]/targEval*(depVar[2,:]*targGrad[0,:]+depVar[3,:]*targGrad[1,:]) + \
+                    depVar[gradIter+2,:]**2/r**2
+        
+        return funcOut
+    
+    def euler_lagrange(self):
+        
+        return None
+    
+# class EulerLagrangeSolver:
+#     def __init__(self,nPts=12,potential=leps_plus_ho,initialPoints=None,gsEneg=None,\
+#                  subtractEGS=True):
+#         self.nPts = nPts
+#         self.coordMeshTuple = np.meshgrid(np.arange(0,4,0.05),np.arange(-2,2,0.05))
+#         self.zz = potential(*self.coordMeshTuple)
+        
+#         if initialPoints is None:
+#             self.initialPoints = self._initial_points()
+#         else:
+#             self.initialPoints = initialPoints
+            
+#         if subtractEGS and (gsEneg is None):
+#             self.gsEneg = np.min(potential(*self.initialPoints))
+#         elif subtractEGS and (gsEneg is not None):
+#             self.gsEneg = gsEneg
+#         else:
+#             self.gsEneg = 0
+            
+#         self.potential = self._aux_pot(potential,self.gsEneg)
+            
+#     def _initial_points(self):
+#         minInds = find_local_minimum(self.zz)
+        
+#         initialPoints = np.array([np.linspace(cmesh[minInds][0],cmesh[minInds][1],num=self.nPts) for \
+#                                   cmesh in self.coordMeshTuple])
+        
+#         return initialPoints
+    
+#     def _aux_pot(self,potential,egs,tol=10**(-4)):
+#         #Tol is so that the potential at the ground state isn't exactly 0 (have to
+#         #divide by V in the EL equations)
+#         def pot(x,y):
+#             return potential(x,y) - egs + tol
+        
+#         return pot
+        
+#     def _finite_difference(self,coords):
+#         eps = 10**(-6)
+        
+#         potAtPt = self.potential(coords[0,:],coords[1,:])
+#         potAtStep = np.zeros((2,coords.shape[1]))
+#         for i in range(2):
+#             for coordIter in range(coords.shape[1]):
+#                 locCoord = coords.copy()
+#                 locCoord[i,coordIter] += eps
+#                 potAtStep[i,coordIter] = self.potential(locCoord[0,coordIter],locCoord[1,coordIter])
+        
+#         grad = (potAtStep - potAtPt)/eps
+        
+#         return grad
+        
+#     def rhs(self,indepVar,depVar):
+#         #depVar should be of shape (4,nPts) - 4 for (x0,x1,z0,z1); nPts for the size of the grid.
+#         #Here, zi = dxi/dt.
+#         funcOut = np.zeros(depVar.shape)
+#         #funcOut row order is (x0',x1',z0',z1') = (z0,z1,z0',z1')
+#         funcOut[0:2,:] = depVar[2:,:]
+        
+#         #Not general here or anywhere else
+#         potEval = self.potential(depVar[0,:],depVar[1,:])
+#         potGrad = self._finite_difference(depVar[0:2,:])
+        
+#         r = np.sqrt(depVar[2,:]**2 + depVar[3,:]**2)
+        
+#         for gradIter in range(2):
+#             funcOut[gradIter+2,:] = 1/potEval*potGrad[gradIter,:]*r**2 - \
+#                 depVar[gradIter+2,:]/potEval*(depVar[2,:]*potGrad[0,:]+depVar[3,:]*potGrad[1,:]) + \
+#                     depVar[gradIter+2,:]**2/r**2
+        
+#         return funcOut
+    
+#     def bc(self,ya,yb):
+#         #ya is right node, yb is left node. both of shape (4,), for (x0,x1,z0,z1)
+#         return np.array([ya[0] - self.initialPoints[0,0],ya[1] - self.initialPoints[-1,0],\
+#                          yb[0] - self.initialPoints[0,-1],yb[1] - self.initialPoints[-1,-1]])
+    
+#     def plot_pes(self,curves=[],labels=[],fName=None):
+#         fig, ax = plt.subplots()
+        
+#         ax.contour(*self.coordMeshTuple,self.zz,np.arange(-10,70,1),colors="k")
+        
+#         if curves: #Checks if list is nonempty
+#             for (cIter,curve) in enumerate(curves):
+#                 if labels:
+#                     lab = labels[cIter]
+#                 else:
+#                     lab = None
+#                 ax.plot(curve[0,:],curve[1,:],ls="-",marker="o",label=lab)
+                
+#         ax.set_xlabel(r"$r_{AB}$")
+#         ax.set_ylabel(r"$x$")
+        
+#         if labels:
+#             ax.legend()
+                
+#         if fName is not None:
+#             fig.savefig(fName+".pdf")
+        
+#         return None
+    
+class Utilities_Validation:
+    @staticmethod
+    def val_find_local_minimum():
+        dsets, attrs = \
+            FileIO.read_from_h5("Test_PES.h5","252U_Test_Case/Daniels_Code/Test_Files/")
+                
+        minInds = Utilities.find_local_minimum(dsets["PES"])
+        fig, ax = Utilities.standard_pes(dsets["Q20"],dsets["Q30"],dsets["PES"])
+        
+        ax.scatter(dsets["Q20"][minInds],dsets["Q30"][minInds],color="k",marker="x")
+        ax.set(xlim=(dsets["Q20"].min(),dsets["Q20"].max()),\
+               ylim=(dsets["Q30"].min(),dsets["Q30"].max()))
+            
+        testFolder = "Test_Outputs/Utilities/"
+        if not os.path.isdir(testFolder):
+            os.makedirs(testFolder)
+            
+        fig.savefig(testFolder+"val_find_local_minimum.pdf")
+        
+        return None
+    
+    @staticmethod
+    def val_interpolated_action():
+        testFile = "Test_Files/Test_Path.txt"
+        path = np.loadtxt(testFile)
+        
+        dsets, attrs = \
+            FileIO.read_from_h5("Test_PES.h5","252U_Test_Case/Daniels_Code/Test_Files/")
+        
+        q20Vals = dsets["Q20"][:,0]
+        q30Vals = dsets["Q30"][0]
+        
+        interp_eneg = CustomInterp2d(q20Vals,q30Vals,dsets["PES"].T,kind="cubic")
+        potential = interp2d_wrapper(interp_eneg)
+        
+        #Not really sure what point is being made by using a smaller subsection of
+        #the path... in fact, I don't expect that this is necessary for this particular
+        #path, which is itself practically continuous. Probably only helpful ever
+        #when applied to one of my paths, that only has ~20 points...
+        partialPath = np.concatenate((path[::5],path[-1].reshape((1,2))))
+        
+        smoothedValues, tck = \
+            Utilities.interpolated_action(potential,const_inertia,partialPath.T)
+        
+        fig, ax = Utilities.standard_pes(dsets["Q20"],dsets["Q30"],dsets["PES"])
+        
+        ax.plot(partialPath[:,0],partialPath[:,1],ls="-",marker="x",color="k")
+        ax.plot(path[:,0],path[:,1],ls="-",color="red")
+        ax.plot(smoothedValues[0],smoothedValues[1],ls="-",color="blue")
+        
+        #For this test only
+        ax.set_xlim(0,200)
+        ax.set_ylim(0,20)
+        
+        return None
     
 class LineIntegralNeb_Validation:
     @staticmethod
@@ -829,6 +1085,29 @@ class MinimizationAlgorithms_Validation:
             ax.plot(allPts[i,0,:],allPts[i,1,:],ls="-",marker="o")
             
         return None
+    
+    @staticmethod
+    def val_euler_lagrange():
+        print(75*"-")
+        print("Test: val_euler_lagrange")
+        
+        nPts = 12
+        
+        coordMeshTuple = np.meshgrid(np.arange(0,4,0.05),np.arange(-2,3.8,0.05))
+        zz = LineIntegralNeb_Validation.leps_plus_ho(*coordMeshTuple)
+        
+        eGS = LineIntegralNeb_Validation._get_egs()
+        potential = LineIntegralNeb_Validation._aux_pot(eGS)
+        
+        initialPoints = Utilities.initial_on_contour(coordMeshTuple,zz,nPts)
+        
+        mass_test = LineIntegralNeb_Validation._define_mass()
+        k = 20
+        kappa = 20
+        constraintEneg = potential(*initialPoints)[0]
+        lneb = LineIntegralNeb(potential,mass_test,initialPoints,k,kappa,constraintEneg)
+        
+        return None
         
 def run_tests():
     MinimizationAlgorithms_Validation.val_verlet_minimization_from_contour()
@@ -851,7 +1130,7 @@ def _test_interp(interpFunc,q20Vals,q30Vals,actEneg):
 def const_inertia(*coords):
     return np.ones(coords[0].shape)
 
-def interp2d_wrapper(interp_func):
+def interp2d_wrapper(interp_func): #TODO: wrap into CustomInterp2d?
     #So that the potential is in the form I'm using in LineIntegralNeb
     def potential(*coords):
         nCoords = len(coords)
@@ -869,12 +1148,19 @@ def gp_test():
     fName = "252U_PES.h5"
     dsets, attrs = FileIO.read_from_h5(fName,fDir)
     
-    gpInput = np.vstack((dsets["Q20"].flatten(),dsets["Q30"].flatten())).T
-    gpOutput = dsets["PES"].flatten()
+    gpInput = np.stack((dsets["Q20"],dsets["Q30"]))
+    gpOutput = dsets["PES"]
     
     kernel = gp.kernels.RBF()
-    interp_eneg = gp.GaussianProcessRegressor(kernel=kernel).fit(gpInput,gpOutput)
-    print("Completed regression")
+    kwargs = {"kernel":kernel}
+    
+    singlePt = np.array([[3.5,0],[17.2,0.4]])
+    localGP = LocalGPRegressor(gpInput,gpOutput,**kwargs)
+    print(localGP.local_predict(singlePt,nNeighbors=2))
+    
+    
+    # interp_eneg = gp.GaussianProcessRegressor(kernel=kernel).fit(gpInput,gpOutput)
+    # print("Completed regression")
     
     
     return None
@@ -892,7 +1178,6 @@ def main():
     q20Vals = dsets["Q20"][:,0]
     q30Vals = dsets["Q30"][0]
     
-    #TODO: play around with different interpolation schemes (splines, GP, etc)
     interp_eneg = CustomInterp2d(q20Vals,q30Vals,dsets["PES"].T,kind="quintic")
     potential = interp2d_wrapper(interp_eneg)
     
@@ -911,21 +1196,21 @@ def main():
     kappa = lnebParamsDict["kappa"]
     lneb = LineIntegralNeb(potential,const_inertia,initialPoints,k,kappa,constraintEneg)
     
-    maxIters = 5000
+    maxIters = 10000
     tStep = 0.1
     minObj = MinimizationAlgorithms(lneb)
     allPts, allVelocities, allForces, actions, strRep = \
-        minObj.verlet_minimization_v2(maxIters=maxIters,tStep=tStep)
+        minObj.verlet_minimization(maxIters=maxIters,tStep=tStep)
         
     endTime = time.time()
     runTime = endTime - startTime
     analyticsDict = {"runTime":runTime}
         
     optimParamsDict = {"maxIters":maxIters,"tStep":tStep,\
-                       "algorithm":strRep}
+                        "algorithm":strRep}
         
     allParamsDict = {"optimization":optimParamsDict,"lneb":lnebParamsDict,\
-                     "interpolation":interpArgsDict,"analytics":analyticsDict}
+                      "interpolation":interpArgsDict,"analytics":analyticsDict}
     otpOutputsDict = {"allPts":allPts,"allVelocities":allVelocities,\
                       "allForces":allForces,"actions":actions}
     
@@ -950,3 +1235,7 @@ def main():
     
     return None
 
+if __name__ == "__main__":
+    #Actually important here lol
+    Utilities_Validation.val_find_local_minimum()
+    
