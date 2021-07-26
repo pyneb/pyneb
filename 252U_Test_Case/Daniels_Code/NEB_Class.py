@@ -125,6 +125,20 @@ class Utilities:
         return initialPoints
     
     @staticmethod
+    def aux_pot(eneg_func,eGS):
+        def pot_out(*coords):
+            return eneg_func(*coords) - eGS
+        
+        return pot_out
+    
+    @staticmethod
+    def const_mass():
+        def dummy_mass(*coords):
+            return np.ones(coords[0].shape)
+        
+        return dummy_mass
+    
+    @staticmethod
     def interpolated_action(eneg_func,mass_func,discretePath):
         #TODO: actually compute the action here
         tck, u = interpolate.splprep(discretePath,s=0.1)
@@ -133,17 +147,186 @@ class Utilities:
         return smoothedValues, tck
     
     @staticmethod
-    def standard_pes(xx,yy,zz):
+    def standard_pes(xx,yy,zz,clipRange=(-5,30)):
         #TODO: pull some (cleaner) options from ML_Funcs_Class
         #Obviously not general - good luck plotting a 3D PES lol
         fig, ax = plt.subplots()
         #USE THIS COLORMAP FOR PESs - has minima in blue and maxima in red
-        cf = ax.contourf(xx,yy,zz.clip(-5,30),\
-                         cmap="Spectral_r",levels=np.linspace(-5,30,25))
+        cf = ax.contourf(xx,yy,zz.clip(clipRange[0],clipRange[1]),\
+                         cmap="Spectral_r",levels=np.linspace(clipRange[0],clipRange[1],25))
         plt.colorbar(cf,ax=ax)
         
         ax.set(xlabel=r"$Q_{20}$ (b)",ylabel=r"$Q_{30}$ (b${}^{3/2}$)")
         return fig, ax
+    
+class CustomInterp2d(interp2d):
+    def __init__(self,*args,**kwargs):
+        self.kwargs = kwargs
+        super(CustomInterp2d,self).__init__(*args,**kwargs)
+        self.potential = self.pot_wrapper()
+        
+    #So that I can pull out a string representation, and kwargs
+    def __str__(self):
+        return "scipy.interpolate.interp2d"
+    
+    #Need a wrapper for use in abstracted function calls
+    def pot_wrapper(self):
+        def potential(*coords):
+            #Is a 2d method anyways
+            flattenedCoords = [coords[0].flatten(),coords[1].flatten()]
+            nCoords = len(coords)
+            
+            enegOut = np.zeros(flattenedCoords[0].shape)
+            for ptIter in range(len(enegOut)):
+                enegOut[ptIter] = self.__call__(flattenedCoords[0][ptIter],flattenedCoords[1][ptIter])
+            
+            return enegOut.reshape(coords[0].shape)
+        
+        return potential
+    
+class LocalGPRegressor(gp.GaussianProcessRegressor):
+    #WARNING: when written this way, gridPot is actually a keyword-only argument...
+    #and yet, it's required.
+    def __init__(self,*uniqueGridPts,gridPot,predKWargs={},gpKwargs={}):
+        if gridPot is None:
+            sys.exit("Err: gridPot must be specified with kwarg")
+        super(LocalGPRegressor,self).__init__(**gpKwargs)
+        self.uniqueGridPts = uniqueGridPts
+        
+        self.inDat = np.meshgrid(*uniqueGridPts)
+        self.outDat = gridPot
+        self.predKWargs = predKWargs
+        self._initialize_predkwargs()
+        
+        self.potential = self.pot_wrapper()
+        
+    def _initialize_predkwargs(self):
+        gridDistance = np.zeros(len(self.uniqueGridPts))
+        for (gIter,grid) in enumerate(self.uniqueGridPts):
+            #Assumes evenly-spaced grid. Is not quite right, but is close enough
+            gridDistance[gIter] = (grid[-1] - grid[0])/len(grid)
+        
+        defaultKWargs = {"nNeighbors":10,"neighborDist":gridDistance}
+        for arg in defaultKWargs.keys():
+            if arg not in self.predKWargs.keys():
+                self.predKWargs[arg] = defaultKWargs[arg]
+                
+        return None
+    
+    def pot_wrapper(self):
+        def potential(*coords):
+            nCoords = len(self.inDat)
+            
+            neighborDist = self.predKWargs["neighborDist"]
+            nNeighbors = self.predKWargs["nNeighbors"]
+            
+            if not isinstance(nNeighbors,np.ndarray):
+                nNeighbors = nNeighbors*np.ones(nCoords)
+            allowedDistance = nNeighbors * neighborDist
+            
+            flattenedCoords = [c.flatten() for c in coords]
+            nPts = len(flattenedCoords[0])
+            predDat = np.zeros(nPts)
+            
+            #TODO: can optimize this a bit by first checking if predPts are close to
+            #each other, and using the same fitted GP for them if so
+            for ptIter in range(nPts):
+                boolList = []
+                for dimIter in range(nCoords):
+                    locMask = (np.abs(self.inDat[dimIter] - flattenedCoords[dimIter][ptIter]) < \
+                               allowedDistance[dimIter])
+                    boolList.append(locMask)
+                boolMask = np.logical_and.reduce(np.array(boolList))
+                usedInds = tuple(np.argwhere(boolMask==True).T)
+                
+                locInDat = np.array([self.inDat[cIter][usedInds] for\
+                                      cIter in range(nCoords)]).T
+                locOutDat = self.outDat[usedInds]
+                
+                locFitGP = self.fit(locInDat,locOutDat)
+                
+                predDat[ptIter] = \
+                    self.predict(np.array([flattenedCoords[cIter][ptIter] for\
+                                           cIter in range(nCoords)]).reshape((-1,nCoords)))
+            
+            return predDat.reshape(coords[0].shape)
+        return potential
+    
+class LepsPot():
+    def __init__(self,initialGrid=np.meshgrid(np.arange(0,4,0.05),np.arange(-2,3.8,0.05)),\
+                 potParams={},eGS=None):
+        self.params = potParams
+        self._initialize_params()
+        
+        self.initialGrid = initialGrid
+        self.zz = self.leps_plus_ho(*self.initialGrid)
+        minInds = Utilities.find_local_minimum(self.zz)
+        #Note: only good for this case, where the potential has exactly two minima.
+        #This makes it so that the metastable state is at E = 0.
+        if eGS is None:
+            eGS = np.max(self.zz[minInds])
+        
+        self.potential = Utilities.aux_pot(self.leps_plus_ho,eGS)
+        
+    def _initialize_params(self):
+        defaultDict = {"a":0.05,"b":0.8,"c":0.05,"dab":4.746,"dbc":4.746,\
+                       "dac":3.445,"r0":0.742,"alpha":1.942,"rac":3.742,"kc":0.2025,\
+                       "c_ho":1.154}
+        for param in defaultDict.keys():
+            if param not in self.params.keys():
+                self.params[param] = defaultDict[param]
+            
+        return None
+    
+    def _q(self,r,d,alpha,r0):
+        return d/2*(3/2*np.exp(-2*alpha*(r-r0)) - np.exp(-alpha*(r-r0)))
+    
+    def _j(self,r,d,alpha,r0):
+        return d/4*(np.exp(-2*alpha*(r-r0)) - 6*np.exp(-alpha*(r-r0)))
+    
+    def leps_pot(self,rab,rbc):
+        q = self._q
+        j = self._j
+                
+        rac = rab + rbc
+        
+        vOut = q(rab,self.params["dab"],self.params["alpha"],self.params["r0"])/(1+self.params["a"]) +\
+            q(rbc,self.params["dbc"],self.params["alpha"],self.params["r0"])/(1+self.params["b"]) +\
+            q(rac,self.params["dac"],self.params["alpha"],self.params["r0"])/(1+self.params["c"])
+        
+        jab = j(rab,self.params["dab"],self.params["alpha"],self.params["r0"])
+        jbc = j(rbc,self.params["dbc"],self.params["alpha"],self.params["r0"])
+        jac = j(rac,self.params["dac"],self.params["alpha"],self.params["r0"])
+        
+        jTerm = jab**2/(1+self.params["a"])**2+jbc**2/(1+self.params["b"])**2+\
+            jac**2/(1+self.params["c"])**2
+        jTerm = jTerm - jab*jbc/((1+self.params["a"])*(1+self.params["b"])) -\
+            jbc*jac/((1+self.params["b"])*(1+self.params["c"])) -\
+            jab*jac/((1+self.params["a"])*(1+self.params["c"]))
+        
+        vOut = vOut - np.sqrt(jTerm)
+        
+        return vOut
+    
+    def leps_plus_ho(self,rab,x):
+        """
+        LEPs potential plus harmonic oscillator. TODO: add source
+        
+        Call this function with a numpy array of rab and x:
+        
+            xx, yy = np.meshgrid(np.arange(0,4,0.01),np.arange(-2,2,0.01))
+            zz = leps_plus_ho(xx,yy),
+        
+        and plot it as
+        
+            fig, ax = plt.subplots()
+            ax.contour(xx,yy,zz,np.arange(-10,70,1),colors="k")
+    
+        """
+        vOut = self.leps_pot(rab,self.params["rac"]-rab)
+        vOut += 2*self.params["kc"]*(rab-(self.params["rac"]/2-x/self.params["c_ho"]))**2
+        
+        return vOut
     
 class FileIO(): #Tried using inheritance here, but I think the static methods
                 #messed things up for some reason.
@@ -192,58 +375,6 @@ class FileIO(): #Tried using inheritance here, but I think the static methods
         
         h5File.close()
         
-        return None
-    
-class CustomInterp2d(interp2d):
-    def __init__(self,*args,**kwargs):
-        self.kwargs = kwargs
-        super(CustomInterp2d,self).__init__(*args,**kwargs)
-        
-    #So that I can pull out a string representation, and kwargs
-    def __str__(self):
-        return "scipy.interpolate.interp2d"
-    
-class LocalGPRegressor(gp.GaussianProcessRegressor):
-    def __init__(self,inDat,outDat,**gpKwargs):
-        super(LocalGPRegressor,self).__init__(**gpKwargs)
-        self.inDat = inDat
-        self.outDat = outDat
-    
-    def local_predict(self,predPts,nNeighbors=5,predictKWargs={}):
-        if not isinstance(nNeighbors,np.ndarray):
-            nNeighbors = nNeighbors*np.ones(self.inDat.shape[0])
-        if len(predPts.shape) == 1:
-            predPts = predPts.reshape((1,predPts.shape[0]))
-        
-        assert nNeighbors.shape[0] == self.inDat.shape[0]
-        assert predPts.shape[1] == self.inDat.shape[0]
-        
-        nPts, nDims = predPts.shape
-        predDat = np.zeros(nPts)
-        
-        #TODO: can optimize this a bit by first checking if predPts are close to
-        #each other, and using the same fitted GP for them if so
-        for ptIter in range(nPts):
-            boolList = []
-            for dimIter in range(nDims):
-                locMask = (np.abs(self.inDat[dimIter] - predPts[ptIter,dimIter]) < \
-                           nNeighbors[dimIter])
-                boolList.append(locMask)
-            boolMask = np.logical_and.reduce(np.array(boolList))
-            usedInds = tuple(np.argwhere(boolMask==True).T)
-            
-            locInDat = self.inDat[(slice(None),)+usedInds].T
-            locOutDat = self.outDat[usedInds]
-            
-            locFitGP = self.fit(locInDat,locOutDat)
-            
-            predDat[ptIter] = self.predict(predPts[ptIter].reshape((-1,nDims)))
-        
-        return predDat
-    
-    @staticmethod
-    def default_kernel():
-        #To be used later once I find out what works well
         return None
     
 class LineIntegralNeb():
@@ -609,6 +740,103 @@ class MinimizationAlgorithms(LineIntegralNeb):
 #             fig.savefig(fName+".pdf")
         
 #         return None
+    
+class InterpolationMethodTesting():
+    #Used for namespacing tests
+    @staticmethod
+    def sylvester_pes(x,y):
+        A = -0.8447
+        B = -0.2236
+        C = 0.1247
+        D = -4.468
+        E = 0.02194
+        F = 0.3041
+        G = 0.1687
+        H = 0.4388
+        I = -4.713 * 10**(-7)
+        J = -1.148 * 10**(-5)
+        K = 1.687
+        L = -3.062 * 10**(-18)
+        M = -9.426 * 10**(-6)
+        N = -2.851 * 10**(-16)
+        O = 2.313 * 10**(-5)
+        
+        vOut = A + B*x + C*y + D*x**2 + E*x*y + F*y**2 + G*x**3 + H*x**2*y
+        vOut += I*x*y**2 + J*y**3 + K*x**4 + L*x**3*y + M*x**2*y**2 + N*x*y**3 + O*y**4
+        
+        return vOut
+    
+    
+    
+    @staticmethod
+    def main_test():
+        #Grid size for 252U
+        nPtsCoarseGrid = (351,151)
+        nPtsFineGrid = (501,501)
+        
+        ptRange = (-1.5,1.5)
+        
+        xCoarse, yCoarse = [np.linspace(ptRange[0],ptRange[1],num=nPts) for\
+                            nPts in nPtsCoarseGrid]
+        xDense, yDense = [np.linspace(ptRange[0],ptRange[1],num=nPts) for\
+                          nPts in nPtsFineGrid]
+            
+        coarseMesh = np.meshgrid(xCoarse,yCoarse)
+        zCoarse = InterpolationMethodTesting.sylvester_pes(*coarseMesh)
+        
+        denseMesh = np.meshgrid(xDense,yDense)
+        zDense = InterpolationMethodTesting.sylvester_pes(*denseMesh)
+        
+        splineInterps = ["linear","cubic","quintic"]
+        interpFuncs = {}
+        interpTimes = {}
+        for interpMode in splineInterps:
+            t0 = time.time()
+            interpFuncs[interpMode] = CustomInterp2d(xCoarse,yCoarse,zCoarse,kind=interpMode)
+            t1 = time.time()
+            interpTimes[interpMode] = t1 - t0
+                
+        densePreds = {}
+        predictTimes = {}
+        for interpMode in splineInterps:
+            t0 = time.time()
+            densePreds[interpMode] = interpFuncs[interpMode](xDense,yDense)
+            t1 = time.time()
+            predictTimes[interpMode] = t1 - t0
+            
+        clipRange = (-16,-1)
+        nLevels = 16
+        fig, ax = plt.subplots(ncols=len(splineInterps),figsize=(12,4),sharex=True,sharey=True)
+        for (modeIter, mode) in enumerate(splineInterps):
+            plotDat = np.log10(np.abs((densePreds[mode]-zDense))).clip(*clipRange)
+            cf = ax[modeIter].contourf(denseMesh[0],denseMesh[1],plotDat,\
+                                       levels=np.linspace(clipRange[0],clipRange[1],nLevels))
+            ax[modeIter].set(xlabel="x",title=mode.capitalize()+" Spline")
+        
+        plt.colorbar(cf,ax=ax[-1],label=r"Log${}_{10} | E_{Interp}-E_{Exact}|$")
+        ax[0].set(ylabel="y")
+        fig.savefig("Sylvester_PES_Diff.pdf",bbox_inches="tight")
+        
+        absMeanDiffs = np.array([np.mean(np.abs(interpFuncs[interpMode](xDense,yDense) - \
+                                                  zDense)) for interpMode in splineInterps])
+        meanFig, meanAx = plt.subplots()
+        meanAx.scatter(np.arange(len(absMeanDiffs)),np.log10(absMeanDiffs))
+        meanAx.set_xticks(np.arange(len(absMeanDiffs)))
+        meanAx.set_xticklabels([s.capitalize() for s in splineInterps],rotation=45)
+        meanAx.set(xlabel="Spline Mode",ylabel=r"log${}_{10}\langle | E_{Interp}-E_{Exact}|\rangle$")
+        meanAx.set(title="Mean Energy Difference")
+        meanFig.savefig("Mean_PES_Diff.pdf")
+        
+        timeFig, timeAx = plt.subplots()
+        timeAx.scatter(np.arange(len(absMeanDiffs)),interpTimes.values(),label="Interpolating")
+        timeAx.scatter(np.arange(len(absMeanDiffs)),predictTimes.values(),label="Predicting")
+        timeAx.set_xticks(np.arange(len(absMeanDiffs)))
+        timeAx.set_xticklabels([s.capitalize() for s in splineInterps],rotation=45)
+        timeAx.legend()
+        timeAx.set(xlabel="Spline Mode",ylabel="Time (s)",title="Total Run Times")
+        timeFig.savefig("Interpolation_Time.pdf")
+        
+        return None
     
 class Utilities_Validation:
     @staticmethod
@@ -1108,62 +1336,6 @@ class MinimizationAlgorithms_Validation:
         lneb = LineIntegralNeb(potential,mass_test,initialPoints,k,kappa,constraintEneg)
         
         return None
-        
-def run_tests():
-    MinimizationAlgorithms_Validation.val_verlet_minimization_from_contour()
-   
-    print(75*"-")
-    
-    return None
-
-def _test_interp(interpFunc,q20Vals,q30Vals,actEneg):
-    denseQ20 = np.linspace(q20Vals[0],q20Vals[-1],num=2*len(q20Vals))
-    denseQ30 = np.linspace(q30Vals[0],q30Vals[-1],num=2*len(q30Vals))
-    denseEval = interpFunc(denseQ20,denseQ30)
-    
-    fig, ax = plt.subplots(ncols=2)
-    ax[0].contourf(actEneg.T)
-    ax[1].contourf(denseEval)
-    
-    return None
-
-def const_inertia(*coords):
-    return np.ones(coords[0].shape)
-
-def interp2d_wrapper(interp_func): #TODO: wrap into CustomInterp2d?
-    #So that the potential is in the form I'm using in LineIntegralNeb
-    def potential(*coords):
-        nCoords = len(coords)
-        
-        enegOut = np.zeros(coords[0].shape)
-        for ptIter in range(len(enegOut)):
-            enegOut[ptIter] = interp_func(*[coords[cIter][ptIter] for cIter in range(nCoords)])
-            
-        return enegOut
-    
-    return potential
-
-def gp_test():
-    fDir = "252U_Test_Case/"
-    fName = "252U_PES.h5"
-    dsets, attrs = FileIO.read_from_h5(fName,fDir)
-    
-    gpInput = np.stack((dsets["Q20"],dsets["Q30"]))
-    gpOutput = dsets["PES"]
-    
-    kernel = gp.kernels.RBF()
-    kwargs = {"kernel":kernel}
-    
-    singlePt = np.array([[3.5,0],[17.2,0.4]])
-    localGP = LocalGPRegressor(gpInput,gpOutput,**kwargs)
-    print(localGP.local_predict(singlePt,nNeighbors=2))
-    
-    
-    # interp_eneg = gp.GaussianProcessRegressor(kernel=kernel).fit(gpInput,gpOutput)
-    # print("Completed regression")
-    
-    
-    return None
 
 def main():
     startTime = time.time()
@@ -1235,7 +1407,107 @@ def main():
     
     return None
 
+def interp_mode_test():
+    #Grid size for 252U
+    nPtsCoarseGrid = (351,151)
+    nPtsFineGrid = (501,501)
+    
+    ptRange = [(0,4),(-2,3.8)]
+    
+    xCoarse, yCoarse = [np.linspace(ptRange[cIter][0],ptRange[cIter][1],\
+                                    num=nPtsCoarseGrid[cIter]) for\
+                        cIter in range(len(nPtsCoarseGrid))]
+    xDense, yDense = [np.linspace(ptRange[cIter][0],ptRange[cIter][1],\
+                                  num=nPtsFineGrid[cIter]) for\
+                      cIter in range(len(nPtsFineGrid))]
+        
+    coarseMesh = np.meshgrid(xCoarse,yCoarse)
+    zCoarse = LepsPot(initialGrid=coarseMesh).potential(*coarseMesh)
+    
+    denseMesh = np.meshgrid(xDense,yDense)
+    zDense = LepsPot(initialGrid=denseMesh).potential(*denseMesh)
+    
+    splineInterps = ["linear","cubic","quintic"]
+    interpObjs = {}
+    interpTimes = {}
+    for interpMode in splineInterps:
+        t0 = time.time()
+        interpObjs[interpMode] = CustomInterp2d(xCoarse,yCoarse,zCoarse,kind=interpMode)
+        t1 = time.time()
+        interpTimes[interpMode] = t1 - t0
+            
+    densePreds = {}
+    predictTimes = {}
+    for interpMode in splineInterps:
+        t0 = time.time()
+        densePreds[interpMode] = interpObjs[interpMode].potential(*denseMesh)
+        t1 = time.time()
+        predictTimes[interpMode] = t1 - t0
+        
+    clipRange = (-5,-1)
+    nLevels = 5
+    fig, ax = plt.subplots(ncols=len(splineInterps),figsize=(12,4),sharex=True,sharey=True)
+    for (modeIter, mode) in enumerate(splineInterps):
+        plotDat = np.log10(np.abs((densePreds[mode]-zDense))).clip(*clipRange)
+        cf = ax[modeIter].contourf(denseMesh[0],denseMesh[1],plotDat,\
+                                    levels=np.linspace(clipRange[0],clipRange[1],nLevels))
+        ax[modeIter].set(xlabel="x",title=mode.capitalize()+" Spline")
+    
+    plt.colorbar(cf,ax=ax[-1],label=r"Log${}_{10} | E_{Interp}-E_{Exact}|$")
+    ax[0].set(ylabel="y")
+    fig.savefig("LEPs_PES_Diff.pdf",bbox_inches="tight")
+    
+    absMeanDiffs = np.array([np.mean(np.abs(densePreds[interpMode] - \
+                                              zDense)) for interpMode in splineInterps])
+    meanFig, meanAx = plt.subplots()
+    meanAx.scatter(np.arange(len(absMeanDiffs)),np.log10(absMeanDiffs))
+    meanAx.set_xticks(np.arange(len(absMeanDiffs)))
+    meanAx.set_xticklabels([s.capitalize() for s in splineInterps],rotation=45)
+    meanAx.set(xlabel="Spline Mode",ylabel=r"log${}_{10}\langle | E_{Interp}-E_{Exact}|\rangle$")
+    meanAx.set(title="Mean Energy Difference")
+    meanFig.savefig("Mean_PES_Diff.pdf")
+    
+    timeFig, timeAx = plt.subplots()
+    timeAx.scatter(np.arange(len(absMeanDiffs)),interpTimes.values(),label="Interpolating")
+    timeAx.scatter(np.arange(len(absMeanDiffs)),predictTimes.values(),label="Predicting")
+    timeAx.set_xticks(np.arange(len(absMeanDiffs)))
+    timeAx.set_xticklabels([s.capitalize() for s in splineInterps],rotation=45)
+    timeAx.legend()
+    timeAx.set(xlabel="Spline Mode",ylabel="Time (s)",title="Total Run Times")
+    timeFig.savefig("Interpolation_Time.pdf")
+    
+    return None
+
+def gp_test():
+    nPtsCoarseGrid = (351,151)
+    nPtsFineGrid = (501,501)
+    
+    ptRange = [(0,4),(-2,3.8)]
+    
+    xCoarse, yCoarse = [np.linspace(ptRange[cIter][0],ptRange[cIter][1],\
+                                    num=nPtsCoarseGrid[cIter]) for\
+                        cIter in range(len(nPtsCoarseGrid))]
+    xDense, yDense = [np.linspace(ptRange[cIter][0],ptRange[cIter][1],\
+                                  num=nPtsFineGrid[cIter]) for\
+                      cIter in range(len(nPtsFineGrid))]
+        
+    coarseMesh = np.meshgrid(xCoarse,yCoarse)
+    zCoarse = LepsPot(initialGrid=coarseMesh).potential(*coarseMesh)
+    
+    testingCutoff = 200
+    denseMesh = np.meshgrid(xDense[:testingCutoff],yDense[:testingCutoff])
+    zDense = LepsPot(initialGrid=denseMesh).potential(*denseMesh)
+    
+    locGP = LocalGPRegressor(xCoarse,yCoarse,gridPot=zCoarse)
+    
+    gpPred = locGP.potential(*denseMesh)
+    
+    Utilities.standard_pes(xDense[:testingCutoff],yDense[:testingCutoff],\
+                           zDense[:testingCutoff,:testingCutoff]-gpPred)
+    
+    return None
+    
+
 if __name__ == "__main__":
     #Actually important here lol
-    Utilities_Validation.val_find_local_minimum()
-    
+    gp_test()    
