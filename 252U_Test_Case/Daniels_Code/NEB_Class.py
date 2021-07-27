@@ -139,12 +139,31 @@ class Utilities:
         return dummy_mass
     
     @staticmethod
-    def interpolated_action(eneg_func,mass_func,discretePath):
-        #TODO: actually compute the action here
-        tck, u = interpolate.splprep(discretePath,s=0.1)
-        smoothedValues = interpolate.splev(u,tck)
+    def interpolated_action(eneg_func,mass_func,discretePath,ndims=2,nPts=200):
+        if ndims not in discretePath.shape:
+            sys.exit("Err: path shape is "+str(discretePath.shape)+"; expected one dimension to be "+str(ndims))
+            
+        if discretePath.shape[1] == ndims:
+            discretePath = discretePath.T
+            
+        #s=0 means that the interpolation actually passes through all of the points
+        tck, u = interpolate.splprep(discretePath,s=0)
+        uDense = np.linspace(0,1,num=nPts)
         
-        return smoothedValues, tck
+        pathOut = interpolate.splev(uDense,tck)
+        
+        enegs = eneg_func(*pathOut)
+        masses = mass_func(*pathOut)
+        
+        actOut = 0
+        for ptIter in range(1,nPts):
+            dist2 = 0
+            for coordIter in range(ndims):
+                dist2 += (pathOut[coordIter][ptIter] - pathOut[coordIter][ptIter-1])**2
+            actOut += (np.sqrt(2*masses[ptIter]*enegs[ptIter])+\
+                       np.sqrt(2*masses[ptIter-1]*enegs[ptIter-1]))*np.sqrt(dist2)
+        
+        return pathOut, actOut
     
     @staticmethod
     def standard_pes(xx,yy,zz,clipRange=(-5,30)):
@@ -414,6 +433,25 @@ class FileIO(): #Tried using inheritance here, but I think the static methods
         
         return None
     
+    @staticmethod
+    def read_path(fname):
+        df = pd.read_csv(fname,sep=",",header=None,index_col=None)
+        return np.array(df)
+    
+    @staticmethod
+    def write_path(fname,path,ndims=2):
+        #TODO: error handling when path exists
+        if ndims not in path.shape:
+            sys.exit("Err: path shape is "+str(path.shape)+"; expected one dimension to be "+str(ndims))
+            
+        if path.shape[0] == ndims:
+            path = path.T
+        
+        df = pd.DataFrame(data=path)
+        df.to_csv(fname,sep=",",header=False,index=False)
+        
+        return None
+    
 class LineIntegralNeb():
     def __init__(self,potential,mass,initialPoints,k,kappa,constraintEneg,\
                  targetFunc="lagrangian"):
@@ -465,16 +503,16 @@ class LineIntegralNeb():
         
         #The negative gradient of the trapezoidal approximation to the integral of targetFunc
         negIntegGrad = np.zeros(points.shape)
-        for i in range(1,self.nPts-1):#Endpoints are zeroed out
+        for i in range(1,self.nPts-2):#Endpoints are zeroed out
             #distScalar and normedDistVec are indexed starting one below the point index
             """
             WARNING (July 14 2021): may have been typo here in the gradient (not sure)... on slide
             6 of what's being followed, f might be gradient of energy, but above it was not
             computed as such
             """
-            negIntegGrad[:,i] = (distScalar[i-1]+distScalar[i])*negTargGrad[:,i]
-            negIntegGrad[:,i] -= (targetFuncEval[i]+targetFuncEval[i-1])*normedDistVec[:,i-1]
-            negIntegGrad[:,i] += (targetFuncEval[i]+targetFuncEval[i+1])*normedDistVec[:,i]
+            negIntegGrad[:,i] = (distScalar[i+1]+distScalar[i])*negTargGrad[:,i]
+            negIntegGrad[:,i] -= (targetFuncEval[i]+targetFuncEval[i-1])*normedDistVec[:,i]
+            negIntegGrad[:,i] += (targetFuncEval[i]+targetFuncEval[i+1])*normedDistVec[:,i+1]
             
             negIntegGrad[:,i] = negIntegGrad[:,i]/2
         
@@ -551,6 +589,7 @@ class LineIntegralNeb():
         
         return netForce
     
+    #TODO: move to Utilities
     def trapezoidal_action(self,path):
         actOut = 0
         enegs = self.potential(*path)
@@ -624,7 +663,35 @@ class MinimizationAlgorithms(LineIntegralNeb):
                         np.dot(allVelocities[step+1,:,ptIter],allForces[step+1,:,ptIter])*\
                             allForces[step+1,:,ptIter]/np.dot(allForces[step+1,:,ptIter],allForces[step+1,:,ptIter])
                 else:
-                    allVelocities[step+1,:,ptIter] = np.zeros(self.lneb.nCoords)\
+                    allVelocities[step+1,:,ptIter] = np.zeros(self.lneb.nCoords)
+                
+        actions = np.array([self.action_func(pts) for pts in allPts[:]])
+        
+        return allPts, allVelocities, allForces, actions, strRep
+    
+    def verlet_minimization_v3(self,maxIters=1000,tStep=0.05):
+        strRep = "MinimizationAlgorithms.verlet_minimization_v3"
+        
+        allPts = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
+        allVelocities = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
+        allForces = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
+        
+        allPts[0,:,:] = self.lneb.initialPoints
+        allForces[0,:,:] = self.lneb.compute_force(allPts[0,:,:])
+        
+        for step in range(0,maxIters):
+            allPts[step+1] = allPts[step] + allVelocities[step]*tStep+1/2*allForces[step]*tStep**2
+            allForces[step+1] = self.lneb.compute_force(allPts[step+1])
+            allVelocities[step+1] = allVelocities[step]+(allForces[step]+allForces[step+1])/2*tStep
+            
+            for ptIter in range(self.lneb.nPts):
+                if np.dot(allVelocities[step+1,:,ptIter],allForces[step+1,:,ptIter])<=0:
+                    allVelocities[step+1,:,ptIter] = np.zeros(self.lneb.nCoords)
+                    # allVelocities[step+1,:,ptIter] = \
+                    #     np.dot(allVelocities[step+1,:,ptIter],allForces[step+1,:,ptIter])*\
+                    #         allForces[step+1,:,ptIter]/np.dot(allForces[step+1,:,ptIter],allForces[step+1,:,ptIter])
+                # else:
+
                 
         actions = np.array([self.action_func(pts) for pts in allPts[:]])
         
@@ -802,36 +869,49 @@ class Utilities_Validation:
     @staticmethod
     def val_interpolated_action():
         testFile = "Test_Files/Test_Path.txt"
-        path = np.loadtxt(testFile)
+        path = FileIO.read_path(testFile)
         
-        dsets, attrs = \
-            FileIO.read_from_h5("Test_PES.h5","252U_Test_Case/Daniels_Code/Test_Files/")
+        spot = SylvesterPot()
+        smoothedValues, action = \
+            Utilities.interpolated_action(spot.potential,Utilities.const_mass(),path)
         
-        q20Vals = dsets["Q20"][:,0]
-        q30Vals = dsets["Q30"][0]
+        fig, ax = Utilities.standard_pes(spot.initialGrid[0],spot.initialGrid[1],
+                                         spot.potential(*spot.initialGrid),\
+                                         clipRange=(-1,10))
         
-        interp_eneg = CustomInterp2d(q20Vals,q30Vals,dsets["PES"].T,kind="cubic")
-        potential = interp2d_wrapper(interp_eneg)
+        ax.plot(path[:,0],path[:,1],ls="-",marker="x",color="k")
+        ax.plot(*smoothedValues,ls="-",color="red")
         
-        #Not really sure what point is being made by using a smaller subsection of
-        #the path... in fact, I don't expect that this is necessary for this particular
-        #path, which is itself practically continuous. Probably only helpful ever
-        #when applied to one of my paths, that only has ~20 points...
-        partialPath = np.concatenate((path[::5],path[-1].reshape((1,2))))
+        #Convergence of action w/ increasing number of points
+        nPtsRange = np.linspace(25,500,num=30,dtype=int)
+        actionVals = np.zeros(nPtsRange.shape)
         
-        smoothedValues, tck = \
-            Utilities.interpolated_action(potential,const_inertia,partialPath.T)
+        _, baseAction = \
+            Utilities.interpolated_action(spot.potential,Utilities.const_mass(),\
+                                              path,nPts=path.shape[0])
         
-        fig, ax = Utilities.standard_pes(dsets["Q20"],dsets["Q30"],dsets["PES"])
+        for (nIter,nPts) in enumerate(nPtsRange):
+            _, actionVals[nIter] = \
+                Utilities.interpolated_action(spot.potential,Utilities.const_mass(),\
+                                              path,nPts=nPts)
+            
+        fig, ax = plt.subplots()
+        ax.plot(nPtsRange,actionVals,marker=".")
+        ax.axhline(baseAction,color="red")
+        ax.text(nPtsRange[-1]-150,baseAction+0.0005,"Discrete (22 Points)")
+        ax.axvline(200,color="black")
+        ax.text(205,baseAction+0.004,"Default Number of Points",rotation=-90)
+        ax.set_xlim(nPtsRange[0],nPtsRange[-1])
         
-        ax.plot(partialPath[:,0],partialPath[:,1],ls="-",marker="x",color="k")
-        ax.plot(path[:,0],path[:,1],ls="-",color="red")
-        ax.plot(smoothedValues[0],smoothedValues[1],ls="-",color="blue")
+        ax.set(xlabel="Number of Interpolation Points",ylabel="Trapezoidal Action",\
+               title="Discretized Action Integral\nVersus Number of Points")
         
-        #For this test only
-        ax.set_xlim(0,200)
-        ax.set_ylim(0,20)
-        
+        testFolder = "Test_Outputs/Utilities/"
+        if not os.path.isdir(testFolder):
+            os.makedirs(testFolder)
+            
+        fig.savefig(testFolder+"val_interpolated_action.pdf")
+            
         return None
     
 class LineIntegralNeb_Validation:
@@ -1456,17 +1536,19 @@ def sylvester_otl_test():
     initialPts = np.array([np.linspace(c[sp.minInds][0],c[sp.minInds][1],num=22) for\
                            c in sp.initialGrid])
     ax.plot(*initialPts,ls="-",marker=".",color="k")
-    ax.scatter(sp.initialGrid[0][sp.minInds],sp.initialGrid[1][sp.minInds],c="k",\
-               marker="x")
+    # ax.scatter(sp.initialGrid[0][sp.minInds],sp.initialGrid[1][sp.minInds],c="k",\
+    #            marker="x")
     
-    lneb = LineIntegralNeb(sp.potential,Utilities.const_mass(),initialPts,10,10,0)
+    lneb = LineIntegralNeb(sp.potential,Utilities.const_mass(),initialPts,10,50,0)
     minObj = MinimizationAlgorithms(lneb)
-    maxIters=1000
+    maxIters=5000
     allPts, allVelocities, allForces, actions, strRep = \
-        minObj.verlet_minimization_v2(maxIters=maxIters,tStep=0.1)
+        minObj.verlet_minimization_v3(maxIters=maxIters,tStep=0.1)
         
-    for tStep in np.linspace(0,maxIters,num=int(maxIters/100),dtype=int):
-        ax.plot(allPts[tStep,0,:],allPts[tStep,1,:],marker=".",ls="-")
+    minInd = np.argmin(actions)
+    ax.plot(allPts[0,0],allPts[0,1,:],marker=".",ls="-")
+    ax.plot(allPts[minInd,0],allPts[minInd,1,:],marker=".",ls="-")
+    ax.plot(allPts[-1,0],allPts[-1,1,:],marker=".",ls="-")
         
     fig.savefig("Runs/Sylvester_PES.pdf")
         
@@ -1475,10 +1557,13 @@ def sylvester_otl_test():
     ax.set(xlabel="Iteration",ylabel="Action")
     fig.savefig("Runs/Sylvester_Action.pdf")
     
+    FileIO.write_path("testpath.csv",allPts[minInd])
+    
+    
     return None
     
-
+#Actually important here lol
 if __name__ == "__main__":
-    #Actually important here lol
+    # Utilities_Validation.val_interpolated_action()
     sylvester_otl_test()
-    main()
+    # main()
