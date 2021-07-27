@@ -92,7 +92,7 @@ class Utilities:
     def initial_on_contour(coordMeshTuple,zz,nPts,debug=False):
         """
         Connects a straight line between the metastable state and the contour at
-        the same energy.
+        the same energy. WARNING: only useful for leps_plus_ho
         """
         nCoords = len(coordMeshTuple)
         
@@ -125,9 +125,9 @@ class Utilities:
         return initialPoints
     
     @staticmethod
-    def aux_pot(eneg_func,eGS):
+    def aux_pot(eneg_func,eGS,tol=10**(-2)):
         def pot_out(*coords):
-            return eneg_func(*coords) - eGS
+            return eneg_func(*coords) - eGS + tol
         
         return pot_out
     
@@ -325,6 +325,43 @@ class LepsPot():
         """
         vOut = self.leps_pot(rab,self.params["rac"]-rab)
         vOut += 2*self.params["kc"]*(rab-(self.params["rac"]/2-x/self.params["c_ho"]))**2
+        
+        return vOut
+    
+class SylvesterPot:
+    def __init__(self,initialGrid=np.meshgrid(np.arange(-2,2,0.05),np.arange(-3,3,0.05)),\
+                 eGS=None):
+        self.initialGrid = initialGrid
+        self.zz = self.sylvester_pes(*self.initialGrid)
+        minInds = Utilities.find_local_minimum(self.zz)
+        self.minInds = minInds
+        
+        #Probably useful in general to select the max, so that there's a contour
+        #of eGS around the global minimum
+        if eGS is None:
+            eGS = np.max(self.zz[minInds])
+        
+        self.potential = Utilities.aux_pot(self.sylvester_pes,eGS)
+        
+    def sylvester_pes(self,x,y):
+        A = -0.8447
+        B = -0.2236
+        C = 0.1247
+        D = -4.468
+        E = 0.02194
+        F = 0.3041
+        G = 0.1687
+        H = 0.4388
+        I = -4.713 * 10**(-7)
+        J = -1.148 * 10**(-5)
+        K = 1.687
+        L = -3.062 * 10**(-18)
+        M = -9.426 * 10**(-6)
+        N = -2.851 * 10**(-16)
+        O = 2.313 * 10**(-5)
+        
+        vOut = A + B*x + C*y + D*x**2 + E*x*y + F*y**2 + G*x**3 + H*x**2*y
+        vOut += I*x*y**2 + J*y**3 + K*x**4 + L*x**3*y + M*x**2*y**2 + N*x*y**3 + O*y**4
         
         return vOut
     
@@ -739,104 +776,7 @@ class MinimizationAlgorithms(LineIntegralNeb):
 #         if fName is not None:
 #             fig.savefig(fName+".pdf")
         
-#         return None
-    
-class InterpolationMethodTesting():
-    #Used for namespacing tests
-    @staticmethod
-    def sylvester_pes(x,y):
-        A = -0.8447
-        B = -0.2236
-        C = 0.1247
-        D = -4.468
-        E = 0.02194
-        F = 0.3041
-        G = 0.1687
-        H = 0.4388
-        I = -4.713 * 10**(-7)
-        J = -1.148 * 10**(-5)
-        K = 1.687
-        L = -3.062 * 10**(-18)
-        M = -9.426 * 10**(-6)
-        N = -2.851 * 10**(-16)
-        O = 2.313 * 10**(-5)
-        
-        vOut = A + B*x + C*y + D*x**2 + E*x*y + F*y**2 + G*x**3 + H*x**2*y
-        vOut += I*x*y**2 + J*y**3 + K*x**4 + L*x**3*y + M*x**2*y**2 + N*x*y**3 + O*y**4
-        
-        return vOut
-    
-    
-    
-    @staticmethod
-    def main_test():
-        #Grid size for 252U
-        nPtsCoarseGrid = (351,151)
-        nPtsFineGrid = (501,501)
-        
-        ptRange = (-1.5,1.5)
-        
-        xCoarse, yCoarse = [np.linspace(ptRange[0],ptRange[1],num=nPts) for\
-                            nPts in nPtsCoarseGrid]
-        xDense, yDense = [np.linspace(ptRange[0],ptRange[1],num=nPts) for\
-                          nPts in nPtsFineGrid]
-            
-        coarseMesh = np.meshgrid(xCoarse,yCoarse)
-        zCoarse = InterpolationMethodTesting.sylvester_pes(*coarseMesh)
-        
-        denseMesh = np.meshgrid(xDense,yDense)
-        zDense = InterpolationMethodTesting.sylvester_pes(*denseMesh)
-        
-        splineInterps = ["linear","cubic","quintic"]
-        interpFuncs = {}
-        interpTimes = {}
-        for interpMode in splineInterps:
-            t0 = time.time()
-            interpFuncs[interpMode] = CustomInterp2d(xCoarse,yCoarse,zCoarse,kind=interpMode)
-            t1 = time.time()
-            interpTimes[interpMode] = t1 - t0
-                
-        densePreds = {}
-        predictTimes = {}
-        for interpMode in splineInterps:
-            t0 = time.time()
-            densePreds[interpMode] = interpFuncs[interpMode](xDense,yDense)
-            t1 = time.time()
-            predictTimes[interpMode] = t1 - t0
-            
-        clipRange = (-16,-1)
-        nLevels = 16
-        fig, ax = plt.subplots(ncols=len(splineInterps),figsize=(12,4),sharex=True,sharey=True)
-        for (modeIter, mode) in enumerate(splineInterps):
-            plotDat = np.log10(np.abs((densePreds[mode]-zDense))).clip(*clipRange)
-            cf = ax[modeIter].contourf(denseMesh[0],denseMesh[1],plotDat,\
-                                       levels=np.linspace(clipRange[0],clipRange[1],nLevels))
-            ax[modeIter].set(xlabel="x",title=mode.capitalize()+" Spline")
-        
-        plt.colorbar(cf,ax=ax[-1],label=r"Log${}_{10} | E_{Interp}-E_{Exact}|$")
-        ax[0].set(ylabel="y")
-        fig.savefig("Sylvester_PES_Diff.pdf",bbox_inches="tight")
-        
-        absMeanDiffs = np.array([np.mean(np.abs(interpFuncs[interpMode](xDense,yDense) - \
-                                                  zDense)) for interpMode in splineInterps])
-        meanFig, meanAx = plt.subplots()
-        meanAx.scatter(np.arange(len(absMeanDiffs)),np.log10(absMeanDiffs))
-        meanAx.set_xticks(np.arange(len(absMeanDiffs)))
-        meanAx.set_xticklabels([s.capitalize() for s in splineInterps],rotation=45)
-        meanAx.set(xlabel="Spline Mode",ylabel=r"log${}_{10}\langle | E_{Interp}-E_{Exact}|\rangle$")
-        meanAx.set(title="Mean Energy Difference")
-        meanFig.savefig("Mean_PES_Diff.pdf")
-        
-        timeFig, timeAx = plt.subplots()
-        timeAx.scatter(np.arange(len(absMeanDiffs)),interpTimes.values(),label="Interpolating")
-        timeAx.scatter(np.arange(len(absMeanDiffs)),predictTimes.values(),label="Predicting")
-        timeAx.set_xticks(np.arange(len(absMeanDiffs)))
-        timeAx.set_xticklabels([s.capitalize() for s in splineInterps],rotation=45)
-        timeAx.legend()
-        timeAx.set(xlabel="Spline Mode",ylabel="Time (s)",title="Total Run Times")
-        timeFig.savefig("Interpolation_Time.pdf")
-        
-        return None
+#         return None    
     
 class Utilities_Validation:
     @staticmethod
@@ -1350,11 +1290,11 @@ def main():
     q20Vals = dsets["Q20"][:,0]
     q30Vals = dsets["Q30"][0]
     
-    interp_eneg = CustomInterp2d(q20Vals,q30Vals,dsets["PES"].T,kind="quintic")
-    potential = interp2d_wrapper(interp_eneg)
+    custInterp2d = CustomInterp2d(q20Vals,q30Vals,dsets["PES"].T,kind="quintic")
+    potential = custInterp2d.potential
     
-    interpArgsDict = interp_eneg.kwargs
-    interpArgsDict["function"] = interp_eneg.__str__()
+    interpArgsDict = custInterp2d.kwargs
+    interpArgsDict["function"] = custInterp2d.__str__()
     
     nPts = lnebParamsDict["nPts"]
     initialPoints = np.array((np.linspace(27,185,nPts),np.linspace(0,16.2,nPts)))
@@ -1366,7 +1306,7 @@ def main():
     
     k = lnebParamsDict["k"]
     kappa = lnebParamsDict["kappa"]
-    lneb = LineIntegralNeb(potential,const_inertia,initialPoints,k,kappa,constraintEneg)
+    lneb = LineIntegralNeb(potential,Utilities.const_mass(),initialPoints,k,kappa,constraintEneg)
     
     maxIters = 10000
     tStep = 0.1
@@ -1392,18 +1332,19 @@ def main():
         
     fig, ax = plt.subplots()
     ax.plot(actions)
+    ax.set(xlabel="Iteration",ylabel="Action")
+    fig.savefig("Runs/"+str(int(startTime))+"_Action.pdf")
     
     cbarRange = (-5,30)
-    fig, ax = plt.subplots()
-    cf = ax.contourf(dsets["Q20"],dsets["Q30"],dsets["PES"].clip(cbarRange[0],cbarRange[1]),\
-                      cmap="gist_rainbow",levels=np.linspace(cbarRange[0],cbarRange[1],25))
-    ax.contour(dsets["Q20"],dsets["Q30"],dsets["PES"],levels=[0,constraintEneg],\
-                colors=["black","white"])
-    plt.colorbar(cf,ax=ax)
-    for i in range(0,maxIters,int(maxIters/10)):
-        ax.plot(allPts[i,0,:],allPts[i,1,:],ls="-",marker="o")
+    fig, ax = Utilities.standard_pes(dsets["Q20"],dsets["Q30"],dsets["PES"])
+    ax.contour(dsets["Q20"],dsets["Q30"],dsets["PES"],levels=[constraintEneg],\
+                colors=["black"])
+    ax.plot(allPts[0,0,:],allPts[0,1,:],ls="-",marker="o")
+    ax.plot(allPts[-1,0,:],allPts[-1,1,:],ls="-",marker="o")
+    ax.set_ylim(0,30)
+    ax.set(title=r"${}^{252}$U PES")
         
-    fig.savefig("Runs/"+str(int(startTime))+".png")
+    fig.savefig("Runs/"+str(int(startTime))+".pdf")
     
     return None
 
@@ -1506,8 +1447,38 @@ def gp_test():
                            zDense[:testingCutoff,:testingCutoff]-gpPred)
     
     return None
+
+def sylvester_otl_test():
+    sp = SylvesterPot()
+    zz = sp.potential(*sp.initialGrid)
+    fig, ax = Utilities.standard_pes(*sp.initialGrid,zz,clipRange=(-0.1,10))
+    
+    initialPts = np.array([np.linspace(c[sp.minInds][0],c[sp.minInds][1],num=22) for\
+                           c in sp.initialGrid])
+    ax.plot(*initialPts,ls="-",marker=".",color="k")
+    ax.scatter(sp.initialGrid[0][sp.minInds],sp.initialGrid[1][sp.minInds],c="k",\
+               marker="x")
+    
+    lneb = LineIntegralNeb(sp.potential,Utilities.const_mass(),initialPts,10,10,0)
+    minObj = MinimizationAlgorithms(lneb)
+    maxIters=1000
+    allPts, allVelocities, allForces, actions, strRep = \
+        minObj.verlet_minimization_v2(maxIters=maxIters,tStep=0.1)
+        
+    for tStep in np.linspace(0,maxIters,num=int(maxIters/100),dtype=int):
+        ax.plot(allPts[tStep,0,:],allPts[tStep,1,:],marker=".",ls="-")
+        
+    fig.savefig("Runs/Sylvester_PES.pdf")
+        
+    fig, ax = plt.subplots()
+    ax.plot(np.arange(actions.shape[0]),actions)
+    ax.set(xlabel="Iteration",ylabel="Action")
+    fig.savefig("Runs/Sylvester_Action.pdf")
+    
+    return None
     
 
 if __name__ == "__main__":
     #Actually important here lol
-    gp_test()    
+    sylvester_otl_test()
+    main()
