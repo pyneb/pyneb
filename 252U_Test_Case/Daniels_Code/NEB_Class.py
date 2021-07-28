@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import filters, morphology #For minimum finding
 from scipy.signal import argrelextrema
 import time
+import datetime
 
 from scipy.integrate import solve_bvp
 from shapely import geometry #Used in initializing the LNEB method on the gs contour
@@ -162,6 +163,7 @@ class Utilities:
                 dist2 += (pathOut[coordIter][ptIter] - pathOut[coordIter][ptIter-1])**2
             actOut += (np.sqrt(2*masses[ptIter]*enegs[ptIter])+\
                        np.sqrt(2*masses[ptIter-1]*enegs[ptIter-1]))*np.sqrt(dist2)
+        actOut = actOut/2
         
         return pathOut, actOut
     
@@ -273,7 +275,10 @@ class LocalGPRegressor(gp.GaussianProcessRegressor):
     
 class LepsPot():
     def __init__(self,initialGrid=np.meshgrid(np.arange(0,4,0.05),np.arange(-2,3.8,0.05)),\
-                 potParams={},eGS=None):
+                 potParams={},eGS=None,loggingLevel=None,logFile=None):
+        # if (loggingLevel is not None) and (logFile is None):
+        #     logFile = datetime.datetime.now().isoformat()+"_log.h5"
+        
         self.params = potParams
         self._initialize_params()
         
@@ -384,8 +389,110 @@ class SylvesterPot:
         
         return vOut
     
+class LoggingUtilities():
+    #IGNORE THIS - possibly useful abstraction for the future, but not helpful here
+    
+    #Idea for logging above: perhaps just pull the time as the dataset, then
+    #have an attribute for the function call. If the dataset exists, wait
+    #the millisecond or so it takes to get the next datetime.datetime.whatever,
+    #and write it again. As this is all sequential, won't be an issue (for a while).
+    #Assume for now that anything that'll be parallelized will come with its own logging
+    #method - perhaps a thread ID
+    
+    # ###Boilerplate logging
+    # allowedLoggingLevels = [None,"debug"]
+    # self.logFolder = LoggingUtilities.make_log_directory()
+    
+    # self.loggingLevel = loggingLevel
+    # if self.loggingLevel not in allowedLoggingLevels:
+    #     sys.exit("Err: requested logging level "+str(self.loggingLevel)+\
+    #              "; allowed levels are "+str(allowedLoggingLevels))
+    
+    # if self.loggingLevel is None:
+    #     self.logFile = None
+    # else:
+    #     if logFile is None:
+    #         self.logFile = \
+    #             self.logFolder+datetime.datetime.now().isoformat()+".h5"
+    #     else:
+    #         if not logFile.startswith("Logs/"):
+    #             logFile = "Logs/"+logFile
+    #         self.logFile = logFile
+    
+    # self.loggingBelow = {}
+    
+    # subClasses = [lnebObj]
+    # if self.loggingLevel is not None:
+    #     LoggingUtilities.subclass_logging(subClasses,self.loggingBelow,self.logFile)
+    
+    # ###Ends here
+    
+    @staticmethod
+    def make_log_directory():
+        #I thought this'd be more complicated, and hence worthy of abstraction. I guess not lol
+        logFolder = "Logs/"
+        os.makedirs(logFolder,exist_ok=True)
+        
+        return logFolder
+    
+    @staticmethod
+    def gp_name(h5File):
+        existFlag = True
+        
+        while existFlag:
+            gpNm = datetime.datetime.now().isoformat()
+            if gpNm not in h5File.keys():
+                existFlag = False
+            else:
+                time.sleep(0.001)
+        h5File.create_group(gpNm)
+        
+        return gpNm
+    
+    @staticmethod
+    def subclass_logging(subClasses,loggingBelow,logFile):
+        for classInstance in subClasses:
+            #If object may be logging, check if it definitively is
+            if hasattr(classInstance,"loggingLevel"):
+                #If object won't be logging, set to false, and dump class again
+                if classInstance.loggingLevel is None:
+                    #I think all classes have a .__str__ attr, but sometimes it
+                    #isn't useful
+                    loggingBelow[classInstance.__str__()] = (False,classInstance)
+                #If object will be logging, rely on logging on lower level
+                else:
+                    loggingBelow[classInstance.__str__()] = (True,classInstance)
+            #If object doesn't know how to log, dump every attribute of class instance
+            else:
+                loggingBelow[classInstance.__str__()] = (False,classInstance)
+            
+            for key in loggingBelow.keys():
+                if not loggingBelow[key][0]:
+                    if not hasattr(loggingBelow[key][1],"dump_to_file"):
+                        print("Warning: method "+str(key)+" has no way to dump to file.")
+                    else:
+                        loggingBelow[key][1].dump_to_file(logFile)
+        return None
+    
+    @staticmethod
+    def logging(loggingLevel,logFile,datDict,strRep):
+        if loggingLevel is not None:
+            h5File = h5py.File(logFile,mode="a")
+            
+            gpNm = LoggingUtilities.gp_name(h5File)
+            
+            for key in datDict.keys():
+                h5File[gpNm].create_dataset(key,data=datDict[key])
+            
+            h5File[gpNm].attrs.create("Function",strRep)
+            
+            h5File.close()
+            
+        return None
+    
 class FileIO(): #Tried using inheritance here, but I think the static methods
                 #messed things up for some reason.
+    
     @staticmethod
     def read_from_h5(fName,fDir,baseDir=None):
         if baseDir is None:
@@ -452,9 +559,76 @@ class FileIO(): #Tried using inheritance here, but I think the static methods
         
         return None
     
-class LineIntegralNeb():
+class CustomLogging():
+    def __init__(self,loggingLevel):
+        allowedLogLevels = [None,"output"]#"output" doesn't keep track of intermediate steps
+        assert loggingLevel in allowedLogLevels
+        self.loggingLevel = loggingLevel
+        if self.loggingLevel == "output":
+            self.logDict = {}
+            self.outputNms = {}
+    
+    def update_log(self,strRep,outputTuple,outputNms,isTuple=True):
+        #If returning a single value, set isTuple -> False
+        if self.loggingLevel is None:
+            return None
+        
+        if self.loggingLevel == "output":
+            if not isTuple:
+                outputTuple = (outputTuple,)
+                outputNms = (outputNms,)
+            
+            if strRep not in self.logDict:
+                self.logDict[strRep] = []
+                for t in outputTuple:
+                    if isinstance(t,np.ndarray):
+                        self.logDict[strRep].append(np.expand_dims(t,axis=0))
+                    else:
+                        self.logDict[strRep].append([t])
+                self.outputNms[strRep] = outputNms
+            else:
+                assert len(outputTuple) == len(self.logDict[strRep])
+                for (tIter,t) in enumerate(outputTuple):
+                    if isinstance(t,np.ndarray):
+                        self.logDict[strRep][tIter] = \
+                            np.concatenate((self.logDict[strRep][tIter],np.expand_dims(t,axis=0)))
+                    else:
+                        self.logDict[strRep][tIter].append(t)
+                        
+        return None
+    
+    def write_log(self,fName,overwrite=False):
+        #WARNING: probably doesn't handle anything that isn't a numpy array, although
+            #that's almost all that I intend to log at the moment
+        if not hasattr(self,"logDict"):
+            return None
+        
+        if (overwrite) and (os.path.isfile(fName)):
+            os.remove(fName)
+        
+        if not fName.startswith("Logs/"):
+            fName = "Logs/"+fName
+        os.makedirs("Logs",exist_ok=True)
+        
+        h5File = h5py.File(fName,"a")
+        for key in self.logDict.keys():
+            splitKey = key.split(".")
+            for (sIter,s) in enumerate(splitKey):
+                subGp = "/".join(splitKey[:sIter+1])
+                if not subGp in h5File:
+                    h5File.create_group(subGp)
+            for (oIter,outputNm) in enumerate(self.outputNms[key]):
+                h5File[key.replace(".","/")].create_dataset(outputNm,data=self.logDict[key][oIter])
+        
+        h5File.close()
+        
+        return None
+    
+class LineIntegralNeb(CustomLogging):
     def __init__(self,potential,mass,initialPoints,k,kappa,constraintEneg,\
-                 targetFunc="lagrangian"):
+                 targetFunc="lagrangian",loggingLevel=None):
+        super().__init__(loggingLevel)#Believe it or not - still unclear what this does...
+        
         targetFuncDict = {"lagrangian":self._construct_action}
         if targetFunc not in targetFuncDict.keys():
             sys.exit("Err: requested target function "+str(targetFunc)+\
@@ -473,6 +647,9 @@ class LineIntegralNeb():
         #minimized
         self.target_func = targetFuncDict[targetFunc]()
         
+    def __str__(self):
+        return "LineIntegralNeb"
+    
     def _construct_action(self):
         def target_function(*coords):
             #Returns enegs and masses, as well as target, b/c we need *just* the
@@ -485,6 +662,8 @@ class LineIntegralNeb():
         return target_function
     
     def _negative_gradient(self,points,targetFuncEval):
+        strRep = "LineIntegralNeb._negative_gradient"
+        
         eps = 10**(-6)
         
         #The negative gradient of targetFunc
@@ -505,20 +684,22 @@ class LineIntegralNeb():
         negIntegGrad = np.zeros(points.shape)
         for i in range(1,self.nPts-2):#Endpoints are zeroed out
             #distScalar and normedDistVec are indexed starting one below the point index
-            """
-            WARNING (July 14 2021): may have been typo here in the gradient (not sure)... on slide
-            6 of what's being followed, f might be gradient of energy, but above it was not
-            computed as such
-            """
+            #TODO: make just the gradient of the integrand
             negIntegGrad[:,i] = (distScalar[i+1]+distScalar[i])*negTargGrad[:,i]
             negIntegGrad[:,i] -= (targetFuncEval[i]+targetFuncEval[i-1])*normedDistVec[:,i]
             negIntegGrad[:,i] += (targetFuncEval[i]+targetFuncEval[i+1])*normedDistVec[:,i+1]
             
             negIntegGrad[:,i] = negIntegGrad[:,i]/2
         
-        return normedDistVec, negTargGrad, negIntegGrad
+        ret = (normedDistVec, negTargGrad, negIntegGrad)
+        outputNms = ("normedDistVec", "negTargGrad", "negIntegGrad")
+        self.update_log(strRep,ret,outputNms)
+        
+        return ret
     
     def _spring_force(self,points,tangents):
+        strRep = "LineIntegralNeb._spring_force"
+        
         diffArr = np.array([points[:,i+1] - points[:,i] for i in range(points.shape[1]-1)]).T
         diffScal = np.array([np.linalg.norm(diffArr[:,i]) for i in range(diffArr.shape[1])])
         
@@ -529,9 +710,15 @@ class LineIntegralNeb():
         springForce[:,0] = self.k*diffArr[:,0]
         springForce[:,-1] = -self.k*diffArr[:,-1] #Added minus sign here to fix endpoint behavior
         
-        return springForce
+        ret = springForce
+        outputNms = "springForce"
+        self.update_log(strRep,ret,outputNms,isTuple=False)
+        
+        return ret
     
     def _compute_tangents(self,currentPts,energies):
+        strRep = "LineIntegralNeb._compute_tangents"
+        
         tangents = np.zeros((self.nCoords,self.nPts))
         for ptIter in range(1,self.nPts-1): #Range selected to exclude endpoints
             tp = np.array([currentPts[cIter][ptIter+1] - \
@@ -558,9 +745,15 @@ class LineIntegralNeb():
             #Normalizing vectors
             tangents[:,ptIter] = tangents[:,ptIter]/np.sqrt(np.dot(tangents[:,ptIter],tangents[:,ptIter]))
         
-        return tangents
+        ret = tangents
+        outputNms = "tangents"
+        self.update_log(strRep,ret,outputNms,isTuple=False)
+        
+        return ret
     
     def compute_force(self,points):
+        strRep = "LineIntegralNeb.compute_force"
+        
         targetFuncEval, energies, masses = self.target_func(*points)
         
         tangents = self._compute_tangents(points,energies)
@@ -587,9 +780,13 @@ class LineIntegralNeb():
             (np.dot(springForce[:,-1],normForce)-\
              self.kappa*(energies[-1]-self.constraintEneg))*normForce
         
-        return netForce
+        ret = netForce
+        outputNms = "netForce"
+        self.update_log(strRep,ret,outputNms,isTuple=False)
+        
+        return ret
     
-    #TODO: move to Utilities
+    #TODO: deprecate in favor of Utilities.interpolated_action
     def trapezoidal_action(self,path):
         actOut = 0
         enegs = self.potential(*path)
@@ -604,8 +801,10 @@ class LineIntegralNeb():
         
         return actOut/2
     
-class MinimizationAlgorithms(LineIntegralNeb):
-    def __init__(self,lnebObj,actionFunc="trapezoid"):
+class MinimizationAlgorithms(CustomLogging):
+    def __init__(self,lnebObj,actionFunc="trapezoid",loggingLevel=None):
+        super().__init__(loggingLevel)
+        
         actionFuncsDict = {"trapezoid":lnebObj.trapezoidal_action}
         
         self.lneb = lnebObj
@@ -615,7 +814,6 @@ class MinimizationAlgorithms(LineIntegralNeb):
         strRep = "MinimizationAlgorithms.verlet_minimization"
         
         allPts = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
-        allVelocities = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
         allForces = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
         
         allPts[0,:,:] = self.lneb.initialPoints
@@ -623,22 +821,15 @@ class MinimizationAlgorithms(LineIntegralNeb):
         for step in range(0,maxIters):
             force = self.lneb.compute_force(allPts[step,:,:])
             allForces[step,:,:] = force
-            allPts[step+1,:,:] = allPts[step,:,:] + allVelocities[step,:,:]*tStep\
-                + 1/2*force*tStep**2
+            allPts[step+1,:,:] = allPts[step,:,:] + 1/2*force*tStep**2
             
-            #Velocity update taken from "Classical and Quantum Dynamics in Condensed Phase Simulations",
-            #page 397. Eric also updates with tStep * allForces[...]
-            for ptIter in range(self.lneb.nPts):
-                if np.dot(allVelocities[step,:,ptIter],allForces[step,:,ptIter])>0:
-                    allVelocities[step+1,:,ptIter] = \
-                        np.dot(allVelocities[step,:,ptIter],allForces[step,:,ptIter])*\
-                            allForces[step,:,ptIter]/np.dot(allForces[step,:,ptIter],allForces[step+1,:,ptIter])
-                else:
-                    allVelocities[step+1,:,ptIter] = np.zeros(self.lneb.nCoords)\
-                
         actions = np.array([self.action_func(pts) for pts in allPts[:]])
         
-        return allPts, allVelocities, allForces, actions, strRep
+        ret = (allPts, allForces, actions)
+        outputNms = ("allPts","allForces","actions")
+        self.update_log(strRep,ret,outputNms)
+        
+        return ret
     
     def verlet_minimization_v2(self,maxIters=1000,tStep=0.05):
         strRep = "MinimizationAlgorithms.verlet_minimization_v2"
@@ -653,6 +844,7 @@ class MinimizationAlgorithms(LineIntegralNeb):
         for step in range(0,maxIters):
             allPts[step+1] = allPts[step] + allVelocities[step]*tStep+1/2*allForces[step]*tStep**2
             allForces[step+1] = self.lneb.compute_force(allPts[step+1])
+            # allVelocities[step+1] = allVelocities[step]+allForces[step+1]*tStep
             allVelocities[step+1] = allVelocities[step]+(allForces[step]+allForces[step+1])/2*tStep
             
             #Velocity update taken from "Classical and Quantum Dynamics in Condensed Phase Simulations",
@@ -667,7 +859,11 @@ class MinimizationAlgorithms(LineIntegralNeb):
                 
         actions = np.array([self.action_func(pts) for pts in allPts[:]])
         
-        return allPts, allVelocities, allForces, actions, strRep
+        ret = (allPts, allVelocities, allForces, actions)
+        outputNms = ("allPts","allVelocities","allForces","actions")
+        self.update_log(strRep,ret,outputNms)
+        
+        return allPts, allVelocities, allForces, actions
     
     def verlet_minimization_v3(self,maxIters=1000,tStep=0.05):
         strRep = "MinimizationAlgorithms.verlet_minimization_v3"
@@ -1173,7 +1369,7 @@ class MinimizationAlgorithms_Validation:
         lneb = LineIntegralNeb(potential,mass_test,initialPoints,k,kappa,constraintEneg)
         
         maxIters = 5000
-        allPts, allVelocities, allForces, actions = \
+        allPts, allForces, actions = \
             MinimizationAlgorithms(lneb).verlet_minimization(maxIters=maxIters,tStep=0.1)
             
         print("See plots")
@@ -1220,7 +1416,7 @@ class MinimizationAlgorithms_Validation:
         lneb = LineIntegralNeb(potential,mass_test,initialPoints,k,kappa,constraintEneg)
         
         maxIters = 500
-        allPts, allVelocities, allForces, actions = \
+        allPts, allForces, actions = \
             MinimizationAlgorithms(lneb).verlet_minimization(maxIters=maxIters,tStep=0.1)
             
         print("See plots")
@@ -1391,7 +1587,7 @@ def main():
     maxIters = 10000
     tStep = 0.1
     minObj = MinimizationAlgorithms(lneb)
-    allPts, allVelocities, allForces, actions, strRep = \
+    allPts, allForces, actions, strRep = \
         minObj.verlet_minimization(maxIters=maxIters,tStep=tStep)
         
     endTime = time.time()
@@ -1529,6 +1725,8 @@ def gp_test():
     return None
 
 def sylvester_otl_test():
+    # startTime = datetime.datetime.now().isoformat()
+    
     sp = SylvesterPot()
     zz = sp.potential(*sp.initialGrid)
     fig, ax = Utilities.standard_pes(*sp.initialGrid,zz,clipRange=(-0.1,10))
@@ -1536,14 +1734,17 @@ def sylvester_otl_test():
     initialPts = np.array([np.linspace(c[sp.minInds][0],c[sp.minInds][1],num=22) for\
                            c in sp.initialGrid])
     ax.plot(*initialPts,ls="-",marker=".",color="k")
-    # ax.scatter(sp.initialGrid[0][sp.minInds],sp.initialGrid[1][sp.minInds],c="k",\
-    #            marker="x")
     
-    lneb = LineIntegralNeb(sp.potential,Utilities.const_mass(),initialPts,10,50,0)
-    minObj = MinimizationAlgorithms(lneb)
-    maxIters=5000
-    allPts, allVelocities, allForces, actions, strRep = \
-        minObj.verlet_minimization_v3(maxIters=maxIters,tStep=0.1)
+    lneb = LineIntegralNeb(sp.potential,Utilities.const_mass(),initialPts,10,50,0,\
+                           loggingLevel="output")
+    minObj = MinimizationAlgorithms(lneb,loggingLevel="output")
+    maxIters=1000
+    allPts, allVelocities, allForces, actions = \
+        minObj.verlet_minimization_v2(maxIters=maxIters,tStep=0.1)
+        
+    fName = "Default_Log"
+    lneb.write_log(fName+".h5",overwrite=True)
+    minObj.write_log(fName+".h5")
         
     minInd = np.argmin(actions)
     ax.plot(allPts[0,0],allPts[0,1,:],marker=".",ls="-")
@@ -1561,9 +1762,17 @@ def sylvester_otl_test():
     
     
     return None
-    
+
 #Actually important here lol
 if __name__ == "__main__":
-    # Utilities_Validation.val_interpolated_action()
     sylvester_otl_test()
-    # main()
+    # sp = SylvesterPot()
+    # fig, ax = Utilities.standard_pes(*sp.initialGrid,sp.potential(*sp.initialGrid))
+    # path = FileIO.read_path("LAP_NEB.csv")
+    # ax.plot(*path.T,marker=".",color="orange")
+    
+    # lneb = LineIntegralNeb(sp.potential,Utilities.const_mass(),path.T,10,10,0)
+    # print(lneb.trapezoidal_action(path.T))
+    # print(lneb.trapezoidal_action(path.T)/np.sqrt(2))
+    # print(lneb.normal_action(path.T))
+    # print(Utilities.interpolated_action(sp.potential,Utilities.const_mass(),path)[1])
