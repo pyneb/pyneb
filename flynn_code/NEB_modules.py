@@ -256,6 +256,75 @@ class NEB():
             }
         return(functions)
     
+    def FIRE(self,init_path,dt,eta,force_params,target='LAP'):
+        ### minimize target function using FIRE algo
+        ### Initialize the initial path. R0 is the starting point on V and RN is the end point
+        action_array = np.zeros((M))
+        energies = np.zeros((M))
+        ### Initialize the path array
+        path = np.full((M,N,2),init_path)
+        ### Initialize the velocities, masses, and shift arrays for the FIRE Algorithm 
+        v = np.full((M,N,2),np.zeros(init_path.shape))
+        vp = np.full((M,N,2),np.zeros(init_path.shape))
+        a = np.full((M,N,2),np.zeros(init_path.shape))
+        mass = np.full(init_path.shape[0],1)
+        shift = np.full((M,N,2),np.zeros(init_path.shape))
+        start = time.time()
+        ### define force function
+        force = self.get_forces()[target]
+        k = force_params['k']
+        ### FIRE parameters, should maybe be passed in?
+        min_fire=10
+        dtmax=10.0
+        dtmin=0.1
+        finc=1.1
+        fdec=0.5
+        fadec=0.99
+        alpha_st=0.1
+        alpha=alpha_st
+        maxmove=0.2
+        fire_steps=0
+        #### MAIN KERNEL (FIRE)
+        for i in np.arange(0,M,1):
+            ## calculate the new tangent vectors and forces after each shift.
+            tau = self.get_tang_vect(path[i])
+            F_spring = self.F_s(k,path[i],tau)
+            #g = self.g_perp(path[i],1.0,tau,E_const,k,kappa,fix_r0,fix_rn)
+            g = force(path[i],tau,force_params)
+            F =  F_spring + g
+            for j in np.arange(0,N,1):
+                if i==0:
+                    vp[i][j]= np.zeros(v[i][j].shape)
+                else:
+                    if i==M-1:
+                        pass
+                    else:
+                        prod = np.dot(F[j],v[i-1][j])
+                        #print(prod)
+                        if prod > 0:
+                            vp[i][j]= (1.0 - alpha)*v[i-1][j]+alpha*np.linalg.norm(v[i-1][j])*F[j]/np.linalg.norm(F[j])
+                            if(fire_steps > min_fire):
+                                dt = min(dt*finc,dtmax)
+                                alpha=alpha*fadec
+                                #print("PROD+ dt, alpha: ",dt,alpha)
+
+                            fire_steps+=1
+                        else:
+                            vp[i][j] = np.zeros(v[i][j].shape)
+                            alpha=alpha_st
+                            dt=max(dt*fdec,dtmin)
+                            fire_steps=0
+                        v[i][j] = vp[i][j] + dt*F[j]
+                        shift[i][j] = v[i][j]*dt + 0.5*F[j]/mass[j]*dt**2
+                        if(np.linalg.norm(shift[i][j])>maxmove):
+                            shift[i][j] = maxmove*shift[i][j]/np.linalg.norm(shift[i][j])
+                        path[i+1][j] = path[i][j] + shift[i][j]
+            action_array[i] = action(path[i],self.V,self.E_gs)
+            energies[i] = energy(self.V,path[i],self.E_gs)
+        end = time.time()
+        total_time = end - start
+        return(path[-1],action_array,energies,total_time)
+
     def QMV(self,init_path,dt,eta,force_params,target='LAP'):
         ### minimize target function using Quick min Verlet algo
         ### This algo seems much more stable than BFGS.
@@ -488,7 +557,7 @@ x_minima,y_minima = xx[minima_ind],yy[minima_ind]
 x_minima,y_minima = x_minima[order],y_minima[order]
 
 N = 16
-M = 5000
+M = 500
 dt = .1
 
 
@@ -515,7 +584,8 @@ fix_r0=True
 fix_rn=True
 
 force_params= {'E_const':E_const,'m':m,'k':k,'kappa':kappa,'fix_r0':fix_r0,'fix_rn':fix_rn}
-path_QMV,action_array_QMV,energies_QMV,total_time_QMV = band.QMV(init_path,dt,eta,force_params,target='LAP')
+path_QMV,action_array_QMV,energies_QMV,total_time_QMV = band.FIRE(init_path,dt,eta,force_params,target='LAP')
+#path_QMV,action_array_QMV,energies_QMV,total_time_QMV = band.QMV(init_path,dt,eta,force_params,target='LAP')
 
    
 
