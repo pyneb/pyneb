@@ -568,7 +568,7 @@ class CustomLogging():
             self.logDict = {}
             self.outputNms = {}
     
-    def update_log(self,strRep,outputTuple,outputNms,isTuple=True):
+    def update_log(self,strRep,outputTuple,outputNmsTuple,isTuple=True):
         #If returning a single value, set isTuple -> False
         if self.loggingLevel is None:
             return None
@@ -576,7 +576,7 @@ class CustomLogging():
         if self.loggingLevel == "output":
             if not isTuple:
                 outputTuple = (outputTuple,)
-                outputNms = (outputNms,)
+                outputNmsTuple = (outputNmsTuple,)
             
             if strRep not in self.logDict:
                 self.logDict[strRep] = []
@@ -585,7 +585,7 @@ class CustomLogging():
                         self.logDict[strRep].append(np.expand_dims(t,axis=0))
                     else:
                         self.logDict[strRep].append([t])
-                self.outputNms[strRep] = outputNms
+                self.outputNms[strRep] = outputNmsTuple
             else:
                 assert len(outputTuple) == len(self.logDict[strRep])
                 for (tIter,t) in enumerate(outputTuple):
@@ -603,12 +603,12 @@ class CustomLogging():
         if not hasattr(self,"logDict"):
             return None
         
-        if (overwrite) and (os.path.isfile(fName)):
-            os.remove(fName)
-        
         if not fName.startswith("Logs/"):
             fName = "Logs/"+fName
         os.makedirs("Logs",exist_ok=True)
+        
+        if (overwrite) and (os.path.isfile(fName)):
+            os.remove(fName)
         
         h5File = h5py.File(fName,"a")
         for key in self.logDict.keys():
@@ -626,10 +626,10 @@ class CustomLogging():
     
 class LineIntegralNeb(CustomLogging):
     def __init__(self,potential,mass,initialPoints,k,kappa,constraintEneg,\
-                 targetFunc="lagrangian",loggingLevel=None):
+                 targetFunc="trapezoidal_action",loggingLevel=None):
         super().__init__(loggingLevel)#Believe it or not - still unclear what this does...
         
-        targetFuncDict = {"lagrangian":self._construct_action}
+        targetFuncDict = {"trapezoidal_action":self._construct_trapezoidal_action}
         if targetFunc not in targetFuncDict.keys():
             sys.exit("Err: requested target function "+str(targetFunc)+\
                      "; allowed functions are "+str(targetFuncDict.keys()))
@@ -643,88 +643,46 @@ class LineIntegralNeb(CustomLogging):
         self.mass = mass
         self.initialPoints = initialPoints
         
-        #Is the function inside of the integral, the integral of which is to be
-        #minimized
+        #Is an approximation of the integral
         self.target_func = targetFuncDict[targetFunc]()
+        self.target_func(*initialPoints)
         
     def __str__(self):
         return "LineIntegralNeb"
     
-    def _construct_action(self):
-        def target_function(*coords):
-            #Returns enegs and masses, as well as target, b/c we need *just* the
-            #energies later, so those will be stored somewhere
-            enegs = self.potential(*coords)
-            masses = self.mass(*coords)
-            targetFuncOut = np.sqrt(2*masses*enegs)
-            return targetFuncOut, enegs, masses
-        
-        return target_function
-    
-    def _negative_gradient(self,points,targetFuncEval):
-        strRep = "LineIntegralNeb._negative_gradient"
-        
-        eps = 10**(-6)
-        
-        #The negative gradient of targetFunc
-        negTargGrad = np.zeros(points.shape)
-        #Have to unravel this loop, at least, although all the points can be vectorized
-        for coordIter in range(self.nCoords):
-            steps = points.copy()
-            steps[coordIter,:] += eps
-            evalAtSteps, _, _ = self.target_func(*steps)
-            negTargGrad[coordIter,:] = (evalAtSteps - targetFuncEval)/eps
-        negTargGrad = -negTargGrad #Is negative b/c I want the actual force
-        
-        distVec = np.array([points[:,i] - points[:,i-1] for i in range(1,points.shape[1])]).T
-        distScalar = np.array([np.linalg.norm(distVec[:,i]) for i in range(distVec.shape[1])])
-        normedDistVec = np.array([distVec[:,i]/distScalar[i] for i in range(distVec.shape[1])]).T
-        
-        #The negative gradient of the trapezoidal approximation to the integral of targetFunc
-        negIntegGrad = np.zeros(points.shape)
-        for i in range(1,self.nPts-2):#Endpoints are zeroed out
-            #distScalar and normedDistVec are indexed starting one below the point index
-            #TODO: make just the gradient of the integrand
-            negIntegGrad[:,i] = (distScalar[i+1]+distScalar[i])*negTargGrad[:,i]
-            negIntegGrad[:,i] -= (targetFuncEval[i]+targetFuncEval[i-1])*normedDistVec[:,i]
-            negIntegGrad[:,i] += (targetFuncEval[i]+targetFuncEval[i+1])*normedDistVec[:,i+1]
+    def _construct_trapezoidal_action(self):
+        def trapezoidal_action(*path,enegs=None,masses=None):
+            #In case I feed in a tuple, as seems likely given how I handle passing
+            #coordinates around
+            if not isinstance(path,np.ndarray):
+                path = np.array(path)
+                
+            if enegs is None:
+                enegs = self.potential(*path)
+            else:
+                assert enegs.shape[0] == path.shape[1]
+            #Will add error checking here later - still not general with a nonconstant mass
+            if masses is None:
+                masses = self.mass(*path)
+            sqrtTerm = np.sqrt(2*masses*enegs)
             
-            negIntegGrad[:,i] = negIntegGrad[:,i]/2
-        
-        ret = (normedDistVec, negTargGrad, negIntegGrad)
-        outputNms = ("normedDistVec", "negTargGrad", "negIntegGrad")
-        self.update_log(strRep,ret,outputNms)
-        
-        return ret
-    
-    def _spring_force(self,points,tangents):
-        strRep = "LineIntegralNeb._spring_force"
-        
-        diffArr = np.array([points[:,i+1] - points[:,i] for i in range(points.shape[1]-1)]).T
-        diffScal = np.array([np.linalg.norm(diffArr[:,i]) for i in range(diffArr.shape[1])])
-        
-        springForce = np.zeros(points.shape)
-        for i in range(1,self.nPts-1):
-            springForce[:,i] = self.k*(diffScal[i] - diffScal[i-1])*tangents[:,i]
-            
-        springForce[:,0] = self.k*diffArr[:,0]
-        springForce[:,-1] = -self.k*diffArr[:,-1] #Added minus sign here to fix endpoint behavior
-        
-        ret = springForce
-        outputNms = "springForce"
-        self.update_log(strRep,ret,outputNms,isTuple=False)
-        
-        return ret
+            retVal = 0
+            for ptIter in np.arange(1,self.nPts):
+                distVal = np.linalg.norm(path[:,ptIter]-path[:,ptIter-1])
+                retVal += (sqrtTerm[ptIter]+sqrtTerm[ptIter-1])*distVal
+                
+            retVal = retVal/2
+                
+            return retVal, enegs, masses
+        return trapezoidal_action
     
     def _compute_tangents(self,currentPts,energies):
         strRep = "LineIntegralNeb._compute_tangents"
         
         tangents = np.zeros((self.nCoords,self.nPts))
         for ptIter in range(1,self.nPts-1): #Range selected to exclude endpoints
-            tp = np.array([currentPts[cIter][ptIter+1] - \
-                            currentPts[cIter][ptIter] for cIter in range(self.nCoords)])
-            tm = np.array([currentPts[cIter][ptIter] - \
-                            currentPts[cIter][ptIter-1] for cIter in range(self.nCoords)])
+            tp = currentPts[:,ptIter+1] - currentPts[:,ptIter]
+            tm = currentPts[:,ptIter] - currentPts[:,ptIter-1]
             dVMax = np.max(np.absolute([energies[ptIter+1]-energies[ptIter],\
                                         energies[ptIter-1]-energies[ptIter]]))
             dVMin = np.min(np.absolute([energies[ptIter+1]-energies[ptIter],\
@@ -739,7 +697,8 @@ class LineIntegralNeb(CustomLogging):
             elif energies[ptIter+1] > energies[ptIter-1]:
                 tangents[:,ptIter] = tp*dVMax + tm*dVMin
             #Paper gives this as just <, not <=. Probably won't come up...
-            elif energies[ptIter+1] <= energies[ptIter-1]:
+            # elif energies[ptIter+1] <= energies[ptIter-1]:
+            else:
                 tangents[:,ptIter] = tp*dVMin + tm*dVMax
                 
             #Normalizing vectors
@@ -751,18 +710,74 @@ class LineIntegralNeb(CustomLogging):
         
         return ret
     
+    def _negative_gradient(self,points,enegsOnPath,massesOnPath):
+        strRep = "LineIntegralNeb._negative_gradient"
+        
+        eps = 10**(-8)
+        
+        trueForce = np.zeros(points.shape)
+        negIntegGrad = np.zeros(points.shape)
+        
+        actionOnPath, _, _ = self.target_func(*points,enegs=enegsOnPath,masses=massesOnPath)
+        
+        for ptIter in range(self.nPts):
+            for coordIter in range(self.nCoords):
+                steps = points.copy()
+                steps[coordIter,ptIter] += eps
+                
+                enegsAtStep = enegsOnPath.copy()
+                enegsAtStep[ptIter] = self.potential(*steps[:,ptIter])
+                
+                massesAtStep = massesOnPath.copy()
+                massesAtStep[ptIter] = self.mass(*steps[:,ptIter])
+                
+                actionAtStep, _, _ = self.target_func(*steps,enegs=enegsAtStep,\
+                                                      masses=massesAtStep)
+                trueForce[coordIter,ptIter] = (enegsAtStep[ptIter] - enegsOnPath[ptIter])/eps
+                negIntegGrad[coordIter,ptIter] = (actionAtStep - actionOnPath)/eps
+        
+        #Want the negative gradient of both terms
+        trueForce = -trueForce
+        negIntegGrad = -negIntegGrad
+        
+        ret = (trueForce, negIntegGrad)
+        outputNms = ("trueForce", "negIntegGrad")
+        self.update_log(strRep,ret,outputNms)
+        
+        return ret
+    
+    def _spring_force(self,points,tangents):
+        strRep = "LineIntegralNeb._spring_force"
+        
+        diffArr = np.array([points[:,i+1] - points[:,i] for i in range(points.shape[1]-1)]).T
+        diffScal = np.array([np.linalg.norm(diffArr[:,i]) for i in range(diffArr.shape[1])])
+        
+        springForce = np.zeros(points.shape)
+        for i in range(1,self.nPts-1):
+            springForce[:,i] = self.k*(diffScal[i] - diffScal[i-1])*tangents[:,i]
+            
+        #Zeroed out here to match Eric's code
+        springForce[:,0] = np.zeros(2)#self.k*diffArr[:,0]
+        springForce[:,-1] = np.zeros(2)#-self.k*diffArr[:,-1] #Added minus sign here to fix endpoint behavior
+        
+        ret = springForce
+        outputNms = "springForce"
+        self.update_log(strRep,ret,outputNms,isTuple=False)
+        
+        return ret
+    
     def compute_force(self,points):
         strRep = "LineIntegralNeb.compute_force"
         
-        targetFuncEval, energies, masses = self.target_func(*points)
+        integVal, energies, masses = self.target_func(*points)
         
         tangents = self._compute_tangents(points,energies)
-        _, negTargGrad, negIntegGrad = self._negative_gradient(points,targetFuncEval)
+        trueForce, negIntegGrad = self._negative_gradient(points,energies,masses)
         
         #Note: don't care about the tangents on the endpoints; they don't show up
         #in the net force
-        perpForce = negTargGrad - tangents*(np.array([np.dot(negTargGrad[:,i],tangents[:,i]) \
-                                                      for i in range(points.shape[1])]))
+        perpForce = negIntegGrad - tangents*(np.array([np.dot(negIntegGrad[:,i],tangents[:,i]) \
+                                                       for i in range(points.shape[1])]))
         springForce = self._spring_force(points,tangents)
         
         #Computing optimal tunneling path force
@@ -770,15 +785,15 @@ class LineIntegralNeb(CustomLogging):
         for i in range(1,self.nPts-1):
             netForce[:,i] = perpForce[:,i] + springForce[:,i]
             
-        normForce = negTargGrad[:,0]/np.linalg.norm(negTargGrad[:,0])
+        normForce = trueForce[:,0]/np.linalg.norm(trueForce[:,0])
         netForce[:,0] = springForce[:,0] - \
             (np.dot(springForce[:,0],normForce)-\
-             self.kappa*(energies[0]-self.constraintEneg))*normForce
+              self.kappa*(energies[0]-self.constraintEneg))*normForce
             
-        normForce = negTargGrad[:,-1]/np.linalg.norm(negTargGrad[:,-1])
+        normForce = trueForce[:,-1]/np.linalg.norm(trueForce[:,-1])
         netForce[:,-1] = springForce[:,-1] - \
             (np.dot(springForce[:,-1],normForce)-\
-             self.kappa*(energies[-1]-self.constraintEneg))*normForce
+              self.kappa*(energies[-1]-self.constraintEneg))*normForce
         
         ret = netForce
         outputNms = "netForce"
@@ -786,29 +801,14 @@ class LineIntegralNeb(CustomLogging):
         
         return ret
     
-    #TODO: deprecate in favor of Utilities.interpolated_action
-    def trapezoidal_action(self,path):
-        actOut = 0
-        enegs = self.potential(*path)
-        masses = self.mass(*path)
-        
-        for ptIter in range(1,self.nPts):
-            dist2 = 0
-            for coordIter in range(self.nCoords):
-                dist2 += (path[coordIter,ptIter] - path[coordIter,ptIter-1])**2
-            actOut += (np.sqrt(2*masses[ptIter]*enegs[ptIter])+\
-                       np.sqrt(2*masses[ptIter-1]*enegs[ptIter-1]))*np.sqrt(dist2)
-        
-        return actOut/2
-    
 class MinimizationAlgorithms(CustomLogging):
     def __init__(self,lnebObj,actionFunc="trapezoid",loggingLevel=None):
         super().__init__(loggingLevel)
         
-        actionFuncsDict = {"trapezoid":lnebObj.trapezoidal_action}
+        actionFuncsDict = {"trapezoid":lnebObj._construct_trapezoidal_action}
         
         self.lneb = lnebObj
-        self.action_func = actionFuncsDict[actionFunc]
+        self.action_func = actionFuncsDict[actionFunc]()
     
     def verlet_minimization(self,maxIters=1000,tStep=0.05):
         strRep = "MinimizationAlgorithms.verlet_minimization"
@@ -842,22 +842,20 @@ class MinimizationAlgorithms(CustomLogging):
         allForces[0,:,:] = self.lneb.compute_force(allPts[0,:,:])
         
         for step in range(0,maxIters):
-            allPts[step+1] = allPts[step] + allVelocities[step]*tStep+1/2*allForces[step]*tStep**2
-            allForces[step+1] = self.lneb.compute_force(allPts[step+1])
-            # allVelocities[step+1] = allVelocities[step]+allForces[step+1]*tStep
-            allVelocities[step+1] = allVelocities[step]+(allForces[step]+allForces[step+1])/2*tStep
-            
             #Velocity update taken from "Classical and Quantum Dynamics in Condensed Phase Simulations",
             #page 397
             for ptIter in range(self.lneb.nPts):
-                if np.dot(allVelocities[step+1,:,ptIter],allForces[step+1,:,ptIter])>0:
-                    allVelocities[step+1,:,ptIter] = \
-                        np.dot(allVelocities[step+1,:,ptIter],allForces[step+1,:,ptIter])*\
-                            allForces[step+1,:,ptIter]/np.dot(allForces[step+1,:,ptIter],allForces[step+1,:,ptIter])
+                product = np.dot(allVelocities[step,:,ptIter],allForces[step,:,ptIter])
+                if product > 0:
+                    vProj = \
+                        product*allForces[step,:,ptIter]/np.dot(allForces[step,:,ptIter],allForces[step,:,ptIter])
                 else:
-                    allVelocities[step+1,:,ptIter] = np.zeros(self.lneb.nCoords)
+                    vProj = np.zeros(self.lneb.nCoords)
+                allVelocities[step+1,:,ptIter] = vProj + allForces[step,:,ptIter]*tStep
+            allPts[step+1] = allPts[step] + allVelocities[step+1]*tStep+1/2*allForces[step]*tStep**2
+            allForces[step+1] = self.lneb.compute_force(allPts[step+1])
                 
-        actions = np.array([self.action_func(pts) for pts in allPts[:]])
+        actions = np.array([self.action_func(*pts)[0] for pts in allPts[:]])
         
         ret = (allPts, allVelocities, allForces, actions)
         outputNms = ("allPts","allVelocities","allForces","actions")
@@ -1725,7 +1723,7 @@ def gp_test():
     return None
 
 def sylvester_otl_test():
-    # startTime = datetime.datetime.now().isoformat()
+    t0 = time.time()
     
     sp = SylvesterPot()
     zz = sp.potential(*sp.initialGrid)
@@ -1734,11 +1732,13 @@ def sylvester_otl_test():
     initialPts = np.array([np.linspace(c[sp.minInds][0],c[sp.minInds][1],num=22) for\
                            c in sp.initialGrid])
     ax.plot(*initialPts,ls="-",marker=".",color="k")
+    eConstraint = np.max(zz[sp.minInds])
+    print(eConstraint)
     
-    lneb = LineIntegralNeb(sp.potential,Utilities.const_mass(),initialPts,10,50,0,\
+    lneb = LineIntegralNeb(sp.potential,Utilities.const_mass(),initialPts,10,1,eConstraint,\
                            loggingLevel="output")
     minObj = MinimizationAlgorithms(lneb,loggingLevel="output")
-    maxIters=1000
+    maxIters = 25
     allPts, allVelocities, allForces, actions = \
         minObj.verlet_minimization_v2(maxIters=maxIters,tStep=0.1)
         
@@ -1758,21 +1758,11 @@ def sylvester_otl_test():
     ax.set(xlabel="Iteration",ylabel="Action")
     fig.savefig("Runs/Sylvester_Action.pdf")
     
-    FileIO.write_path("testpath.csv",allPts[minInd])
-    
+    t1 = time.time()
+    print("Run time: %.3f" % (t1-t0))
     
     return None
 
 #Actually important here lol
 if __name__ == "__main__":
     sylvester_otl_test()
-    # sp = SylvesterPot()
-    # fig, ax = Utilities.standard_pes(*sp.initialGrid,sp.potential(*sp.initialGrid))
-    # path = FileIO.read_path("LAP_NEB.csv")
-    # ax.plot(*path.T,marker=".",color="orange")
-    
-    # lneb = LineIntegralNeb(sp.potential,Utilities.const_mass(),path.T,10,10,0)
-    # print(lneb.trapezoidal_action(path.T))
-    # print(lneb.trapezoidal_action(path.T)/np.sqrt(2))
-    # print(lneb.normal_action(path.T))
-    # print(Utilities.interpolated_action(sp.potential,Utilities.const_mass(),path)[1])
