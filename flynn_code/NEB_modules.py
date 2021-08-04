@@ -7,7 +7,6 @@ import time
 from matplotlib.pyplot import cm
 import pandas as pd
 import h5py
-
 def find_local_minimum(arr):
     """
     Returns the indices corresponding to the local minimum values. Taken 
@@ -90,6 +89,7 @@ def V_LEPS(rAB,rBC,rAC,a,b,c,dab,dbc,dac,alpha,r0):
     V = V1 - V2
     return(V)
 def V_HO_LEPS(rAB,x):
+    ### Parameters are from Bruce J. Berne, Giovanni Ciccotti,David F. Coker, Classical and Quantum Dynamics in Condensed Phase Simulations Proceedings of the International School of Physics (1998) Chapter 16
     rAC = 3.742
     a = .05
     b = .80
@@ -118,31 +118,30 @@ def make_time_plot(iters,times,N,M,k,dt,savefig=False):
         
 class NEB():
     def __init__(self,f,M,N,x_lims,y_lims,grid_size,R0,RN):
-        self.f = f
-        self.N = N
-        self.M = M
-        self.x_lims = x_lims 
-        self.y_lims = y_lims 
-        self.grid_size = grid_size
-        self.x = np.linspace(x_lims[0], x_lims[1], grid_size[0])
-        self.y = np.linspace(y_lims[0], y_lims[1], grid_size[1])
-        self.xx0,self.yy0 = R0[0],R0[1]
-        self.xx1,self.yy1 = RN[0],RN[1]
-        self.E_gs = min(self.V(self.xx0,self.yy0),self.V(self.xx1,self.yy1)) #-1.390795954750535
-        self.E_const =max(self.V(self.xx0,self.yy0),self.V(self.xx1,self.yy1))
-        print('E_gs ',self.E_gs,'E_const',self.E_const)
+        self.f = f # potential function (can be analytic or an interpolated functions) CURRENTLY ASSUMES A 2D FUNCTION
+        self.N = N # number of images
+        self.M = M # max number of iterations
+        self.x_lims = x_lims # x-axis upper and lower bounds 
+        self.y_lims = y_lims # y-axis upper and lower bounds 
+        self.grid_size = grid_size # size of the grid
+        self.x = np.linspace(x_lims[0], x_lims[1], grid_size[0]) # define x-axis grid 
+        self.y = np.linspace(y_lims[0], y_lims[1], grid_size[1]) # define y-axis grid
+        self.xx0,self.yy0 = R0[0],R0[1] #define beginning (x,y) coords
+        self.xx1,self.yy1 = RN[0],RN[1] # define ending (x,y) coords
+        self.E_gs = min(self.V(self.xx0,self.yy0),self.V(self.xx1,self.yy1)) # Choose the most negative energy as the GS #-1.390795954750535
+        #self.E_const = #max(self.V(self.xx0,self.yy0),self.V(self.xx1,self.yy1)) # Choose the second most negative energy as the constraint energy for minimizing the action
     def V(self,x,y):
         if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
             
             assert len(x) == len(y)
             result = np.zeros(len(x))
             for i in range(len(x)):    
-                result[i] = f(x[i],y[i]).item()
+                result[i] = self.f(x[i],y[i]).item()
         else:
-            result = f(x,y).item()
+            result = self.f(x,y).item()
         return(result)
     def get_minima(self):
-        return(f(self.xx0,self.yy0),f(self.xx1,self.yy1))
+        return(self.f(self.xx0,self.yy0),self.f(self.xx1,self.yy1))
     def get_init_path(self):
         ## returns the initial positions of every point on the chain.
         x_coords = np.linspace(self.xx0,self.xx1,self.N)
@@ -259,16 +258,16 @@ class NEB():
     def FIRE(self,init_path,dt,eta,force_params,target='LAP'):
         ### minimize target function using FIRE algo
         ### Initialize the initial path. R0 is the starting point on V and RN is the end point
-        action_array = np.zeros((M))
-        energies = np.zeros((M))
+        action_array = np.zeros((self.M))
+        energies = np.zeros((self.M))
         ### Initialize the path array
-        path = np.full((M,N,2),init_path)
+        path = np.full((self.M,self.N,2),init_path)
         ### Initialize the velocities, masses, and shift arrays for the FIRE Algorithm 
-        v = np.full((M,N,2),np.zeros(init_path.shape))
-        vp = np.full((M,N,2),np.zeros(init_path.shape))
-        a = np.full((M,N,2),np.zeros(init_path.shape))
+        v = np.full((self.M,self.N,2),np.zeros(init_path.shape))
+        vp = np.full((self.M,self.N,2),np.zeros(init_path.shape))
+        a = np.full((self.M,self.N,2),np.zeros(init_path.shape))
         mass = np.full(init_path.shape[0],1)
-        shift = np.full((M,N,2),np.zeros(init_path.shape))
+        shift = np.full((self.M,self.N,2),np.zeros(init_path.shape))
         start = time.time()
         ### define force function
         force = self.get_forces()[target]
@@ -285,18 +284,18 @@ class NEB():
         maxmove=0.2
         fire_steps=0
         #### MAIN KERNEL (FIRE)
-        for i in np.arange(0,M,1):
+        for i in np.arange(0,self.M,1):
             ## calculate the new tangent vectors and forces after each shift.
             tau = self.get_tang_vect(path[i])
             F_spring = self.F_s(k,path[i],tau)
             #g = self.g_perp(path[i],1.0,tau,E_const,k,kappa,fix_r0,fix_rn)
             g = force(path[i],tau,force_params)
             F =  F_spring + g
-            for j in np.arange(0,N,1):
+            for j in np.arange(0,self.N,1):
                 if i==0:
                     vp[i][j]= np.zeros(v[i][j].shape)
                 else:
-                    if i==M-1:
+                    if i==self.M-1:
                         pass
                     else:
                         prod = np.dot(F[j],v[i-1][j])
@@ -329,33 +328,33 @@ class NEB():
         ### minimize target function using Quick min Verlet algo
         ### This algo seems much more stable than BFGS.
         ### Initialize the initial path. R0 is the starting point on V and RN is the end point
-        action_array = np.zeros((M))
-        energies = np.zeros((M))
+        action_array = np.zeros((self.M))
+        energies = np.zeros((self.M))
         ### Initialize the path array
-        path = np.full((M,N,2),init_path)
+        path = np.full((self.M,self.N,2),init_path)
         ### Initialize the velocities, masses, and shift arrays for the QM Verlet Algorithm 
-        v = np.full((M,N,2),np.zeros(init_path.shape))
-        vp = np.full((M,N,2),np.zeros(init_path.shape))
-        a = np.full((M,N,2),np.zeros(init_path.shape))
+        v = np.full((self.M,self.N,2),np.zeros(init_path.shape))
+        vp = np.full((self.M,self.N,2),np.zeros(init_path.shape))
+        a = np.full((self.M,self.N,2),np.zeros(init_path.shape))
         mass = np.full(init_path.shape[0],1)
-        shift = np.full((M,N,2),np.zeros(init_path.shape))
+        shift = np.full((self.M,self.N,2),np.zeros(init_path.shape))
         start = time.time()
         ### define force function
         force = self.get_forces()[target]
         k = force_params['k']
         #### MAIN KERNEL (QM Verlet)
-        for i in np.arange(0,M,1):
+        for i in np.arange(0,self.M,1):
             ## calculate the new tangent vectors and forces after each shift.
             tau = self.get_tang_vect(path[i])
             F_spring = self.F_s(k,path[i],tau)
             #g = self.g_perp(path[i],1.0,tau,E_const,k,kappa,fix_r0,fix_rn)
             g = force(path[i],tau,force_params)
             F =  F_spring + g
-            for j in np.arange(0,N,1):
+            for j in np.arange(0,self.N,1):
                 if i==0:
                     vp[i][j]= np.zeros(v[i][j].shape)
                 else:
-                    if i==M-1:
+                    if i==self.M-1:
                         pass
                     else:
                         prod = np.dot(v[i-1][j],F[j])
@@ -368,14 +367,14 @@ class NEB():
                         shift[i][j] = v[i][j]*dt + .5*a[i][j]*dt**2
                         x_img = path[i][j][0] + shift[i][j][0]
                         y_img = path[i][j][1] + shift[i][j][1]
-                        if x_img < x_lims[0]:
-                            path[i+1][j] = np.array([x_lims[0],path[i][j][1]]) 
-                        elif x_img > x_lims[1]:
-                            path[i+1][j] = np.array([x_lims[1],path[i][j][1]]) 
-                        elif y_img < y_lims[0]:
-                            path[i+1][j] = np.array([path[i][j][0],y_lims[0]]) 
-                        elif y_img > y_lims[1]:
-                            path[i+1][j] = np.array([path[i][j][1],y_lims[1]])
+                        if x_img < self.x_lims[0]:
+                            path[i+1][j] = np.array([self.x_lims[0],path[i][j][1]]) 
+                        elif x_img > self.x_lims[1]:
+                            path[i+1][j] = np.array([self.x_lims[1],path[i][j][1]]) 
+                        elif y_img < self.y_lims[0]:
+                            path[i+1][j] = np.array([path[i][j][0],self.y_lims[0]]) 
+                        elif y_img > self.y_lims[1]:
+                            path[i+1][j] = np.array([path[i][j][1],self.y_lims[1]])
                         else:
                             path[i+1][j] = path[i][j] + shift[i][j]
             action_array[i] = action(path[i],self.V,self.E_gs)
@@ -414,28 +413,28 @@ class NEB():
     
     def BFGS(self,init_path,alpha,beta,gamma,s_max,force_params,target='LAP'):
         ### Initialize arrays
-        action_array = np.zeros((M))
-        energies = np.zeros((M))
-        path = np.full((M,N,2),init_path)
-        F = np.full((M,N,2),np.zeros(init_path.shape))
-        sigma = np.full((M,N,2),np.zeros(init_path.shape))
-        shift = np.full((M,N,2),np.zeros(init_path.shape))
-        y =  np.full((M,N,2),np.zeros(init_path.shape))
-        H = np.full((M,N,2,2),np.identity(2))
-        rho = np.zeros(M)
+        action_array = np.zeros((self.M))
+        energies = np.zeros((self.M))
+        path = np.full((self.M,self.N,2),init_path)
+        F = np.full((self.M,self.N,2),np.zeros(init_path.shape))
+        sigma = np.full((self.M,self.N,2),np.zeros(init_path.shape))
+        shift = np.full((self.M,self.N,2),np.zeros(init_path.shape))
+        y =  np.full((self.M,self.N,2),np.zeros(init_path.shape))
+        H = np.full((self.M,self.N,2,2),np.identity(2))
+        rho = np.zeros(self.M)
         start = time.time()
         k = force_params['k']
         force = self.get_forces()[target]
         
         #### MAIN KERNEL (BFGS)
-        for i in np.arange(0,M-1,1):
+        for i in np.arange(0,self.M-1,1):
             tau = self.get_tang_vect(path[i])
             F_spring = self.F_s(k,path[i],tau)
             F_real = self.F_r_finite(path[i],tau)
             g = force(path[i],tau,force_params)
 
             F[i] =  F_spring + g
-            for j in np.arange(0,N,1):
+            for j in np.arange(0,self.N,1):
                 shift[i][j] = np.matmul(H[i][j],F[i][j])
             shift = s_max*shift
             path[i+1] = path[i] + alpha*shift[i]
@@ -449,7 +448,7 @@ class NEB():
             
             alpha,skip = self.backtrack(F[i+1],F[i],alpha,gamma,20)
             if skip == True:
-                for j in np.arange(0,N,1):
+                for j in np.arange(0,self.N,1):
                     H[i][j] = np.identity(2)
                 path[i] = path_hold
                 F[i] = F_hold
@@ -458,17 +457,17 @@ class NEB():
                 sigma[i] = path[i+1] - path[i]
                 y[i] = -F[i+1] + F[i]
                 factor = 0
-                for j in np.arange(0,N,1):
+                for j in np.arange(0,self.N,1):
                     factor += np.dot(y[i][j],sigma[i][j])
                 rho[i] = factor 
-                for j in np.arange(0,N,1):
+                for j in np.arange(0,self.N,1):
                     if (np.array_equal(H[i][j],np.identity(2))==True):
                         norm = np.dot(y[i][j],y[i][j])
                         if norm != 0:
                             H[i][j] = 1.0/(rho[i]*norm)*np.identity(2)
                         else: pass
                     else:pass
-                for j in np.arange(0,N,1):
+                for j in np.arange(0,self.N,1):
                     A = np.identity(2) - np.outer(sigma[i][j],y[i][j])*rho[i]
                     B = np.identity(2) - np.outer(y[i][j],sigma[i][j])*rho[i]
                     mat_mul1 = np.matmul(H[i][j],B)
@@ -501,105 +500,25 @@ class NEB():
         else: pass
         plt.show()
     
-    def make_cplot(self,init_path,pathes,k,grid,zz,savefig=False):
-        color=iter(cm.rainbow(np.linspace(0,1,len(pathes))))
-        fig, ax = plt.subplots(1,1,figsize = (12, 10))
-        im = ax.contourf(grid[0],grid[1],zz,cmap='Spectral_r',levels=MaxNLocator(nbins = 200).tick_values(-2,20))
-        ax.contour(grid[0],grid[1],zz,colors=['black'],levels=[0])              
-        #ax.plot(init_path[:, 0], init_path[:, 1], '.-', color = 'orange',ms=10)
-        for path in pathes:
-            c=next(color)
-            ax.plot(path[:, 0], path[:, 1], '.-', color = c,ms=10)
-            
-        ax.set_ylabel('$Q_{30}$',size=20)
-        ax.set_xlabel('$Q_{20}$',size=20)
-        ax.set_title('M = '+str(self.M)+' N = '+str(self.N)+' k='+str(k))
-        cbar = fig.colorbar(im)
-        if savefig is not False:
-            plt.savefig('Finalpath_M_'+str(self.M)+'_N_'+str(self.N)+'_k_'+str(k)+'.pdf')
-        else:pass
-        plt.show()  
-    def write_path(self,path,fname):
-        np.savetxt(fname,path,delimiter='\t')
-        return()
-
-
-### Define surface here
-data_path = '../252U_Test_Case/252U_PES.h5'   
-data = h5py.File(data_path, 'r')
-Q20_grid = np.array(data['Q20'])
-Q30_grid = np.array(data['Q30'])
-V_grid = np.array(data['PES'])
-
-'''
-fig, ax = plt.subplots()
-ax.contourf(xx,yy,zz,levels=MaxNLocator(nbins = 200).tick_values(-2,20))
-ccp = ax.contour(xx,yy,zz,levels=[0])
-turning_line= max(ccp.allsegs[0], key=len)
-'''
-### interpolate the grid
-nx = 500 # number of points on x-axis
-ny = 500 # number of points on y-axis
-Q20 = np.linspace(Q20_grid[:,0][0],Q20_grid[:,0][-1],nx)
-Q30 = np.linspace(Q30_grid[0][0],Q30_grid[0][-1],ny)
-
-xx, yy = np.meshgrid(Q20,Q30)
-
-### create interpolation function
-f = interpolate.RectBivariateSpline(Q20_grid[:,1], Q30_grid[0], V_grid, kx=5, ky=5, s=0)
-
-zz = f(Q20,Q30).T
-minima_ind = find_local_minimum(zz)
-local_minima = zz[minima_ind]
-order = np.argsort(local_minima)
-ordered_minima = local_minima[order]
-x_minima,y_minima = xx[minima_ind],yy[minima_ind]
-x_minima,y_minima = x_minima[order],y_minima[order]
-
-N = 16
-M = 500
-dt = .1
-
-
-x_lims = (Q20[0],Q20[-1])
-y_lims = (Q30[0],Q30[-1])
-grid_size = V_grid.shape
-eta = 1.0
-alpha = 1.0
-beta = 1.0
-gamma = 0.5
-s_max = .1
-R0 = (25.95,0.96) # start at GS
-RN = (213.92,19.83) # end at first minimum 
-
-band =  NEB(f,M,N,x_lims,y_lims,grid_size,R0,RN)
-init_path = band.get_init_path()
-minima = band.get_minima()
-
-E_const = 0
-m = 1.0
-k = 8.0
-kappa = 1.0
-fix_r0=True
-fix_rn=True
-
-force_params= {'E_const':E_const,'m':m,'k':k,'kappa':kappa,'fix_r0':fix_r0,'fix_rn':fix_rn}
-path_QMV,action_array_QMV,energies_QMV,total_time_QMV = band.FIRE(init_path,dt,eta,force_params,target='LAP')
-#path_QMV,action_array_QMV,energies_QMV,total_time_QMV = band.QMV(init_path,dt,eta,force_params,target='LAP')
-
-   
-
-plt.plot(np.arange(len(action_array_QMV)),action_array_QMV)
-plt.show()
-R0 = path_QMV[-1] ## start second band at first band ending
-RN = (281.96,25.31) ## end at final otp
-### TODO: add otp finder from ML code
-N = 6
-band2 =  NEB(f,M,N,x_lims,y_lims,grid_size,R0,RN)
-init_path =  band2.get_init_path()
-path_QMV2,action_array_QMV2,energies_QMV2,total_time_QMV2 = band2.QMV(init_path,dt,eta,force_params,target='LAP')
-
-band.make_cplot(init_path,[path_QMV,path_QMV2],k,[xx,yy],zz,savefig=False)
-
-
+def make_cplot(init_paths,paths,grid,zz,params,savefig=False):
+    ##plotting function. takes in multiply pathes and init pathes. assumes the init paths and pathes have the same order.
+    ## params is a dictionary that should at least contain 'M', 'N', and 'k'.
+    color=iter(cm.rainbow(np.linspace(0,1,len(paths))))
+    fig, ax = plt.subplots(1,1,figsize = (12, 10))
+    im = ax.contourf(grid[0],grid[1],zz,cmap='Spectral_r',levels=MaxNLocator(nbins = 200).tick_values(-2,20))
+    ax.contour(grid[0],grid[1],zz,colors=['black'],levels=[0])              
+    for init_path in init_paths:
+        ax.plot(init_path[:, 0], init_path[:, 1], '.-', color = 'orange',ms=10)
+    for path in paths:
+        c=next(color)
+        ax.plot(path[:, 0], path[:, 1], '.-', color = c,ms=10)
+        
+    ax.set_ylabel('$Q_{30}$',size=20)
+    ax.set_xlabel('$Q_{20}$',size=20)
+    ax.set_title('M = '+str(params['M'])+' N = '+str(params['N'])+' k='+str(params['k']))
+    cbar = fig.colorbar(im)
+    if savefig is not False:
+        plt.savefig('Finalpath_M_'+str(params['M'])+'_N_'+str(params['N'])+'_k_'+str(params['k'])+'.pdf')
+    else:pass
+    plt.show()  
  
