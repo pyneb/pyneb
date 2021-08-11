@@ -41,45 +41,48 @@ if __name__ == "__main__":
     ordered_minima = local_minima[order]
     x_minima,y_minima = xx[minima_ind],yy[minima_ind]
     x_minima,y_minima = x_minima[order],y_minima[order]
+    glb_min_idx = np.argmin(local_minima)
+    glb_min = local_minima[glb_min_idx]
+    glb_min_coords = (x_minima[glb_min_idx],y_minima[glb_min_idx])
 
-    N = 16
+    N = 52
     M = 200
     dt = .1
-
+    eta = 1.0 ## damping coeff for QMV
 
     x_lims = (Q20[0],Q20[-1])
     y_lims = (Q30[0],Q30[-1])
     grid_size = V_grid.shape
-    eta = 1.0
+    ### params for BFGS
+    '''
     alpha = 1.0
     beta = 1.0
     gamma = 0.5
     s_max = .1
-
+    '''
     R0 = (25.95,0.96) # start at GS
-    RN = (213.92,19.83) # end at first minimum 
-    #RN = (281.96,25.31)
-    band =  NEB.NEB(f,M,N,x_lims,y_lims,grid_size,R0,RN)
+    #RN = (213.92,19.83) # end at "third" minimum 
+    RN = (281.96,25.31) # end at final OTL
+    band =  NEB.NEB(f,M,N,x_lims,y_lims,grid_size,R0,RN,glb_min)
     init_path = band.get_init_path()
-    minima = band.get_minima()
-
+    minima = band.get_end_points()
     m = 1.0
-    k = 8.0
+    k = 3.0
     kappa = 1.0
     fix_r0=True
-    fix_rn=True
-    E_const = 0.0
+    fix_rn=False
+    E_const = minima[0] ### constrain it to the ground state energy (assumed to be the starting point)
     force_params= {'E_const':E_const,'m':m,'k':k,'kappa':kappa,'fix_r0':fix_r0,'fix_rn':fix_rn}
-    plot_params = {'M':M,'N':N,'k':k}
+    plot_params = {'M':M,'N':N,'k':k,'E_gs':E_const}
     path_FIRE,action_FIRE,energies_FIRE,total_time_FIRE = band.FIRE(init_path,dt,eta,force_params,target='LAP')
-    path_QMV,action_QMV,energies_QMV,total_time_QMV = band.QMV(init_path,dt,eta,force_params,target='LAP')
+    #path_QMV,action_QMV,energies_QMV,total_time_QMV = band.QMV(init_path,dt,eta,force_params,target='LAP')
 
 
-
-    plt.plot(np.arange(len(action_FIRE)),action_FIRE)
+    print(f(path_FIRE[-1][0],path_FIRE[-1][1]).item() -glb_min)
+    #plt.plot(np.arange(len(action_FIRE)),action_FIRE)
     #plt.plot(np.arange(len(action_QMV)),action_QMV)
     plt.show()
-    
+    '''
     ### second band
     R0 = path_QMV[-1] ## start second band at first band ending
     RN = (281.96,25.31) ## end at final otp
@@ -88,6 +91,5 @@ if __name__ == "__main__":
     band2 = NEB.NEB(f,M,N,x_lims,y_lims,grid_size,R0,RN)
     init_path2 =  band2.get_init_path()
     path_FIRE2,action_array_FIRE2,energies_FIRE2,total_time_FIRE2 = band2.FIRE(init_path2,dt,eta,force_params,target='LAP')
-    
-    NEB.make_cplot([init_path,init_path2],[path_FIRE,path_FIRE2],[xx,yy],zz,plot_params,savefig=False)
-
+    '''
+    NEB.make_cplot([init_path],[path_FIRE],[xx,yy],zz-glb_min,plot_params,savefig=False)

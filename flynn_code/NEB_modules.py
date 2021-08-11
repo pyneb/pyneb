@@ -117,7 +117,7 @@ def make_time_plot(iters,times,N,M,k,dt,savefig=False):
         plt.clf()    
         
 class NEB():
-    def __init__(self,f,M,N,x_lims,y_lims,grid_size,R0,RN):
+    def __init__(self,f,M,N,x_lims,y_lims,grid_size,R0,RN,glb_min):
         self.f = f # potential function (can be analytic or an interpolated functions) CURRENTLY ASSUMES A 2D FUNCTION
         self.N = N # number of images
         self.M = M # max number of iterations
@@ -128,20 +128,23 @@ class NEB():
         self.y = np.linspace(y_lims[0], y_lims[1], grid_size[1]) # define y-axis grid
         self.xx0,self.yy0 = R0[0],R0[1] #define beginning (x,y) coords
         self.xx1,self.yy1 = RN[0],RN[1] # define ending (x,y) coords
-        self.E_gs = min(self.V(self.xx0,self.yy0),self.V(self.xx1,self.yy1)) # Choose the most negative energy as the GS #-1.390795954750535
-        #self.E_const = #max(self.V(self.xx0,self.yy0),self.V(self.xx1,self.yy1)) # Choose the second most negative energy as the constraint energy for minimizing the action
+        self.glb_min = glb_min
+        self.E_gs = self.shift_V(self.xx0,self.yy0)
     def V(self,x,y):
         if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
-            
             assert len(x) == len(y)
             result = np.zeros(len(x))
             for i in range(len(x)):    
                 result[i] = self.f(x[i],y[i]).item()
         else:
             result = self.f(x,y).item()
+            
         return(result)
-    def get_minima(self):
-        return(self.f(self.xx0,self.yy0),self.f(self.xx1,self.yy1))
+    def shift_V(self,x,y):
+        result = self.V(x,y) - self.glb_min 
+        return(result)
+    def get_end_points(self):
+        return(self.shift_V(self.xx0,self.yy0),self.shift_V(self.xx1,self.yy1))
     def get_init_path(self):
         ## returns the initial positions of every point on the chain.
         x_coords = np.linspace(self.xx0,self.xx1,self.N)
@@ -159,9 +162,9 @@ class NEB():
                 if i==len(path)-1:
                     tan = (path[i] - path[i-1])
                 else:
-                    Vip1 = self.V(path[i+1][0],path[i+1][1])
-                    Vi = self.V(path[i][0],path[i][1])
-                    Vim1 =self.V(path[i-1][0],path[i-1][1])
+                    Vip1 = self.shift_V(path[i+1][0],path[i+1][1])
+                    Vi = self.shift_V(path[i][0],path[i][1])
+                    Vim1 =self.shift_V(path[i-1][0],path[i-1][1])
                     if (Vip1 > Vi) and (Vi > Vim1): 
                         tan = path[i+1] - path[i]
                     elif (Vip1 < Vi) and (Vi < Vim1): 
@@ -182,36 +185,33 @@ class NEB():
     def F_s(self,k,R,tan_vects):
         #returns 2d-array calculating force at each image.
         # R is an array of the position vectors on the chain. each ith row is assumed to be R_{i}
-        force = []
+        force = np.zeros((R.shape[0],R.shape[1]))
         for i in np.arange(0,len(R),1):
             if i==0:
-                force.append(np.zeros((1,2))[0])
+                force[i] = np.zeros((1,2))[0]
+            elif i==len(R)-1:
+                force[i] = np.zeros((1,2))[0]
             else:
-                if i==len(R)-1:
-                    force.append(np.zeros((1,2))[0])
-                else:
-                    result = k*(np.linalg.norm(R[i+1] - R[i]) - np.linalg.norm(R[i]  - R[i-1]))*tan_vects[i]
-                    force.append(result)
-        force = np.array(force)
+                result = k*(np.linalg.norm(R[i+1] - R[i]) - np.linalg.norm(R[i]  - R[i-1]))*tan_vects[i]
+                force[i] = result
         return(force)
     def F_r_finite(self,R,tan,params):
         ## gives the "real" force on each image
-        force = []
+        force = np.zeros((R.shape[0],R.shape[1]))
         for i in np.arange(0,len(R),1):
             if i==0:
-                force.append(np.zeros((1,2))[0])
+                force[i] = np.zeros((1,2))[0]
+            elif i==len(R)-1:
+                force[i] = np.zeros((1,2))[0]
             else:
-                if i==len(R)-1:
-                    force.append(np.zeros((1,2))[0])
-                else:
-                    grad_Vx,grad_Vy = grad_2d(self.V,R[i][0],R[i][1])
-                    
-                    grad_V = np.array((grad_Vx,grad_Vy))
-                    result = -grad_V + np.dot(grad_V,tan[i])*tan[i]
-                    force.append(result)
-        force = np.array(force)    
+                grad_Vx,grad_Vy = grad_2d(self.shift_V,R[i][0],R[i][1])
+                grad_V = np.array((grad_Vx,grad_Vy))
+                result = -grad_V + np.dot(grad_V,tan[i])*tan[i]
+                force[i] = result
         return(force)
     def g_perp(self,path,tau,params):
+        ## Taken from a talk Calculations of Tunneling Rates using the Line Integral NEB and Acceleration of Path Optimization using
+        ## Gaussian Process Regression by Vilhjálmur Ásgeirsson 
         m = params['m']
         E_const = params['E_const']
         k = params['k']
@@ -220,26 +220,35 @@ class NEB():
         fix_rn = params['fix_rn']
         N_idx = np.arange(0,len(path),1)
         g_perp= np.zeros((len(N_idx),2))
-        E = eps(self.V,path[:,0],path[:,1],m,self.E_gs)
+        E = eps(self.shift_V,path[:,0],path[:,1],m,0)
+        
+        ### Note 1: the boundary images contain the spring force in them. The reason is F_s() by default sets the spring force 
+        ### at the end points to 0. If F_s() is non-zero, this causes a divergence when the boundaries are fixed. So, the spring force 
+        ### is pushed into this function so that divergences can be avoided.
+        ### Note 2: When g_spr_0= on the boundary, the end points discontinously snap to the E_const contour. If g_0 ~-k*delta_r*tau[i],
+        ### the band smoothly transitions to the E_const contour. However, if k != 1.0, for low number of images, the end point moves off the contour.
+        ### For this reason, I hard code k =1.0 on the boundary.
         for i in N_idx:
             if i==0:
                 if fix_r0 is not False:
                     g_perp[i] = np.zeros((1,2))[0]
                 else:
-                    g_spr_0 = k*(path[i+1]-path[i])
-                    f = -1.0*np.array(grad_2d(self.V,path[i][0],path[i][1]))
+                    g_spr_0 = -1.0*np.linalg.norm(path[i+1]  - path[i])*tau[i]
+                    f = -1.0*np.array(grad_2d(self.shift_V,path[i][0],path[i][1]))
                     f_norm = np.linalg.norm(f)
-                    g_perp[i] = -1.0*(g_spr_0 - (np.dot(g_spr_0,f/f_norm) - kappa*(self.V(path[i][0],path[i][1]) - E_const))*f/f_norm)
+                    f_unit = f/f_norm
+                    g_perp[i] = (g_spr_0 - (np.dot(g_spr_0,f_unit) - kappa*(self.shift_V(path[i][0],path[i][1]) - E_const))*f_unit)
             elif i==len(N_idx)-1:
                 if fix_rn is not False:
                     g_perp[i] = np.zeros((1,2))[0]
                 else:
-                    g_spr_0 = k*(path[i]-path[i-1])
-                    f = -1.0*np.array(grad_2d(self.V,path[i][0],path[i][1]))
+                    g_spr_0 = -1.0*np.linalg.norm(path[i]  - path[i-1])*tau[i]
+                    f = -1.0*np.array(grad_2d(self.shift_V,path[i][0],path[i][1]))
                     f_norm = np.linalg.norm(f)
-                    g_perp[i] = -1.0*(g_spr_0 - (np.dot(g_spr_0,f/f_norm) - kappa*(self.V(path[i][0],path[i][1]) - E_const))*f/f_norm)
+                    f_unit = f/f_norm
+                    g_perp[i] = (g_spr_0 - (np.dot(g_spr_0,f_unit) - kappa*(self.shift_V(path[i][0],path[i][1]) - E_const))*f_unit)
             else:
-                f = -1*np.array(grad_2d(self.V,path[i][0],path[i][1]))
+                f = -1*np.array(grad_2d(self.shift_V,path[i][0],path[i][1]))
                 d_i = np.linalg.norm(path[i] - path[i-1])
                 d_ip1 = np.linalg.norm(path[i+1] - path[i])
                 d_ivec = (path[i] - path[i-1])/d_i
@@ -288,8 +297,8 @@ class NEB():
             ## calculate the new tangent vectors and forces after each shift.
             tau = self.get_tang_vect(path[i])
             F_spring = self.F_s(k,path[i],tau)
-            #g = self.g_perp(path[i],1.0,tau,E_const,k,kappa,fix_r0,fix_rn)
             g = force(path[i],tau,force_params)
+            ## note the g for boundary images can contain a spring force. By default F_spring = 0 for boundary images.
             F =  F_spring + g
             for j in np.arange(0,self.N,1):
                 if i==0:
@@ -299,13 +308,11 @@ class NEB():
                         pass
                     else:
                         prod = np.dot(F[j],v[i-1][j])
-                        #print(prod)
                         if prod > 0:
                             vp[i][j]= (1.0 - alpha)*v[i-1][j]+alpha*np.linalg.norm(v[i-1][j])*F[j]/np.linalg.norm(F[j])
                             if(fire_steps > min_fire):
                                 dt = min(dt*finc,dtmax)
                                 alpha=alpha*fadec
-                                #print("PROD+ dt, alpha: ",dt,alpha)
 
                             fire_steps+=1
                         else:
@@ -318,8 +325,8 @@ class NEB():
                         if(np.linalg.norm(shift[i][j])>maxmove):
                             shift[i][j] = maxmove*shift[i][j]/np.linalg.norm(shift[i][j])
                         path[i+1][j] = path[i][j] + shift[i][j]
-            action_array[i] = action(path[i],self.V,self.E_gs)
-            energies[i] = energy(self.V,path[i],self.E_gs)
+            action_array[i] = action(path[i],self.V,self.glb_min)
+            energies[i] = energy(self.V,path[i],self.glb_min)
         end = time.time()
         total_time = end - start
         return(path[-1],action_array,energies,total_time)
@@ -347,38 +354,39 @@ class NEB():
             ## calculate the new tangent vectors and forces after each shift.
             tau = self.get_tang_vect(path[i])
             F_spring = self.F_s(k,path[i],tau)
-            #g = self.g_perp(path[i],1.0,tau,E_const,k,kappa,fix_r0,fix_rn)
             g = force(path[i],tau,force_params)
+            ## note the g for boundary images can contain a spring force. By default F_spring = 0 for boundary images.
             F =  F_spring + g
             for j in np.arange(0,self.N,1):
                 if i==0:
                     vp[i][j]= np.zeros(v[i][j].shape)
+                elif i==self.M-1:
+                    pass
                 else:
-                    if i==self.M-1:
-                        pass
+                    prod = np.dot(v[i-1][j],F[j])
+                    if prod > 0:
+                        vp[i][j]= prod*F[j]/np.linalg.norm(F[j])
                     else:
-                        prod = np.dot(v[i-1][j],F[j])
-                        if prod > 0:
-                            vp[i][j]= prod*F[j]/np.linalg.norm(F[j])
-                        else:
-                            vp[i][j] = np.zeros(v[i][j].shape)
-                        a[i][j] = F[j]/mass[j] - v[i][j]*eta/mass[j]
-                        v[i][j] = vp[i][j] #+ dt*a[i][j]
-                        shift[i][j] = v[i][j]*dt + .5*a[i][j]*dt**2
-                        x_img = path[i][j][0] + shift[i][j][0]
-                        y_img = path[i][j][1] + shift[i][j][1]
-                        if x_img < self.x_lims[0]:
-                            path[i+1][j] = np.array([self.x_lims[0],path[i][j][1]]) 
-                        elif x_img > self.x_lims[1]:
-                            path[i+1][j] = np.array([self.x_lims[1],path[i][j][1]]) 
-                        elif y_img < self.y_lims[0]:
-                            path[i+1][j] = np.array([path[i][j][0],self.y_lims[0]]) 
-                        elif y_img > self.y_lims[1]:
-                            path[i+1][j] = np.array([path[i][j][1],self.y_lims[1]])
-                        else:
-                            path[i+1][j] = path[i][j] + shift[i][j]
-            action_array[i] = action(path[i],self.V,self.E_gs)
-            energies[i] = energy(self.V,path[i],self.E_gs)
+                        vp[i][j] = np.zeros(v[i][j].shape)
+                    a[i][j] = F[j]/mass[j] - v[i][j]*eta/mass[j]
+                    v[i][j] = vp[i][j] #+ dt*a[i][j] ### velocity updates break the algorithm :(
+                    shift[i][j] = v[i][j]*dt + .5*a[i][j]*dt**2
+                    x_img = path[i][j][0] + shift[i][j][0]
+                    y_img = path[i][j][1] + shift[i][j][1]
+                    
+                    ## Add boundary check to make sure images don't get kicked out of bounds
+                    if x_img < self.x_lims[0]:
+                        path[i+1][j] = np.array([self.x_lims[0],path[i][j][1]]) 
+                    elif x_img > self.x_lims[1]:
+                        path[i+1][j] = np.array([self.x_lims[1],path[i][j][1]]) 
+                    elif y_img < self.y_lims[0]:
+                        path[i+1][j] = np.array([path[i][j][0],self.y_lims[0]]) 
+                    elif y_img > self.y_lims[1]:
+                        path[i+1][j] = np.array([path[i][j][1],self.y_lims[1]])
+                    else:
+                        path[i+1][j] = path[i][j] + shift[i][j]
+            action_array[i] = action(path[i],self.V,self.glb_min)
+            energies[i] = energy(self.V,path[i],self.glb_min)
         end = time.time()
         total_time = end - start
         return(path[-1],action_array,energies,total_time)
@@ -473,8 +481,8 @@ class NEB():
                     mat_mul1 = np.matmul(H[i][j],B)
                     H[i+1][j] = np.matmul(A,mat_mul1) + np.outer(sigma[i][j],sigma[i][j])*rho[i]
             
-            action_array[i] = action(path[i],self.V,self.E_gs)
-            energies[i] = energy(self.V,path[i],self.E_gs)
+            action_array[i] = action(path[i],self.V,self.glb_min)
+            energies[i] = energy(self.V,path[i],self.glb_min)
         end = time.time()
         total_time = end - start
         return(path[-1],action_array,energies,total_time)
@@ -506,7 +514,7 @@ def make_cplot(init_paths,paths,grid,zz,params,savefig=False):
     color=iter(cm.rainbow(np.linspace(0,1,len(paths))))
     fig, ax = plt.subplots(1,1,figsize = (12, 10))
     im = ax.contourf(grid[0],grid[1],zz,cmap='Spectral_r',levels=MaxNLocator(nbins = 200).tick_values(-2,20))
-    ax.contour(grid[0],grid[1],zz,colors=['black'],levels=[0])              
+    ax.contour(grid[0],grid[1],zz,colors=['black'],levels=[params['E_gs']])              
     for init_path in init_paths:
         ax.plot(init_path[:, 0], init_path[:, 1], '.-', color = 'orange',ms=10)
     for path in paths:
