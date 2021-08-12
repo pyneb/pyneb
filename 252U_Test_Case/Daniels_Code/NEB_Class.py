@@ -4,6 +4,7 @@ from scipy.ndimage import filters, morphology #For minimum finding
 from scipy.signal import argrelextrema
 import time
 import datetime
+import cProfile
 
 from scipy.integrate import solve_bvp
 from shapely import geometry #Used in initializing the LNEB method on the gs contour
@@ -172,6 +173,8 @@ class Utilities:
         #TODO: pull some (cleaner) options from ML_Funcs_Class
         #Obviously not general - good luck plotting a 3D PES lol
         fig, ax = plt.subplots()
+        if clipRange is None:
+            clipRange = (zz.min()-0.2,zz.max()+0.2)
         #USE THIS COLORMAP FOR PESs - has minima in blue and maxima in red
         cf = ax.contourf(xx,yy,zz.clip(clipRange[0],clipRange[1]),\
                          cmap="Spectral_r",levels=np.linspace(clipRange[0],clipRange[1],25))
@@ -181,6 +184,8 @@ class Utilities:
         return fig, ax
     
 class CustomInterp2d(interp2d):
+    #TODO: make it impossible to go outside of the bounds of the grid data used
+        #for interpolation
     def __init__(self,*args,**kwargs):
         self.kwargs = kwargs
         super(CustomInterp2d,self).__init__(*args,**kwargs)
@@ -205,18 +210,19 @@ class CustomInterp2d(interp2d):
         
         return potential
     
-class LocalGPRegressor(gp.GaussianProcessRegressor):
+class LocalGPRegressor():
     #WARNING: when written this way, gridPot is actually a keyword-only argument...
     #and yet, it's required.
-    def __init__(self,*uniqueGridPts,gridPot,predKWargs={},gpKwargs={}):
+    def __init__(self,*uniqueGridPts,gridPot,predKWargs={},gpKWargs={}):
         if gridPot is None:
             sys.exit("Err: gridPot must be specified with kwarg")
-        super(LocalGPRegressor,self).__init__(**gpKwargs)
+        # super(LocalGPRegressor,self).__init__(**gpKWargs)
         self.uniqueGridPts = uniqueGridPts
         
         self.inDat = np.meshgrid(*uniqueGridPts)
         self.outDat = gridPot
         self.predKWargs = predKWargs
+        self.gpKWargs = gpKWargs
         self._initialize_predkwargs()
         
         self.potential = self.pot_wrapper()
@@ -252,6 +258,7 @@ class LocalGPRegressor(gp.GaussianProcessRegressor):
             #TODO: can optimize this a bit by first checking if predPts are close to
             #each other, and using the same fitted GP for them if so
             for ptIter in range(nPts):
+                locGP = gp.GaussianProcessRegressor(**self.gpKWargs)
                 boolList = []
                 for dimIter in range(nCoords):
                     locMask = (np.abs(self.inDat[dimIter] - flattenedCoords[dimIter][ptIter]) < \
@@ -261,14 +268,14 @@ class LocalGPRegressor(gp.GaussianProcessRegressor):
                 usedInds = tuple(np.argwhere(boolMask==True).T)
                 
                 locInDat = np.array([self.inDat[cIter][usedInds] for\
-                                      cIter in range(nCoords)]).T
+                                     cIter in range(nCoords)]).T
                 locOutDat = self.outDat[usedInds]
                 
-                locFitGP = self.fit(locInDat,locOutDat)
-                
-                predDat[ptIter] = \
-                    self.predict(np.array([flattenedCoords[cIter][ptIter] for\
-                                           cIter in range(nCoords)]).reshape((-1,nCoords)))
+                locGP.fit(locInDat,locOutDat)
+                predPtArr = np.array([flattenedCoords[cIter][ptIter] for\
+                                      cIter in range(nCoords)]).reshape((-1,nCoords))
+                predDat[ptIter] = locGP.predict(predPtArr)
+                # print(self.__dict__.keys())
             
             return predDat.reshape(coords[0].shape)
         return potential
@@ -366,6 +373,7 @@ class SylvesterPot:
             eGS = np.max(self.zz[minInds])
         
         self.potential = Utilities.aux_pot(self.sylvester_pes,eGS)
+        self.clipRange = (-1,10)
         
     def sylvester_pes(self,x,y):
         A = -0.8447
@@ -388,107 +396,6 @@ class SylvesterPot:
         vOut += I*x*y**2 + J*y**3 + K*x**4 + L*x**3*y + M*x**2*y**2 + N*x*y**3 + O*y**4
         
         return vOut
-    
-class LoggingUtilities():
-    #IGNORE THIS - possibly useful abstraction for the future, but not helpful here
-    
-    #Idea for logging above: perhaps just pull the time as the dataset, then
-    #have an attribute for the function call. If the dataset exists, wait
-    #the millisecond or so it takes to get the next datetime.datetime.whatever,
-    #and write it again. As this is all sequential, won't be an issue (for a while).
-    #Assume for now that anything that'll be parallelized will come with its own logging
-    #method - perhaps a thread ID
-    
-    # ###Boilerplate logging
-    # allowedLoggingLevels = [None,"debug"]
-    # self.logFolder = LoggingUtilities.make_log_directory()
-    
-    # self.loggingLevel = loggingLevel
-    # if self.loggingLevel not in allowedLoggingLevels:
-    #     sys.exit("Err: requested logging level "+str(self.loggingLevel)+\
-    #              "; allowed levels are "+str(allowedLoggingLevels))
-    
-    # if self.loggingLevel is None:
-    #     self.logFile = None
-    # else:
-    #     if logFile is None:
-    #         self.logFile = \
-    #             self.logFolder+datetime.datetime.now().isoformat()+".h5"
-    #     else:
-    #         if not logFile.startswith("Logs/"):
-    #             logFile = "Logs/"+logFile
-    #         self.logFile = logFile
-    
-    # self.loggingBelow = {}
-    
-    # subClasses = [lnebObj]
-    # if self.loggingLevel is not None:
-    #     LoggingUtilities.subclass_logging(subClasses,self.loggingBelow,self.logFile)
-    
-    # ###Ends here
-    
-    @staticmethod
-    def make_log_directory():
-        #I thought this'd be more complicated, and hence worthy of abstraction. I guess not lol
-        logFolder = "Logs/"
-        os.makedirs(logFolder,exist_ok=True)
-        
-        return logFolder
-    
-    @staticmethod
-    def gp_name(h5File):
-        existFlag = True
-        
-        while existFlag:
-            gpNm = datetime.datetime.now().isoformat()
-            if gpNm not in h5File.keys():
-                existFlag = False
-            else:
-                time.sleep(0.001)
-        h5File.create_group(gpNm)
-        
-        return gpNm
-    
-    @staticmethod
-    def subclass_logging(subClasses,loggingBelow,logFile):
-        for classInstance in subClasses:
-            #If object may be logging, check if it definitively is
-            if hasattr(classInstance,"loggingLevel"):
-                #If object won't be logging, set to false, and dump class again
-                if classInstance.loggingLevel is None:
-                    #I think all classes have a .__str__ attr, but sometimes it
-                    #isn't useful
-                    loggingBelow[classInstance.__str__()] = (False,classInstance)
-                #If object will be logging, rely on logging on lower level
-                else:
-                    loggingBelow[classInstance.__str__()] = (True,classInstance)
-            #If object doesn't know how to log, dump every attribute of class instance
-            else:
-                loggingBelow[classInstance.__str__()] = (False,classInstance)
-            
-            for key in loggingBelow.keys():
-                if not loggingBelow[key][0]:
-                    if not hasattr(loggingBelow[key][1],"dump_to_file"):
-                        print("Warning: method "+str(key)+" has no way to dump to file.")
-                    else:
-                        loggingBelow[key][1].dump_to_file(logFile)
-        return None
-    
-    @staticmethod
-    def logging(loggingLevel,logFile,datDict,strRep):
-        if loggingLevel is not None:
-            h5File = h5py.File(logFile,mode="a")
-            
-            gpNm = LoggingUtilities.gp_name(h5File)
-            
-            for key in datDict.keys():
-                h5File[gpNm].create_dataset(key,data=datDict[key])
-            
-            h5File[gpNm].attrs.create("Function",strRep)
-            
-            h5File.close()
-            
-        return None
     
 class FileIO(): #Tried using inheritance here, but I think the static methods
                 #messed things up for some reason.
@@ -600,6 +507,7 @@ class CustomLogging():
     def write_log(self,fName,overwrite=False):
         #WARNING: probably doesn't handle anything that isn't a numpy array, although
             #that's almost all that I intend to log at the moment
+        #WARNING: does not handle multiple of the same class instance
         if not hasattr(self,"logDict"):
             return None
         
@@ -626,7 +534,7 @@ class CustomLogging():
     
 class LineIntegralNeb(CustomLogging):
     def __init__(self,potential,mass,initialPoints,k,kappa,constraintEneg,\
-                 targetFunc="trapezoidal_action",loggingLevel=None):
+                 targetFunc="trapezoidal_action",endSprForce=False,loggingLevel=None):
         super().__init__(loggingLevel)#Believe it or not - still unclear what this does...
         
         targetFuncDict = {"trapezoidal_action":self._construct_trapezoidal_action}
@@ -642,6 +550,7 @@ class LineIntegralNeb(CustomLogging):
         self.potential = potential
         self.mass = mass
         self.initialPoints = initialPoints
+        self.endSprForce = endSprForce
         
         #Is an approximation of the integral
         self.target_func = targetFuncDict[targetFunc]()
@@ -756,9 +665,12 @@ class LineIntegralNeb(CustomLogging):
         for i in range(1,self.nPts-1):
             springForce[:,i] = self.k*(diffScal[i] - diffScal[i-1])*tangents[:,i]
             
-        #Zeroed out here to match Eric's code
-        springForce[:,0] = np.zeros(2)#self.k*diffArr[:,0]
-        springForce[:,-1] = np.zeros(2)#-self.k*diffArr[:,-1] #Added minus sign here to fix endpoint behavior
+        if not self.endSprForce:
+            springForce[:,0] = np.zeros(self.nCoords)
+            springForce[:,-1] = np.zeros(self.nCoords)
+        else:
+            springForce[:,0] = self.k*diffArr[:,0]
+            springForce[:,-1] = -self.k*diffArr[:,-1] #Added minus sign here to fix endpoint behavior
         
         ret = springForce
         outputNms = "springForce"
@@ -823,7 +735,7 @@ class MinimizationAlgorithms(CustomLogging):
             allForces[step,:,:] = force
             allPts[step+1,:,:] = allPts[step,:,:] + 1/2*force*tStep**2
             
-        actions = np.array([self.action_func(pts) for pts in allPts[:]])
+        actions = np.array([self.action_func(*pts)[0] for pts in allPts[:]])
         
         ret = (allPts, allForces, actions)
         outputNms = ("allPts","allForces","actions")
@@ -863,8 +775,14 @@ class MinimizationAlgorithms(CustomLogging):
         
         return allPts, allVelocities, allForces, actions
     
-    def verlet_minimization_v3(self,maxIters=1000,tStep=0.05):
-        strRep = "MinimizationAlgorithms.verlet_minimization_v3"
+    def verlet_minimization_with_fire(self,maxIters=1000,dtMin=0.1,minFire=10,dtMax=10,\
+                                      finc=1.1,fdec=0.5,fadec=0.99,alphaInit=0.1,\
+                                      trimNans=True):
+        strRep = "MinimizationAlgorithms.verlet_minimization_with_fire"
+        
+        fireSteps = 0
+        tStep = dtMin
+        alpha = alphaInit
         
         allPts = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
         allVelocities = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
@@ -874,22 +792,49 @@ class MinimizationAlgorithms(CustomLogging):
         allForces[0,:,:] = self.lneb.compute_force(allPts[0,:,:])
         
         for step in range(0,maxIters):
-            allPts[step+1] = allPts[step] + allVelocities[step]*tStep+1/2*allForces[step]*tStep**2
-            allForces[step+1] = self.lneb.compute_force(allPts[step+1])
-            allVelocities[step+1] = allVelocities[step]+(allForces[step]+allForces[step+1])/2*tStep
-            
+            #Velocity update taken from FIRE algorithm (see e.g. arXiv:1908.02038v4)
             for ptIter in range(self.lneb.nPts):
-                if np.dot(allVelocities[step+1,:,ptIter],allForces[step+1,:,ptIter])<=0:
-                    allVelocities[step+1,:,ptIter] = np.zeros(self.lneb.nCoords)
-                    # allVelocities[step+1,:,ptIter] = \
-                    #     np.dot(allVelocities[step+1,:,ptIter],allForces[step+1,:,ptIter])*\
-                    #         allForces[step+1,:,ptIter]/np.dot(allForces[step+1,:,ptIter],allForces[step+1,:,ptIter])
-                # else:
-
+                product = np.dot(allVelocities[step,:,ptIter],allForces[step,:,ptIter])
+                if product > 0:
+                    vProj = (1. - alpha)*allVelocities[step,:,ptIter]
+                    vProj += alpha*allForces[step,:,ptIter] * np.linalg.norm(allVelocities[step,:,ptIter])\
+                        /np.linalg.norm(allForces[step,:,ptIter])
+                    if (fireSteps > minFire):
+                        tStep = min(tStep*finc,dtMax)
+                        alpha = alpha * fadec
+                    fireSteps += 1
+                else:
+                    vProj = np.zeros(self.lneb.nCoords)
+                    alpha = alphaInit
+                    tStep = max(tStep*fdec,dtMin)
+                    fireSteps = 0
+                allVelocities[step+1,:,ptIter] = vProj + allForces[step,:,ptIter]*tStep
+            allPts[step+1] = allPts[step] + allVelocities[step+1]*tStep+1/2*allForces[step]*tStep**2
+            allForces[step+1] = self.lneb.compute_force(allPts[step+1])
                 
-        actions = np.array([self.action_func(pts) for pts in allPts[:]])
+        actions = np.array([self.action_func(*pts)[0] for pts in allPts[:]])
         
-        return allPts, allVelocities, allForces, actions, strRep
+        # numberOfNans = np.count_nonzero(np.isnan(allPts))
+        # if numberOfNans > 0:
+        #     print("Found "+str(numberOfNans)+" NaNs in allPts")
+        
+        #I want to see where the path ends up going off
+        if trimNans:
+            trimIter = allPts.shape[0]
+            for i in range(allPts.shape[0]):
+                if np.count_nonzero(np.isnan(allPts[i])) > 0:
+                    trimIter = i
+                    break
+            allPts = allPts[:trimIter]
+            allVelocities = allVelocities[:trimIter]
+            allForces = allForces[:trimIter]
+            actions = actions[:trimIter]
+        
+        ret = (allPts, allVelocities, allForces, actions)
+        outputNms = ("allPts","allVelocities","allForces","actions")
+        self.update_log(strRep,ret,outputNms)
+        
+        return allPts, allVelocities, allForces, actions
     
     def gradient_descent(self,maxIters=1000,tStep=0.05):
         #Very clearly does not work...
@@ -1551,10 +1496,10 @@ class MinimizationAlgorithms_Validation:
         
         return None
 
-def main():
+def uranium_test():
     startTime = time.time()
     
-    lnebParamsDict = {"nPts":22,"k":10,"kappa":10}
+    lnebParamsDict = {"nPts":22,"k":10,"kappa":20}
     
     fDir = "252U_Test_Case/"
     fName = "252U_PES.h5"
@@ -1565,57 +1510,147 @@ def main():
     q30Vals = dsets["Q30"][0]
     
     custInterp2d = CustomInterp2d(q20Vals,q30Vals,dsets["PES"].T,kind="quintic")
-    potential = custInterp2d.potential
+    potential = Utilities.aux_pot(custInterp2d.potential,0)
     
     interpArgsDict = custInterp2d.kwargs
     interpArgsDict["function"] = custInterp2d.__str__()
     
     nPts = lnebParamsDict["nPts"]
-    initialPoints = np.array((np.linspace(27,185,nPts),np.linspace(0,16.2,nPts)))
+    """   First segment   """
+    initialPoints = np.array((np.linspace(27,185,nPts),np.linspace(0,15,nPts)))
     initialEnegs = potential(*initialPoints)
     constraintEneg = initialEnegs[0]
     
-    lnebParamsDict["constraintEneg"] = constraintEneg
     print("Constraining to energy %.3f" % constraintEneg)
     
     k = lnebParamsDict["k"]
     kappa = lnebParamsDict["kappa"]
     lneb = LineIntegralNeb(potential,Utilities.const_mass(),initialPoints,k,kappa,constraintEneg)
     
-    maxIters = 10000
-    tStep = 0.1
+    maxIters = 1000
     minObj = MinimizationAlgorithms(lneb)
-    allPts, allForces, actions, strRep = \
-        minObj.verlet_minimization(maxIters=maxIters,tStep=tStep)
-        
-    endTime = time.time()
-    runTime = endTime - startTime
-    analyticsDict = {"runTime":runTime}
-        
-    optimParamsDict = {"maxIters":maxIters,"tStep":tStep,\
-                        "algorithm":strRep}
-        
-    allParamsDict = {"optimization":optimParamsDict,"lneb":lnebParamsDict,\
-                      "interpolation":interpArgsDict,"analytics":analyticsDict}
-    otpOutputsDict = {"allPts":allPts,"allVelocities":allVelocities,\
-                      "allForces":allForces,"actions":actions}
+    allPts, allVelocities, allForces, actions = \
+        minObj.verlet_minimization_v2(maxIters=maxIters)
     
-    fName = "Runs/"+str(int(startTime))
+    """   Second segment   """
+    nPts = 3
+    initialPoints = np.array((np.linspace(240,260,nPts),np.linspace(22.5,23,nPts)))
+    lneb2 = LineIntegralNeb(potential,Utilities.const_mass(),initialPoints,k,kappa,constraintEneg)
     
-    FileIO.dump_to_hdf5(fName,otpOutputsDict,allParamsDict)
+    minObj2 = MinimizationAlgorithms(lneb2)
+    allPts2, allVelocities2, allForces2, actions2 = \
+        minObj2.verlet_minimization_v2(maxIters=maxIters)
         
+        
+    """   Going through the third minimum   """
+    nPts = 40
+    shiftedPotential = Utilities.aux_pot(custInterp2d.potential,0,tol=8)
+    
+    initialPoints = np.array((np.linspace(27,265,nPts),np.linspace(0,23,nPts)))
+    initialEnegs = shiftedPotential(*initialPoints)
+    shiftedConstraintEneg = initialEnegs[0]
+    
+    lneb3 = LineIntegralNeb(shiftedPotential,Utilities.const_mass(),\
+                            initialPoints,k,kappa,shiftedConstraintEneg)
+    
+    minObj3 = MinimizationAlgorithms(lneb3)
+    allPts3, allVelocities3, allForces3, actions3 = \
+        minObj3.verlet_minimization_v2(maxIters=maxIters)
+        
+    """   Plotting   """
     fig, ax = plt.subplots()
-    ax.plot(actions)
+    ax.plot(actions-actions[-1],label="First segment")
+    ax.plot(actions2-actions2[-1],label="Second segment")
+    ax.plot(actions3-actions3[-1],label="Shifted PES")
+    ax.set(xlabel="Iteration",ylabel="Action (shifted to end at 0)")
+    ax.legend()
+    fig.savefig("Runs/"+str(int(startTime))+"_Action.pdf")
+    
+    cbarRange = (-5,30)
+    fig, ax = Utilities.standard_pes(dsets["Q20"],dsets["Q30"],dsets["PES"])
+    # ax.contour(dsets["Q20"],dsets["Q30"],dsets["PES"],levels=[constraintEneg-5],\
+    #             colors=["black"])
+    ax.contour(dsets["Q20"],dsets["Q30"],dsets["PES"],levels=[constraintEneg],\
+                colors=["black"])
+    # ax.plot(allPts[0,0],allPts[0,1],marker=".",label="Initial Path",color="red")
+    # ax.plot(allPts2[0,0],allPts2[0,1],marker=".",color="red")
+    ax.plot(allPts[-1,0],allPts[-1,1],marker=".",label="Original PES",color="blue")
+    ax.plot(allPts2[-1,0],allPts2[-1,1],marker=".",color="blue")
+    
+    # ax.plot(allPts3[0,0],allPts3[0,1],marker=".",label="Shifted, Initial",color="orange")
+    ax.plot(allPts3[-1,0],allPts3[-1,1],marker=".",label="Shifted PES",color="red")
+    
+    ax.legend(loc="upper left")
+    ax.set_xlim(min(q20Vals),max(q20Vals))
+    ax.set_ylim(min(q30Vals),max(q30Vals))
+    ax.set(title=r"${}^{252}$U PES")
+        
+    fig.savefig("Runs/"+str(int(startTime))+".pdf")
+    
+    return None
+
+def fire_test():
+    #Testing different optimization routines
+    startTime = time.time()
+    
+    fDir = "252U_Test_Case/"
+    fName = "252U_PES.h5"
+    dsets, attrs = FileIO.read_from_h5(fName,fDir)
+    
+    #Only getting the unique values
+    q20Vals = dsets["Q20"][:,0]
+    q30Vals = dsets["Q30"][0]
+    
+    custInterp2d = CustomInterp2d(q20Vals,q30Vals,dsets["PES"].T,kind="quintic")
+    potential = Utilities.aux_pot(custInterp2d.potential,0)
+    
+    interpArgsDict = custInterp2d.kwargs
+    interpArgsDict["function"] = custInterp2d.__str__()
+    
+    nPts = 22
+    
+    initialPoints = np.array((np.linspace(27,185,nPts),np.linspace(0,15,nPts)))
+    initialEnegs = potential(*initialPoints)
+    constraintEneg = initialEnegs[0]
+    
+    print("Constraining to energy %.3f" % constraintEneg)
+    
+    k = 10
+    kappa = 20
+    lneb = LineIntegralNeb(potential,Utilities.const_mass(),initialPoints,k,kappa,constraintEneg)
+    
+    maxIters = 2500
+    minObj = MinimizationAlgorithms(lneb)
+    allPts, allVelocities, allForces, actions = \
+        minObj.verlet_minimization_v2(maxIters=maxIters)
+        
+    allPts2, allVelocities2, allForces2, actions2 = \
+        minObj.verlet_minimization_with_fire(maxIters=maxIters)
+        
+    allPts3, allForces3, actions3 = \
+        minObj.verlet_minimization(maxIters=maxIters)
+    
+    """   Plotting   """
+    fig, ax = plt.subplots()
+    ax.plot(actions3,label="Standard Verlet",color="purple")
+    ax.plot(actions,label="Velocity-Projected Verlet",color="blue")
+    ax.plot(actions2,label="FIRE Algorithm",color="orange")
     ax.set(xlabel="Iteration",ylabel="Action")
+    ax.legend()
     fig.savefig("Runs/"+str(int(startTime))+"_Action.pdf")
     
     cbarRange = (-5,30)
     fig, ax = Utilities.standard_pes(dsets["Q20"],dsets["Q30"],dsets["PES"])
     ax.contour(dsets["Q20"],dsets["Q30"],dsets["PES"],levels=[constraintEneg],\
                 colors=["black"])
-    ax.plot(allPts[0,0,:],allPts[0,1,:],ls="-",marker="o")
-    ax.plot(allPts[-1,0,:],allPts[-1,1,:],ls="-",marker="o")
-    ax.set_ylim(0,30)
+    ax.plot(allPts[0,0],allPts[0,1],marker=".",label="Initial Path",color="red")
+    ax.plot(allPts3[-1,0],allPts3[-1,1],marker=".",label="Standard Verlet",color="purple")
+    ax.plot(allPts[-1,0],allPts[-1,1],marker=".",label="Velocity-Projected Verlet",color="blue")
+    ax.plot(allPts2[-1,0],allPts2[-1,1],marker=".",label="FIRE Algorithm",color="orange")
+    
+    ax.legend(loc="upper left")
+    ax.set_xlim(min(q20Vals),max(q20Vals))
+    ax.set_ylim(min(q30Vals),max(q30Vals))
     ax.set(title=r"${}^{252}$U PES")
         
     fig.savefig("Runs/"+str(int(startTime))+".pdf")
@@ -1627,7 +1662,7 @@ def interp_mode_test():
     nPtsCoarseGrid = (351,151)
     nPtsFineGrid = (501,501)
     
-    ptRange = [(0,4),(-2,3.8)]
+    ptRange = [(0,4),(-2,4)]
     
     xCoarse, yCoarse = [np.linspace(ptRange[cIter][0],ptRange[cIter][1],\
                                     num=nPtsCoarseGrid[cIter]) for\
@@ -1644,52 +1679,68 @@ def interp_mode_test():
     
     splineInterps = ["linear","cubic","quintic"]
     interpObjs = {}
+    transposeInterpObjs = {}
     interpTimes = {}
     for interpMode in splineInterps:
         t0 = time.time()
         interpObjs[interpMode] = CustomInterp2d(xCoarse,yCoarse,zCoarse,kind=interpMode)
+        transposeInterpObjs[interpMode] = CustomInterp2d(yCoarse,xCoarse,zCoarse.T,kind=interpMode)
         t1 = time.time()
         interpTimes[interpMode] = t1 - t0
-            
+        
     densePreds = {}
+    transposeDensePreds = {}
     predictTimes = {}
     for interpMode in splineInterps:
         t0 = time.time()
         densePreds[interpMode] = interpObjs[interpMode].potential(*denseMesh)
+        transposeDensePreds[interpMode] = \
+            transposeInterpObjs[interpMode].potential(denseMesh[1],denseMesh[0])
         t1 = time.time()
         predictTimes[interpMode] = t1 - t0
         
     clipRange = (-5,-1)
     nLevels = 5
-    fig, ax = plt.subplots(ncols=len(splineInterps),figsize=(12,4),sharex=True,sharey=True)
+    fig, ax = plt.subplots(nrows=2,ncols=len(splineInterps),\
+                           figsize=(4*len(splineInterps),8))
+    ax = np.array(ax).reshape((2,len(splineInterps)))
     for (modeIter, mode) in enumerate(splineInterps):
         plotDat = np.log10(np.abs((densePreds[mode]-zDense))).clip(*clipRange)
-        cf = ax[modeIter].contourf(denseMesh[0],denseMesh[1],plotDat,\
+        cf = ax[0,modeIter].contourf(denseMesh[0],denseMesh[1],plotDat,\
+                                     levels=np.linspace(clipRange[0],clipRange[1],nLevels))
+        
+        plotDat = np.log10(np.abs((transposeDensePreds[mode]-zDense))).clip(*clipRange)
+        cf = ax[1,modeIter].contourf(denseMesh[1],denseMesh[0],plotDat,\
                                     levels=np.linspace(clipRange[0],clipRange[1],nLevels))
-        ax[modeIter].set(xlabel="x",title=mode.capitalize()+" Spline")
+            
+        ax[0,modeIter].set(xlabel="rAB",ylabel="x",title=mode.capitalize()+" Spline")
+        ax[1,modeIter].set(xlabel="x",ylabel="rAB")
+        
+        ax[0,modeIter].set(xticks=np.arange(5),yticks=np.arange(-2,5))
+        ax[1,modeIter].set(yticks=np.arange(5),xticks=np.arange(-2,5))
     
-    plt.colorbar(cf,ax=ax[-1],label=r"Log${}_{10} | E_{Interp}-E_{Exact}|$")
-    ax[0].set(ylabel="y")
+    plt.colorbar(cf,ax=ax[0,-1],label=r"Log${}_{10} | E_{Interp}-E_{Exact}|$")
+    
     fig.savefig("LEPs_PES_Diff.pdf",bbox_inches="tight")
     
-    absMeanDiffs = np.array([np.mean(np.abs(densePreds[interpMode] - \
-                                              zDense)) for interpMode in splineInterps])
-    meanFig, meanAx = plt.subplots()
-    meanAx.scatter(np.arange(len(absMeanDiffs)),np.log10(absMeanDiffs))
-    meanAx.set_xticks(np.arange(len(absMeanDiffs)))
-    meanAx.set_xticklabels([s.capitalize() for s in splineInterps],rotation=45)
-    meanAx.set(xlabel="Spline Mode",ylabel=r"log${}_{10}\langle | E_{Interp}-E_{Exact}|\rangle$")
-    meanAx.set(title="Mean Energy Difference")
-    meanFig.savefig("Mean_PES_Diff.pdf")
+    # absMeanDiffs = np.array([np.mean(np.abs(densePreds[interpMode] - \
+    #                                           zDense)) for interpMode in splineInterps])
+    # meanFig, meanAx = plt.subplots()
+    # meanAx.scatter(np.arange(len(absMeanDiffs)),np.log10(absMeanDiffs))
+    # meanAx.set_xticks(np.arange(len(absMeanDiffs)))
+    # meanAx.set_xticklabels([s.capitalize() for s in splineInterps],rotation=45)
+    # meanAx.set(xlabel="Spline Mode",ylabel=r"log${}_{10}\langle | E_{Interp}-E_{Exact}|\rangle$")
+    # meanAx.set(title="Mean Energy Difference")
+    # meanFig.savefig("Mean_PES_Diff.pdf")
     
-    timeFig, timeAx = plt.subplots()
-    timeAx.scatter(np.arange(len(absMeanDiffs)),interpTimes.values(),label="Interpolating")
-    timeAx.scatter(np.arange(len(absMeanDiffs)),predictTimes.values(),label="Predicting")
-    timeAx.set_xticks(np.arange(len(absMeanDiffs)))
-    timeAx.set_xticklabels([s.capitalize() for s in splineInterps],rotation=45)
-    timeAx.legend()
-    timeAx.set(xlabel="Spline Mode",ylabel="Time (s)",title="Total Run Times")
-    timeFig.savefig("Interpolation_Time.pdf")
+    # timeFig, timeAx = plt.subplots()
+    # timeAx.scatter(np.arange(len(absMeanDiffs)),interpTimes.values(),label="Interpolating")
+    # timeAx.scatter(np.arange(len(absMeanDiffs)),predictTimes.values(),label="Predicting")
+    # timeAx.set_xticks(np.arange(len(absMeanDiffs)))
+    # timeAx.set_xticklabels([s.capitalize() for s in splineInterps],rotation=45)
+    # timeAx.legend()
+    # timeAx.set(xlabel="Spline Mode",ylabel="Time (s)",title="Total Run Times")
+    # timeFig.savefig("Interpolation_Time.pdf")
     
     return None
 
@@ -1709,60 +1760,100 @@ def gp_test():
     coarseMesh = np.meshgrid(xCoarse,yCoarse)
     zCoarse = LepsPot(initialGrid=coarseMesh).potential(*coarseMesh)
     
-    testingCutoff = 200
-    denseMesh = np.meshgrid(xDense[:testingCutoff],yDense[:testingCutoff])
+    denseMesh = np.meshgrid(xDense,yDense)
     zDense = LepsPot(initialGrid=denseMesh).potential(*denseMesh)
     
-    locGP = LocalGPRegressor(xCoarse,yCoarse,gridPot=zCoarse)
+    predKWargs = {"nNeighbors":10}
+    gpKWargs = {"kernel":gp.kernels.RBF(length_scale=[0.5,0.25]),"n_restarts_optimizer":20}
+    locGP = LocalGPRegressor(xCoarse,yCoarse,gridPot=zCoarse,\
+                             predKWargs=predKWargs,gpKWargs=gpKWargs)
     
-    gpPred = locGP.potential(*denseMesh)
+    testingCutoff = 10#denseMesh[0].shape[0]
+    denseCutTuple = tuple([d[:testingCutoff,:testingCutoff] for d in denseMesh])
+    t0 = time.time()
+    gpPred = locGP.potential(*denseCutTuple)
+    t1 = time.time()
+    print("Elapsed time: %.3f" % (t1 - t0))
+    
+    f1, a1 = plt.subplots(ncols=2,figsize=(8,4))
+    cf = a1[0].contourf(*denseCutTuple,zDense[:testingCutoff,:testingCutoff])
+    plt.colorbar(cf,ax=a1[0])
+    cf = a1[1].contourf(*denseCutTuple,gpPred)
+    plt.colorbar(cf,ax=a1[1])
     
     Utilities.standard_pes(xDense[:testingCutoff],yDense[:testingCutoff],\
-                           zDense[:testingCutoff,:testingCutoff]-gpPred)
+                           zDense[:testingCutoff,:testingCutoff]-gpPred,clipRange=None)
     
     return None
 
 def sylvester_otl_test():
-    t0 = time.time()
+    # t0 = time.time()
     
     sp = SylvesterPot()
     zz = sp.potential(*sp.initialGrid)
-    fig, ax = Utilities.standard_pes(*sp.initialGrid,zz,clipRange=(-0.1,10))
+    # fig, ax = Utilities.standard_pes(*sp.initialGrid,zz,clipRange=(-0.1,10))
     
     initialPts = np.array([np.linspace(c[sp.minInds][0],c[sp.minInds][1],num=22) for\
                            c in sp.initialGrid])
-    ax.plot(*initialPts,ls="-",marker=".",color="k")
+    # ax.plot(*initialPts,ls="-",marker=".",color="k")
     eConstraint = np.max(zz[sp.minInds])
-    print(eConstraint)
     
     lneb = LineIntegralNeb(sp.potential,Utilities.const_mass(),initialPts,10,1,eConstraint,\
                            loggingLevel="output")
     minObj = MinimizationAlgorithms(lneb,loggingLevel="output")
-    maxIters = 25
+    maxIters = 2500
     allPts, allVelocities, allForces, actions = \
         minObj.verlet_minimization_v2(maxIters=maxIters,tStep=0.1)
         
-    fName = "Default_Log"
+    fName = "Daniels_Code"
     lneb.write_log(fName+".h5",overwrite=True)
     minObj.write_log(fName+".h5")
         
-    minInd = np.argmin(actions)
-    ax.plot(allPts[0,0],allPts[0,1,:],marker=".",ls="-")
-    ax.plot(allPts[minInd,0],allPts[minInd,1,:],marker=".",ls="-")
-    ax.plot(allPts[-1,0],allPts[-1,1,:],marker=".",ls="-")
+    FileIO.write_path("Paths/Daniels_Path.txt",allPts[-1])
+    # minInd = np.argmin(actions)
+    # ax.plot(allPts[0,0],allPts[0,1,:],marker=".",ls="-")
+    # ax.plot(allPts[minInd,0],allPts[minInd,1,:],marker=".",ls="-")
+    # ax.plot(allPts[-1,0],allPts[-1,1,:],marker=".",ls="-")
         
-    fig.savefig("Runs/Sylvester_PES.pdf")
+    # fig.savefig("Runs/Sylvester_PES.pdf")
         
-    fig, ax = plt.subplots()
-    ax.plot(np.arange(actions.shape[0]),actions)
-    ax.set(xlabel="Iteration",ylabel="Action")
-    fig.savefig("Runs/Sylvester_Action.pdf")
+    # fig, ax = plt.subplots()
+    # ax.plot(np.arange(actions.shape[0]),actions)
+    # ax.set(xlabel="Iteration",ylabel="Action")
+    # fig.savefig("Runs/Sylvester_Action.pdf")
     
-    t1 = time.time()
-    print("Run time: %.3f" % (t1-t0))
+    # t1 = time.time()
+    # print("Run time: %.3f" % (t1-t0))
+    
+    return None
+
+def compare_paths():
+    pathFiles = ["./Paths/"+f for f in os.listdir("./Paths")]
+    
+    spot = SylvesterPot()
+    fig, ax = Utilities.standard_pes(*spot.initialGrid,spot.potential(*spot.initialGrid),\
+                                     clipRange=spot.clipRange)
+        
+    for pf in pathFiles:
+        path = FileIO.read_path(pf)
+        ax.plot(*path.T,marker=".",label=pf.replace("./Paths/","").replace("_Path.txt",""))
+        
+    ax.set(xlabel="x",ylabel="y",title="Sylvester_PES")
+    ax.legend()
+    fig.savefig("Path_Comparison.pdf")
     
     return None
 
 #Actually important here lol
 if __name__ == "__main__":
-    sylvester_otl_test()
+    # sylvester_otl_test()
+    # cProfile.run("sylvester_otl_test()",sort="tottime")
+    # compare_paths()
+    fire_test()
+    # uranium_test()
+    # gp_test()
+    # interp_mode_test()
+    # lps = LepsPot()
+    # fig, ax = Utilities.standard_pes(*lps.initialGrid,lps.potential(*lps.initialGrid))
+    # ax.set(xlabel=r"$r_{AB}$",ylabel="x",title="LEPs+HO")
+    # fig.savefig("LEPS_Potential.pdf")
