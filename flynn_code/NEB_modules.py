@@ -221,19 +221,12 @@ class NEB():
         N_idx = np.arange(0,len(path),1)
         g_perp= np.zeros((len(N_idx),2))
         E = eps(self.shift_V,path[:,0],path[:,1],m,0)
-        
-        ### Note 1: the boundary images contain the spring force in them. The reason is F_s() by default sets the spring force 
-        ### at the end points to 0. If F_s() is non-zero, this causes a divergence when the boundaries are fixed. So, the spring force 
-        ### is pushed into this function so that divergences can be avoided.
-        ### Note 2: When g_spr_0= on the boundary, the end points discontinously snap to the E_const contour. If g_0 ~-k*delta_r*tau[i],
-        ### the band smoothly transitions to the E_const contour. However, if k != 1.0, for low number of images, the end point moves off the contour.
-        ### For this reason, I hard code k =1.0 on the boundary.
         for i in N_idx:
             if i==0:
                 if fix_r0 is not False:
                     g_perp[i] = np.zeros((1,2))[0]
                 else:
-                    g_spr_0 = -1.0*np.linalg.norm(path[i+1]  - path[i])*tau[i]
+                    g_spr_0 = 0 #-1.0*np.linalg.norm(path[i+1]  - path[i])*tau[i]
                     f = -1.0*np.array(grad_2d(self.shift_V,path[i][0],path[i][1]))
                     f_norm = np.linalg.norm(f)
                     f_unit = f/f_norm
@@ -242,7 +235,7 @@ class NEB():
                 if fix_rn is not False:
                     g_perp[i] = np.zeros((1,2))[0]
                 else:
-                    g_spr_0 = -1.0*np.linalg.norm(path[i]  - path[i-1])*tau[i]
+                    g_spr_0 = 0 #-1.0*np.linalg.norm(path[i]  - path[i-1])*tau[i]
                     f = -1.0*np.array(grad_2d(self.shift_V,path[i][0],path[i][1]))
                     f_norm = np.linalg.norm(f)
                     f_unit = f/f_norm
@@ -303,28 +296,27 @@ class NEB():
             for j in np.arange(0,self.N,1):
                 if i==0:
                     vp[i][j]= np.zeros(v[i][j].shape)
-                else:
-                    if i==self.M-1:
+                elif i==self.M-1:
                         pass
-                    else:
-                        prod = np.dot(F[j],v[i-1][j])
-                        if prod > 0:
-                            vp[i][j]= (1.0 - alpha)*v[i-1][j]+alpha*np.linalg.norm(v[i-1][j])*F[j]/np.linalg.norm(F[j])
-                            if(fire_steps > min_fire):
-                                dt = min(dt*finc,dtmax)
-                                alpha=alpha*fadec
+                else:
+                    prod = np.dot(F[j],v[i-1][j])
+                    if prod > 0:
+                        vp[i][j]= (1.0 - alpha)*v[i-1][j]+alpha*np.linalg.norm(v[i-1][j])*F[j]/np.linalg.norm(F[j])
+                        if(fire_steps > min_fire):
+                            dt = min(dt*finc,dtmax)
+                            alpha=alpha*fadec
 
-                            fire_steps+=1
-                        else:
-                            vp[i][j] = np.zeros(v[i][j].shape)
-                            alpha=alpha_st
-                            dt=max(dt*fdec,dtmin)
-                            fire_steps=0
-                        v[i][j] = vp[i][j] + dt*F[j]
-                        shift[i][j] = v[i][j]*dt + 0.5*F[j]/mass[j]*dt**2
-                        if(np.linalg.norm(shift[i][j])>maxmove):
-                            shift[i][j] = maxmove*shift[i][j]/np.linalg.norm(shift[i][j])
-                        path[i+1][j] = path[i][j] + shift[i][j]
+                        fire_steps+=1
+                    else:
+                        vp[i][j] = np.zeros(v[i][j].shape)
+                        alpha=alpha_st
+                        dt=max(dt*fdec,dtmin)
+                        fire_steps=0
+                    v[i][j] = vp[i][j] + dt*F[j]
+                    shift[i][j] = v[i][j]*dt + 0.5*F[j]/mass[j]*dt**2
+                    if(np.linalg.norm(shift[i][j])>maxmove):
+                        shift[i][j] = maxmove*shift[i][j]/np.linalg.norm(shift[i][j])
+                    path[i+1][j] = path[i][j] + shift[i][j]
             action_array[i] = action(path[i],self.V,self.glb_min)
             energies[i] = energy(self.V,path[i],self.glb_min)
         end = time.time()
@@ -365,11 +357,11 @@ class NEB():
                 else:
                     prod = np.dot(v[i-1][j],F[j])
                     if prod > 0:
-                        vp[i][j]= prod*F[j]/np.linalg.norm(F[j])
+                        vp[i][j]= prod*F[j]/np.linalg.norm(F[j])**2
                     else:
                         vp[i][j] = np.zeros(v[i][j].shape)
                     a[i][j] = F[j]/mass[j] - v[i][j]*eta/mass[j]
-                    v[i][j] = vp[i][j] #+ dt*a[i][j] ### velocity updates break the algorithm :(
+                    v[i][j] = vp[i][j] + dt*a[i][j] 
                     shift[i][j] = v[i][j]*dt + .5*a[i][j]*dt**2
                     x_img = path[i][j][0] + shift[i][j][0]
                     y_img = path[i][j][1] + shift[i][j][1]
