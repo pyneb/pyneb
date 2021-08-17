@@ -221,12 +221,16 @@ class NEB():
         N_idx = np.arange(0,len(path),1)
         g_perp= np.zeros((len(N_idx),2))
         E = eps(self.shift_V,path[:,0],path[:,1],m,0)
+        E_R0 = self.shift_V(path[0][0],path[0][1])
+        E_RN = self.shift_V(path[-1][0],path[-1][1])
+        delta = .01 ## tolerance for defining when to apply spring force.
         for i in N_idx:
             if i==0:
                 if fix_r0 is not False:
                     g_perp[i] = np.zeros((1,2))[0]
                 else:
-                    g_spr_0 = 0 #-1.0*np.linalg.norm(path[i+1]  - path[i])*tau[i]
+                    #g_spr_0 = -1.0*np.linalg.norm(path[i]  - path[i-1])*tau[i]
+                    g_spr_0 = 0.0
                     f = -1.0*np.array(grad_2d(self.shift_V,path[i][0],path[i][1]))
                     f_norm = np.linalg.norm(f)
                     f_unit = f/f_norm
@@ -235,7 +239,10 @@ class NEB():
                 if fix_rn is not False:
                     g_perp[i] = np.zeros((1,2))[0]
                 else:
-                    g_spr_0 = 0 #-1.0*np.linalg.norm(path[i]  - path[i-1])*tau[i]
+                    if E_RN <= E_const+delta:
+                        g_spr_0 = -1.0*np.linalg.norm(path[i]  - path[i-1])*tau[i]
+                    else:
+                        g_spr_0 = 0.0
                     f = -1.0*np.array(grad_2d(self.shift_V,path[i][0],path[i][1]))
                     f_norm = np.linalg.norm(f)
                     f_unit = f/f_norm
@@ -285,6 +292,7 @@ class NEB():
         alpha=alpha_st
         maxmove=0.2
         fire_steps=0
+        delta = 10**(-5) ### convergence threshold for the action defined by abs(action[i] - actions[i-1]) < delta 
         #### MAIN KERNEL (FIRE)
         for i in np.arange(0,self.M,1):
             ## calculate the new tangent vectors and forces after each shift.
@@ -319,9 +327,17 @@ class NEB():
                     path[i+1][j] = path[i][j] + shift[i][j]
             action_array[i] = action(path[i],self.V,self.glb_min)
             energies[i] = energy(self.V,path[i],self.glb_min)
+            ## action convergence test
+            if i > 10:
+                if abs(action_array[i] - action_array[i-1]) < delta:
+                    n = i
+                    break
+                else:
+                    n = i
+                    pass
         end = time.time()
         total_time = end - start
-        return(path[-1],action_array,energies,total_time)
+        return(path[n],action_array[:n],energies[:n],total_time)
 
     def QMV(self,init_path,dt,eta,force_params,target='LAP'):
         ### minimize target function using Quick min Verlet algo
@@ -341,6 +357,7 @@ class NEB():
         ### define force function
         force = self.get_forces()[target]
         k = force_params['k']
+        delta = 10**(-5) ### convergence threshold for the action defined by abs(action[i] - actions[i-1]) < delta 
         #### MAIN KERNEL (QM Verlet)
         for i in np.arange(0,self.M,1):
             ## calculate the new tangent vectors and forces after each shift.
@@ -363,25 +380,20 @@ class NEB():
                     a[i][j] = F[j]/mass[j] - v[i][j]*eta/mass[j]
                     v[i][j] = vp[i][j] + dt*a[i][j] 
                     shift[i][j] = v[i][j]*dt + .5*a[i][j]*dt**2
-                    x_img = path[i][j][0] + shift[i][j][0]
-                    y_img = path[i][j][1] + shift[i][j][1]
+                    path[i+1][j] = path[i][j] + shift[i][j]
                     
-                    ## Add boundary check to make sure images don't get kicked out of bounds
-                    if x_img < self.x_lims[0]:
-                        path[i+1][j] = np.array([self.x_lims[0],path[i][j][1]]) 
-                    elif x_img > self.x_lims[1]:
-                        path[i+1][j] = np.array([self.x_lims[1],path[i][j][1]]) 
-                    elif y_img < self.y_lims[0]:
-                        path[i+1][j] = np.array([path[i][j][0],self.y_lims[0]]) 
-                    elif y_img > self.y_lims[1]:
-                        path[i+1][j] = np.array([path[i][j][1],self.y_lims[1]])
-                    else:
-                        path[i+1][j] = path[i][j] + shift[i][j]
             action_array[i] = action(path[i],self.V,self.glb_min)
             energies[i] = energy(self.V,path[i],self.glb_min)
+            if i > 10:
+                if abs(action_array[i] - action_array[i-1]) < delta:
+                    n = i
+                    break
+                else:
+                    n = i
+                    pass
         end = time.time()
         total_time = end - start
-        return(path[-1],action_array,energies,total_time)
+        return(path[n],action_array[:n],energies[:n],total_time)
     
     def backtrack(self,Fi,Fim,alpha_0,gamma,N_0):
         eps = 10**(-3)
