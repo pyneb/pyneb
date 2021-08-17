@@ -11,7 +11,7 @@ import h5py
 
 if __name__ == "__main__":
     ### Define surface here
-    data_path = '../252U_Test_Case/252U_PES.h5'
+    data_path = '../PES/252U_PES.h5'
     data = h5py.File(data_path, 'r')
     Q20_grid = np.array(data['Q20'])
     Q30_grid = np.array(data['Q30'])
