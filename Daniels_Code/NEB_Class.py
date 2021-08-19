@@ -64,6 +64,27 @@ class Utilities:
         return minIndsOut
     
     @staticmethod
+    def extract_gs_inds(allMinInds,coordMeshTuple,zz,pesPerc=0.5):
+        #Uses existing indices, in case there's some additional filtering I need to
+        #do after calling "find_local_minimum"
+        if not isinstance(pesPerc,np.ndarray):
+            pesPerc = np.array(len(coordMeshTuple)*[pesPerc])
+            
+        nPts = zz.shape
+        maxInd = np.array(nPts)*pesPerc
+        
+        allowedIndsOfIndices = np.ones(len(allMinInds[0]),dtype=bool)
+        for cIter in range(len(coordMeshTuple)):
+            allowedIndsOfIndices = np.logical_and(allowedIndsOfIndices,allMinInds[cIter]<maxInd[cIter])
+            
+        allowedMinInds = tuple([inds[allowedIndsOfIndices] for inds in allMinInds])
+        actualMinIndOfInds = np.argmin(zz[allowedMinInds])
+        
+        gsInds = tuple([inds[actualMinIndOfInds] for inds in allMinInds])
+        
+        return gsInds
+    
+    @staticmethod
     def find_base_dir():
         #Auto-config for my desktop or the HPCC
         possibleHomeDirs = ["~/Research/ActionMinimization/","~/Documents/ActionMinimization/"]
@@ -1589,6 +1610,55 @@ def uranium_test():
     
     return None
 
+def plutonium_test():
+    dsets, _ = FileIO.read_from_h5("240Pu.h5","/",baseDir=os.getcwd())
+    coords = ["Q20","Q30","pairing"]
+    uniqueCoords = [np.unique(dsets[coord]) for coord in coords]
+    desiredShape = np.array([len(c) for c in uniqueCoords],dtype=int)
+    
+    reshapedData = {key:dsets[key].reshape(desiredShape) for key in dsets.keys()}
+    cmesh = tuple([reshapedData[coord] for coord in coords])
+    zz = reshapedData["E_HFB"]
+    minInds = Utilities.find_local_minimum(zz)
+    allowedInds = tuple(np.array([inds[zz[minInds]!=-1760] for inds in minInds]))
+    
+    spac = desiredShape//5 #Integer division
+    # print([m[allowedInds] for m in cmesh])
+    gsInds = Utilities.extract_gs_inds(allowedInds,cmesh,zz)
+    eGS = zz[gsInds]
+    print([c[gsInds] for c in cmesh])
+    print(eGS)
+    
+    fig, ax = plt.subplots(nrows=3,ncols=5,figsize=(20,12))
+    for i in range(5):
+        for c in range(3):
+            xInd = (c+1) % 3
+            yInd = (c+2) % 3
+            inds = tuple(c*[slice(None)] + [spac[c]*i] + (2-c)*[slice(None)])
+            ax[c,i].contourf(cmesh[xInd][inds],cmesh[yInd][inds],reshapedData["E_HFB"][inds])
+            ax[c,i].scatter(cmesh[xInd][allowedInds],cmesh[yInd][allowedInds],color="red",marker="x")
+            ax[c,i].scatter(cmesh[xInd][gsInds],cmesh[yInd][gsInds],s=200,color="green",marker="*")
+            
+            xPos = 0.25*(np.max(dsets[coords[xInd]])-np.min(dsets[coords[xInd]]))+np.min(dsets[coords[xInd]])
+            yPos = 0.25*(np.max(dsets[coords[yInd]])-np.min(dsets[coords[yInd]]))+np.min(dsets[coords[yInd]])
+            ax[c,i].axhline(yPos,color="black")
+            ax[c,i].axvline(xPos,color="black")
+            
+            ax[c,i].contour(cmesh[xInd][inds],cmesh[yInd][inds],reshapedData["E_HFB"][inds],\
+                            levels=[eGS],colors=["white"])
+            # print(cmesh[c][inds])
+            # ax[c,i].set(xlim=(np.min(dsets[coords[xInd]]),np.max(dsets[coords[xInd]])),\
+            #             ylim=(np.min(dsets[coords[yInd]]),np.max(dsets[coords[yInd]])),\
+            #             xlabel=coords[xInd],ylabel=coords[yInd],\
+            #             title=coords[c]+" = "+str(cmesh[c][inds][0,0]))
+            ax[c,i].set(xlabel=coords[xInd],ylabel=coords[yInd],\
+                        title=coords[c]+" = "+str(cmesh[c][inds][0,0]))
+            
+    fig.tight_layout()
+    fig.savefig("240Pu_PES_Slices.pdf")
+    
+    return None
+
 def fire_test():
     #Testing different optimization routines
     startTime = time.time()
@@ -1915,7 +1985,7 @@ if __name__ == "__main__":
     # sylvester_otl_test()
     # cProfile.run("sylvester_otl_test()",sort="tottime")
     # compare_paths()
-    test_for_eric()
+    plutonium_test()
     # fire_test()
     # uranium_test()
     # gp_test()
