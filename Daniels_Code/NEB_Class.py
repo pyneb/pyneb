@@ -5,6 +5,7 @@ from scipy.signal import argrelextrema
 import time
 import datetime
 import cProfile
+import itertools
 
 from scipy.integrate import solve_bvp
 from shapely import geometry #Used in initializing the LNEB method on the gs contour
@@ -83,6 +84,37 @@ class Utilities:
         gsInds = tuple([inds[actualMinIndOfInds] for inds in allMinInds])
         
         return gsInds
+    
+    @staticmethod
+    def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
+        nDims = len(coordMeshTuple)
+        
+        fig, ax = plt.subplots()
+        
+        if nDims == 1:
+            sys.exit("Err: weird edge case I haven't handled. Why are you looking at D=1?")
+        elif nDims == 2:
+            allContours = np.zeros(1,dtype=object)
+            if show:
+                cf = ax.contourf(*coordMeshTuple,zz,cmap="Spectral_r")
+                plt.colorbar(cf,ax=ax)
+            #Select allsegs[0] b/c I'm only finding one level; ccp.allsegs is a
+                #list of lists, whose first index is over the levels requested
+            allContours[0] = ax.contour(*coordMeshTuple,zz,levels=[eneg]).allsegs[0]
+        else:
+            allContours = np.zeros(zz.shape[2:],dtype=object)
+            possibleInds = np.indices(zz.shape[2:]).reshape((nDims-2,-1)).T
+            for ind in possibleInds:
+                meshInds = 2*(slice(None),) + tuple(ind)
+                localMesh = (coordMeshTuple[0][meshInds],coordMeshTuple[1][meshInds])
+                # print(localMesh)
+                allContours[tuple(ind)] = \
+                    ax.contour(*localMesh,zz[meshInds],levels=[eneg]).allsegs[0]
+                
+        if not show:
+            plt.close(fig)
+        
+        return allContours
     
     @staticmethod
     def find_base_dir():
@@ -1659,6 +1691,34 @@ def plutonium_test():
     
     return None
 
+def nd_contour_test():
+    dsets, _ = FileIO.read_from_h5("240Pu.h5","/",baseDir=os.getcwd())
+    coords = ["Q20","Q30","pairing"]
+    uniqueCoords = [np.unique(dsets[coord]) for coord in coords]
+    desiredShape = np.array([len(c) for c in uniqueCoords],dtype=int)
+    
+    reshapedData = {key:dsets[key].reshape(desiredShape) for key in dsets.keys()}
+    cmesh = tuple([reshapedData[coord] for coord in coords])
+    zz = reshapedData["E_HFB"]
+    minInds = Utilities.find_local_minimum(zz)
+    allowedInds = tuple(np.array([inds[zz[minInds]!=-1760] for inds in minInds]))
+    
+    gsInds = Utilities.extract_gs_inds(allowedInds,cmesh,zz)
+    eGS = zz[gsInds]
+    zz = zz - eGS
+    
+    allContours = Utilities.find_approximate_contours(cmesh,zz)
+    print(allContours[-1])
+    
+    fig, ax = plt.subplots()
+    cf = ax.contourf(cmesh[0][:,:,-1],cmesh[1][:,:,-1],zz[:,:,-1])
+    c = ax.contour(cmesh[0][:,:,-1],cmesh[1][:,:,-1],zz[:,:,-1],levels=[0],colors=["white"])
+    print(np.array(c.allsegs).flatten())
+    ax.scatter(*np.array(c.allsegs).flatten())
+    plt.colorbar(cf,ax=ax)
+    
+    return None
+
 def fire_test():
     #Testing different optimization routines
     startTime = time.time()
@@ -1985,7 +2045,7 @@ if __name__ == "__main__":
     # sylvester_otl_test()
     # cProfile.run("sylvester_otl_test()",sort="tottime")
     # compare_paths()
-    plutonium_test()
+    nd_contour_test()
     # fire_test()
     # uranium_test()
     # gp_test()
