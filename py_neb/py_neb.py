@@ -165,10 +165,13 @@ def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
     return gradOfAction, gradOfPes
 
 class LeastActionPath:
+    """
+    class documentation...?
+    """
     def __init__(self,potential,endpointSpringForce,nPts,nDims,mass=None,\
-                 target_func=action,target_func_grad=action_grad,nebParams={}):
+                 target_func=action,target_func_grad=forward_action_grad,nebParams={}):
         """
-        
+        asdf
 
         Parameters
         ----------
@@ -196,7 +199,7 @@ class LeastActionPath:
             Should take as arguments 
                 (path, potentialFunc, potentialOnPath, massFunc, massOnPath, target_func),
             where target_func is the action integral approximation. Should return 
-            (gradOfAction, gradOfPes). The default is action_grad.
+            (gradOfAction, gradOfPes). The default is forward_action_grad.
         nebParams : Dict, optional
             Keyword arguments for the nudged elastic band (NEB) method. Controls
             the spring force and the harmonic oscillator potential. Default
@@ -208,7 +211,6 @@ class LeastActionPath:
         None.
 
         """
-        
         #TODO: consider not having NEB parameters as a dictionary. Could be confusing...?
         defaultNebParams = {"k":10,"kappa":20,"constraintEneg":0}
         for key in defaultNebParams.values():
@@ -221,7 +223,7 @@ class LeastActionPath:
         if isinstance(endpointSpringForce,bool):
             endpointSpringForce = 2*(endpointSpringForce,)
         if not isinstance(endpointSpringForce,tuple):
-            sys.exit("Err: unknown value "str(endpointSpringForce)+\
+            sys.exit("Err: unknown value "+str(endpointSpringForce)+\
                      " for endpointSpringForce")
         
         self.potential = potential
@@ -233,6 +235,22 @@ class LeastActionPath:
         self.target_func_grad = target_func_grad
     
     def _compute_tangents(self,points,energies):
+        """
+        Here for testing sphinx autodoc
+
+        Parameters
+        ----------
+        points : TYPE
+            DESCRIPTION.
+        energies : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        tangents : TYPE
+            DESCRIPTION.
+
+        """
         tangents = np.zeros((self.nPts,self.nDims))
         
         #Range selected to exclude endpoints. Tangents on the endpoints do not
