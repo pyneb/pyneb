@@ -13,7 +13,7 @@ from shapely import geometry #Used in initializing the LNEB method on the gs con
 #Use Rbf in my NN code, but there are too many points here - Rbf runs out of system
 #memory and the Python console crashes
 #TODO: namespace stuff here
-from scipy.interpolate import interp2d, Rbf
+from scipy.interpolate import interp2d, Rbf, interpn
 from scipy import interpolate
 import sklearn.gaussian_process as gp
 
@@ -189,7 +189,13 @@ class Utilities:
     @staticmethod
     def const_mass():
         def dummy_mass(*coords):
-            return np.ones(coords[0].shape)
+            if coords[0].shape == ():
+                nPoints = 1
+            else:
+                nPoints = len(coords[0])
+            nDims = len(coords)
+            retVal = np.full((nPoints,nDims,nDims),np.identity(nDims))
+            return retVal
         
         return dummy_mass
     
@@ -235,6 +241,39 @@ class Utilities:
         
         ax.set(xlabel=r"$Q_{20}$ (b)",ylabel=r"$Q_{30}$ (b${}^{3/2}$)")
         return fig, ax
+    
+def interpnd_wrapper(uniqueGridPts,gridValues):
+    def func(*coords):
+        return interpn(uniqueGridPts,gridValues,coords)
+    return func
+
+def mass_array_func(arrayOfFuncs):
+    #Simple wrapper for how I call things; probably changed later. Currently set
+    #up such that, if the input coords is an array of size (n1, n2), the output
+    #is an array of shape (n1, n2, 3, 3). For working with the action, this shouldn't
+    #be an issue if I assume the 2nd and 3rd dimensions are for the different
+    #collective coordinates; it's just some additional flexibility here
+    def func_out(*coords):
+        nCoords = len(coords)
+        if coords[0].shape == ():
+            outputShape = (1,)
+        else:
+            outputShape = coords[0].shape
+        outVals = np.zeros(outputShape+2*(nCoords,))
+        
+        #Mass array is always 2D
+        for iIter in range(nCoords):
+            for jIter in np.arange(iIter,nCoords):
+                fEvals = arrayOfFuncs[iIter,jIter](*coords)
+                #A whole mess in allowing for non-flattened coordinates
+                iters1 = len(outputShape)*(slice(None),)+(iIter,jIter)
+                iters2 = len(outputShape)*(slice(None),)+(jIter,iIter)
+                
+                outVals[iters1] = fEvals
+                outVals[iters2] = fEvals
+                
+        return outVals
+    return func_out
     
 class CustomInterp2d(interp2d):
     #TODO: make it impossible to go outside of the bounds of the grid data used
@@ -587,10 +626,10 @@ class CustomLogging():
     
 class LineIntegralNeb(CustomLogging):
     def __init__(self,potential,mass,initialPoints,k,kappa,constraintEneg,\
-                 targetFunc="trapezoidal_action",endSprForce=False,loggingLevel=None):
+                 targetFunc="action",endSprForce=False,loggingLevel=None):
         super().__init__(loggingLevel)#Believe it or not - still unclear what this does...
         
-        targetFuncDict = {"trapezoidal_action":self._construct_trapezoidal_action}
+        targetFuncDict = {"action":self._construct_standard_action}
         if targetFunc not in targetFuncDict.keys():
             sys.exit("Err: requested target function "+str(targetFunc)+\
                      "; allowed functions are "+str(targetFuncDict.keys()))
@@ -612,8 +651,8 @@ class LineIntegralNeb(CustomLogging):
     def __str__(self):
         return "LineIntegralNeb"
     
-    def _construct_trapezoidal_action(self):
-        def trapezoidal_action(*path,enegs=None,masses=None):
+    def _construct_standard_action(self):
+        def standard_action(*path,enegs=None,masses=None):
             #In case I feed in a tuple, as seems likely given how I handle passing
             #coordinates around
             if not isinstance(path,np.ndarray):
@@ -621,22 +660,22 @@ class LineIntegralNeb(CustomLogging):
                 
             if enegs is None:
                 enegs = self.potential(*path)
-            else:
-                assert enegs.shape[0] == path.shape[1]
+            assert enegs.shape[0] == path.shape[1]
+            
             #Will add error checking here later - still not general with a nonconstant mass
             if masses is None:
                 masses = self.mass(*path)
-            sqrtTerm = np.sqrt(2*masses*enegs)
+                
+            assert masses.shape == (self.nPts, self.nCoords, self.nCoords)
             
             retVal = 0
             for ptIter in np.arange(1,self.nPts):
-                distVal = np.linalg.norm(path[:,ptIter]-path[:,ptIter-1])
-                retVal += (sqrtTerm[ptIter]+sqrtTerm[ptIter-1])*distVal
-                
-            retVal = retVal/2
+                coordDiff = path[:,ptIter] - path[:,ptIter-1]
+                dist = np.dot(coordDiff,np.dot(masses[ptIter],coordDiff))
+                retVal += np.sqrt(2*enegs[ptIter]*dist)
                 
             return retVal, enegs, masses
-        return trapezoidal_action
+        return standard_action
     
     def _compute_tangents(self,currentPts,energies):
         strRep = "LineIntegralNeb._compute_tangents"
@@ -767,13 +806,11 @@ class LineIntegralNeb(CustomLogging):
         return ret
     
 class MinimizationAlgorithms(CustomLogging):
-    def __init__(self,lnebObj,actionFunc="trapezoid",loggingLevel=None):
+    def __init__(self,lnebObj,loggingLevel=None):
         super().__init__(loggingLevel)
         
-        actionFuncsDict = {"trapezoid":lnebObj._construct_trapezoidal_action}
-        
         self.lneb = lnebObj
-        self.action_func = actionFuncsDict[actionFunc]()
+        self.action_func = self.lneb.target_func #Idk why I did this
     
     def verlet_minimization(self,maxIters=1000,tStep=0.05):
         strRep = "MinimizationAlgorithms.verlet_minimization"
@@ -1585,36 +1622,36 @@ def uranium_test():
     allPts, allVelocities, allForces, actions = \
         minObj.verlet_minimization_v2(maxIters=maxIters)
     
-    """   Second segment   """
-    nPts = 3
-    initialPoints = np.array((np.linspace(240,260,nPts),np.linspace(22.5,23,nPts)))
-    lneb2 = LineIntegralNeb(potential,Utilities.const_mass(),initialPoints,k,kappa,constraintEneg)
+    # """   Second segment   """
+    # nPts = 3
+    # initialPoints = np.array((np.linspace(240,260,nPts),np.linspace(22.5,23,nPts)))
+    # lneb2 = LineIntegralNeb(potential,Utilities.const_mass(),initialPoints,k,kappa,constraintEneg)
     
-    minObj2 = MinimizationAlgorithms(lneb2)
-    allPts2, allVelocities2, allForces2, actions2 = \
-        minObj2.verlet_minimization_v2(maxIters=maxIters)
+    # minObj2 = MinimizationAlgorithms(lneb2)
+    # allPts2, allVelocities2, allForces2, actions2 = \
+    #     minObj2.verlet_minimization_v2(maxIters=maxIters)
         
         
-    """   Going through the third minimum   """
-    nPts = 40
-    shiftedPotential = Utilities.aux_pot(custInterp2d.potential,0,tol=8)
+    # """   Going through the third minimum   """
+    # nPts = 40
+    # shiftedPotential = Utilities.aux_pot(custInterp2d.potential,0,tol=8)
     
-    initialPoints = np.array((np.linspace(27,265,nPts),np.linspace(0,23,nPts)))
-    initialEnegs = shiftedPotential(*initialPoints)
-    shiftedConstraintEneg = initialEnegs[0]
+    # initialPoints = np.array((np.linspace(27,265,nPts),np.linspace(0,23,nPts)))
+    # initialEnegs = shiftedPotential(*initialPoints)
+    # shiftedConstraintEneg = initialEnegs[0]
     
-    lneb3 = LineIntegralNeb(shiftedPotential,Utilities.const_mass(),\
-                            initialPoints,k,kappa,shiftedConstraintEneg)
+    # lneb3 = LineIntegralNeb(shiftedPotential,Utilities.const_mass(),\
+    #                         initialPoints,k,kappa,shiftedConstraintEneg)
     
-    minObj3 = MinimizationAlgorithms(lneb3)
-    allPts3, allVelocities3, allForces3, actions3 = \
-        minObj3.verlet_minimization_v2(maxIters=maxIters)
+    # minObj3 = MinimizationAlgorithms(lneb3)
+    # allPts3, allVelocities3, allForces3, actions3 = \
+    #     minObj3.verlet_minimization_v2(maxIters=maxIters)
         
     """   Plotting   """
     fig, ax = plt.subplots()
     ax.plot(actions-actions[-1],label="First segment")
-    ax.plot(actions2-actions2[-1],label="Second segment")
-    ax.plot(actions3-actions3[-1],label="Shifted PES")
+    # ax.plot(actions2-actions2[-1],label="Second segment")
+    # ax.plot(actions3-actions3[-1],label="Shifted PES")
     ax.set(xlabel="Iteration",ylabel="Action (shifted to end at 0)")
     ax.legend()
     fig.savefig("Runs/"+str(int(startTime))+"_Action.pdf")
@@ -1628,21 +1665,21 @@ def uranium_test():
     # ax.plot(allPts[0,0],allPts[0,1],marker=".",label="Initial Path",color="red")
     # ax.plot(allPts2[0,0],allPts2[0,1],marker=".",color="red")
     ax.plot(allPts[-1,0],allPts[-1,1],marker=".",label="Original PES",color="blue")
-    ax.plot(allPts2[-1,0],allPts2[-1,1],marker=".",color="blue")
+    # ax.plot(allPts2[-1,0],allPts2[-1,1],marker=".",color="blue")
     
     # ax.plot(allPts3[0,0],allPts3[0,1],marker=".",label="Shifted, Initial",color="orange")
-    ax.plot(allPts3[-1,0],allPts3[-1,1],marker=".",label="Shifted PES",color="red")
+    # ax.plot(allPts3[-1,0],allPts3[-1,1],marker=".",label="Shifted PES",color="red")
     
     ax.legend(loc="upper left")
     ax.set_xlim(min(q20Vals),max(q20Vals))
     ax.set_ylim(min(q30Vals),max(q30Vals))
     ax.set(title=r"${}^{252}$U PES")
         
-    fig.savefig("Runs/"+str(int(startTime))+".pdf")
+    # fig.savefig("Runs/"+str(int(startTime))+".pdf")
     
     return None
 
-def plutonium_test():
+def plutonium_pes_slices():
     dsets, _ = FileIO.read_from_h5("240Pu.h5","/",baseDir=os.getcwd())
     coords = ["Q20","Q30","pairing"]
     uniqueCoords = [np.unique(dsets[coord]) for coord in coords]
@@ -1690,6 +1727,38 @@ def plutonium_test():
     fig.savefig("240Pu_PES_Slices.pdf")
     
     return None
+
+def plutonium_test():
+    dsets, _ = FileIO.read_from_h5("240Pu.h5","/",baseDir=os.getcwd())
+    coords = ["Q20","Q30","pairing"]
+    uniqueCoords = [np.unique(dsets[coord]) for coord in coords]
+    desiredShape = np.array([len(c) for c in uniqueCoords],dtype=int)
+    
+    reshapedData = {key:dsets[key].reshape(desiredShape) for key in dsets.keys()}
+    cmesh = tuple([reshapedData[coord] for coord in coords])
+    zz = reshapedData["E_HFB"]
+    minInds = Utilities.find_local_minimum(zz)
+    allowedInds = tuple(np.array([inds[zz[minInds]!=-1760] for inds in minInds]))
+    
+    gsInds = Utilities.extract_gs_inds(allowedInds,cmesh,zz)
+    eGS = zz[gsInds]
+    # print([c[gsInds] for c in cmesh])
+    # print(eGS)
+    
+    interp_eneg = interpnd_wrapper(uniqueCoords,zz)
+    
+    inertiaKeysArr = np.array(['B2020', 'B2030', 'B20pair', 'B2030','B3030', \
+                               'B30pair', 'B20pair','B30pair','Bpairpair'])
+    inertiaFuncsArr = np.array([interpnd_wrapper(uniqueCoords,reshapedData[key])\
+                                for key in inertiaKeysArr],dtype=object).reshape((3,3))
+    print(np.array_equal(inertiaFuncsArr[0,0](*cmesh),reshapedData["B2020"]))
+    
+    inertia_func = mass_array_func(inertiaFuncsArr)
+    inertEval = inertia_func(*cmesh)
+    print(inertEval.shape)
+    
+    return None
+
 
 def nd_contour_test():
     dsets, _ = FileIO.read_from_h5("240Pu.h5","/",baseDir=os.getcwd())
@@ -2045,9 +2114,10 @@ if __name__ == "__main__":
     # sylvester_otl_test()
     # cProfile.run("sylvester_otl_test()",sort="tottime")
     # compare_paths()
-    nd_contour_test()
+    # nd_contour_test()
+    # plutonium_test()
     # fire_test()
-    # uranium_test()
+    plutonium_test()
     # gp_test()
     # interp_mode_test()
     # lps = LepsPot()
