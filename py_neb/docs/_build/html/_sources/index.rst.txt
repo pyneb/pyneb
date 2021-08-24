@@ -6,6 +6,10 @@
 Welcome to py_neb's documentation!
 ==================================
 
+PyNEB robust and extensible package etc etc for all action minimization purposes.
+
+
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
