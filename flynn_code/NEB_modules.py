@@ -185,7 +185,7 @@ def mass_tensor_wrapper(data_dict,nDims,coord_keys,mass_keys,mass_func=None):
             else:pass
             for i,func in enumerate(func_list):
                 M[i] = func(coords)
-                M = M.reshape(nDims,nDims)
+            M = M.reshape(nDims,nDims)
         return(M)
     return(mass_tensor)
 def eps(V,mass_func,coords,E_gs):

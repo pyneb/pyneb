@@ -54,7 +54,7 @@ if __name__ == "__main__":
     # define potential function
     f = NEB.coord_interp_wrapper(uniq_coord,EE,l_bndy,u_bndy)
     # define mass function
-    mass_tensor = NEB.mass_tensor_wrapper(data_dict,3,coord_keys,mass_keys,mass_func =None)
+    mass_tensor = NEB.mass_tensor_wrapper(data_dict,3,coord_keys,mass_keys,mass_func = True)
 
     N = 22
     M = 300
@@ -103,6 +103,10 @@ if __name__ == "__main__":
     zz_s = zz_s - E_gs
     #all_ccp = find_approximate_contours((xx,yy),zz,eneg=0,show=False)
     #otl = max(all_ccp[0], key=len)
-    dan_path = np.loadtxt('./dan_demos/240Pu_Pairing_Final_Path.csv',skiprows=1,delimiter=',')
-    dan_proj = dan_path[:,[0,1]]
-    NEB.make_cplot([proj_init],[proj_path,dan_proj],[xx_s,yy_s],zz_s,plot_params,savefig=False)
+    #dan_path = np.loadtxt('./dan_demos/240Pu_Pairing_Final_Path.csv',skiprows=1,delimiter=',')
+    #dan_proj = dan_path[:,[0,1]]
+    NEB.make_cplot([proj_init],[proj_path],[xx_s,yy_s],zz_s,plot_params,savefig=False)
+    
+    
+    
+    
