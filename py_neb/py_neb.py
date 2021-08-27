@@ -111,16 +111,20 @@ def action(path,potential,masses=None):
     else:
         massArr = masses
         
-    if massArr.shape != (nPoints, nDims, nDims):
-        sys.exit("Err: massArr "+str(massArr)+" not allowed; see action function")
+    massDim = (nPoints, nDims, nDims)
+    if massArr.shape != massDim:
+        raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
+                         "; required shape is "+str(massDim)+". See action function.")
     
     if not isinstance(potential,np.ndarray):
         potArr = potential(path)
     else:
         potArr = potential
         
-    if potArr.shape != (nPoints,):
-        sys.exit("Err: potArr "+str(potArr)+" not allowed; see action function")
+    potShape = (nPoints,)
+    if potArr.shape != potShape:
+        raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
+                         "; required shape is "+str(potShape)+". See action function.")
         
     #Actual calculation
     actOut = 0
@@ -163,6 +167,87 @@ def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
             gradOfAction[ptIter,dimIter] = (actionAtStep - actionOnPath)/eps
     
     return gradOfAction, gradOfPes
+
+class CustomLogging:
+    """
+    A note on parallelization:
+        -If one runs multiple instances of the NEB solver concurrently, one
+            should output all instances into separate folders *outside* of
+            this program (e.g. in the submit script)
+        -If one uses a parallelized energy evaluation (e.g. a DFT solver),
+            one should be careful when updating the log. Probably, we can
+            assume that parallel energy evaluations will have their own
+            parallelized logging, and we can simply update the log here once
+            we gather all of the energy outputs, without parallelizing anything
+    """
+    def __init__(self,loggingLevel):
+        allowedLogLevels = [None,"output"]#"output" doesn't keep track of intermediate steps
+        assert loggingLevel in allowedLogLevels
+        self.loggingLevel = loggingLevel
+        if self.loggingLevel == "output":
+            self.logDict = {}
+            self.outputNms = {}
+            
+            self.stringRep = self.__str__()+"_"+datetime.datetime.now().isoformat()
+    
+    def update_log(self,strRep,outputTuple,outputNmsTuple,isTuple=True):
+        #If returning a single value, set isTuple -> False
+        if self.loggingLevel is None:
+            return None
+        
+        if self.loggingLevel == "output":
+            if not isTuple:
+                outputTuple = (outputTuple,)
+                outputNmsTuple = (outputNmsTuple,)
+            
+            gpName = self.stringRep+"/"+strRep
+            if gpName not in self.logDict:
+                self.logDict[gpName] = []
+                for t in outputTuple:
+                    if isinstance(t,np.ndarray):
+                        self.logDict[gpName].append(np.expand_dims(t,axis=0))
+                    else:
+                        self.logDict[gpName].append([t])
+                self.outputNms[gpName] = outputNmsTuple
+            else:
+                assert len(outputTuple) == len(self.logDict[gpName])
+                for (tIter,t) in enumerate(outputTuple):
+                    if isinstance(t,np.ndarray):
+                        self.logDict[gpName][tIter] = \
+                            np.concatenate((self.logDict[gpName][tIter],np.expand_dims(t,axis=0)))
+                    else:
+                        self.logDict[gpName][tIter].append(t)
+                        
+        return None
+    
+    def write_log(self,fName,overwrite=False):
+        #WARNING: probably doesn't handle anything that isn't a numpy array, although
+            #that's almost all that I intend to log at the moment
+        #WARNING: does not handle multiple of the same class instance
+        if not hasattr(self,"logDict"):
+            return None
+        
+        if not fName.startswith("Logs/"):
+            fName = "Logs/"+fName
+        os.makedirs("Logs",exist_ok=True)
+        
+        if (overwrite) and (os.path.isfile(fName)):
+            os.remove(fName)
+        
+        h5File = h5py.File(fName,"a")
+        for key in self.logDict.keys():
+            splitKey = key.split("/")
+            for (sIter,s) in enumerate(splitKey):
+                subGp = "/".join(splitKey[:sIter+1])
+                if not subGp in h5File:
+                    h5File.create_group(subGp)
+            for (oIter,outputNm) in enumerate(self.outputNms[key]):
+                h5File[key].create_dataset(outputNm,data=self.logDict[key][oIter])
+        
+        h5File.close()
+        
+        return None
+    
 
 class LeastActionPath:
     """
