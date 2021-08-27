@@ -110,6 +110,8 @@ class Utilities:
                 # print(localMesh)
                 allContours[tuple(ind)] = \
                     ax.contour(*localMesh,zz[meshInds],levels=[eneg]).allsegs[0]
+            if show:
+                plt.show(fig)
                 
         if not show:
             plt.close(fig)
@@ -259,7 +261,7 @@ class Utilities:
         return fig, ax
     
 def interpnd_wrapper(uniqueGridPts,gridValues,tol=10**(-5)):
-    #Really, a wrapper that also puts a quadratic growth once you leave the
+    #Really, a wrapper that also puts an exponential growth once you leave the
     #interpolated region
     nCoords = len(uniqueGridPts)
     endPoints = np.array([[g[0],g[-1]] for g in uniqueGridPts])
@@ -286,6 +288,11 @@ def interpnd_wrapper(uniqueGridPts,gridValues,tol=10**(-5)):
                 retVal[ptIter] = \
                     interpn(uniqueGridPts,gridValues,coords[ptIter]) + tol
             else:
+                print("Path out of bounds:")
+                print(coords[ptIter])
+                print("Bad coordinate(s):")
+                print(isAllowed)
+                print(50*"=")
                 #Basically projects onto the nearest allowed endpoint of the grid,
                 #allowing for multiple points being off of the grid
                 nearestAllowed = np.zeros(nCoords)
@@ -788,6 +795,16 @@ class LineIntegralNeb(CustomLogging):
                 coordDiff = path[:,ptIter] - path[:,ptIter-1]
                 dist = np.dot(coordDiff,np.dot(masses[ptIter],coordDiff))
                 retVal += np.sqrt(2*enegs[ptIter]*dist)
+            # print(enegs)
+            if np.count_nonzero(enegs<0) > 0:
+                print("path:")
+                print(path)
+                sys.exit("...")
+                
+            if np.count_nonzero(np.isinf(enegs)):
+                print("path:")
+                print(path)
+                sys.exit("...")
                 
             return retVal, enegs, masses
         return standard_action
@@ -803,7 +820,7 @@ class LineIntegralNeb(CustomLogging):
                                         energies[ptIter-1]-energies[ptIter]]))
             dVMin = np.min(np.absolute([energies[ptIter+1]-energies[ptIter],\
                                         energies[ptIter-1]-energies[ptIter]]))
-                
+            
             if (energies[ptIter+1] > energies[ptIter]) and \
                 (energies[ptIter] > energies[ptIter-1]):
                 tangents[:,ptIter] = tp
@@ -1052,224 +1069,7 @@ class MinimizationAlgorithms(CustomLogging):
         self.update_log(strRep,ret,outputNms)
         
         return allPts, allVelocities, allForces, actions
-    
-    def gradient_descent(self,maxIters=1000,tStep=0.05):
-        #Very clearly does not work...
-        allPts = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
-        allForces = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
-        
-        allPts[0] = self.lneb.initialPoints
-        
-        for step in range(0,maxIters):
-            allForces[step] = self.lneb.compute_force(allPts[step])
-            allPts[step+1] = allPts[step] + tStep * allForces[step]
-            
-        allForces[-1] = self.lneb.compute_force(allPts[-1])
-        actions = np.array([self.action_func(pts) for pts in allPts[:]])
-        
-        return allPts, allForces, actions
-    
-    def _el_rhs(self,indepVar,depVar):
-        eps = 10**(-6)
-        
-        #depVar should be of shape (4,nPts) - 4 for (x0,x1,z0,z1); nPts for the size of the grid.
-        #Here, zi = dxi/dt.
-        funcOut = np.zeros(depVar.shape)
-        #funcOut row order is (x0',x1',z0',z1') = (z0,z1,z0',z1')
-        funcOut[0:2,:] = depVar[2:,:]
-        
-        #Not general here or anywhere else
-        targEval = self.lneb.targetFunc(*depVar[0:2])
-        targGrad = np.zeros(depVar.shape)
-        for coordIter in range(self.lneb.nCoords):
-            steps = depVar[0:2].copy()
-            steps[coordIter,:] += eps
-            evalAtSteps, _, _ = self.lneb.target_func(*steps)
-            targGrad[coordIter,:] = (evalAtSteps - targetFuncEval)/eps
-        
-        r = np.sqrt(depVar[2,:]**2 + depVar[3,:]**2)
-        
-        for gradIter in range(2):
-            funcOut[gradIter+2,:] = 1/targEval*targGrad[gradIter,:]*r**2 - \
-                depVar[gradIter+2,:]/targEval*(depVar[2,:]*targGrad[0,:]+depVar[3,:]*targGrad[1,:]) + \
-                    depVar[gradIter+2,:]**2/r**2
-        
-        return funcOut
-    
-    def euler_lagrange(self):
-        
-        return None
-    
-# class EulerLagrangeSolver:
-#     def __init__(self,nPts=12,potential=leps_plus_ho,initialPoints=None,gsEneg=None,\
-#                  subtractEGS=True):
-#         self.nPts = nPts
-#         self.coordMeshTuple = np.meshgrid(np.arange(0,4,0.05),np.arange(-2,2,0.05))
-#         self.zz = potential(*self.coordMeshTuple)
-        
-#         if initialPoints is None:
-#             self.initialPoints = self._initial_points()
-#         else:
-#             self.initialPoints = initialPoints
-            
-#         if subtractEGS and (gsEneg is None):
-#             self.gsEneg = np.min(potential(*self.initialPoints))
-#         elif subtractEGS and (gsEneg is not None):
-#             self.gsEneg = gsEneg
-#         else:
-#             self.gsEneg = 0
-            
-#         self.potential = self._aux_pot(potential,self.gsEneg)
-            
-#     def _initial_points(self):
-#         minInds = find_local_minimum(self.zz)
-        
-#         initialPoints = np.array([np.linspace(cmesh[minInds][0],cmesh[minInds][1],num=self.nPts) for \
-#                                   cmesh in self.coordMeshTuple])
-        
-#         return initialPoints
-    
-#     def _aux_pot(self,potential,egs,tol=10**(-4)):
-#         #Tol is so that the potential at the ground state isn't exactly 0 (have to
-#         #divide by V in the EL equations)
-#         def pot(x,y):
-#             return potential(x,y) - egs + tol
-        
-#         return pot
-        
-#     def _finite_difference(self,coords):
-#         eps = 10**(-6)
-        
-#         potAtPt = self.potential(coords[0,:],coords[1,:])
-#         potAtStep = np.zeros((2,coords.shape[1]))
-#         for i in range(2):
-#             for coordIter in range(coords.shape[1]):
-#                 locCoord = coords.copy()
-#                 locCoord[i,coordIter] += eps
-#                 potAtStep[i,coordIter] = self.potential(locCoord[0,coordIter],locCoord[1,coordIter])
-        
-#         grad = (potAtStep - potAtPt)/eps
-        
-#         return grad
-        
-#     def rhs(self,indepVar,depVar):
-#         #depVar should be of shape (4,nPts) - 4 for (x0,x1,z0,z1); nPts for the size of the grid.
-#         #Here, zi = dxi/dt.
-#         funcOut = np.zeros(depVar.shape)
-#         #funcOut row order is (x0',x1',z0',z1') = (z0,z1,z0',z1')
-#         funcOut[0:2,:] = depVar[2:,:]
-        
-#         #Not general here or anywhere else
-#         potEval = self.potential(depVar[0,:],depVar[1,:])
-#         potGrad = self._finite_difference(depVar[0:2,:])
-        
-#         r = np.sqrt(depVar[2,:]**2 + depVar[3,:]**2)
-        
-#         for gradIter in range(2):
-#             funcOut[gradIter+2,:] = 1/potEval*potGrad[gradIter,:]*r**2 - \
-#                 depVar[gradIter+2,:]/potEval*(depVar[2,:]*potGrad[0,:]+depVar[3,:]*potGrad[1,:]) + \
-#                     depVar[gradIter+2,:]**2/r**2
-        
-#         return funcOut
-    
-#     def bc(self,ya,yb):
-#         #ya is right node, yb is left node. both of shape (4,), for (x0,x1,z0,z1)
-#         return np.array([ya[0] - self.initialPoints[0,0],ya[1] - self.initialPoints[-1,0],\
-#                          yb[0] - self.initialPoints[0,-1],yb[1] - self.initialPoints[-1,-1]])
-    
-#     def plot_pes(self,curves=[],labels=[],fName=None):
-#         fig, ax = plt.subplots()
-        
-#         ax.contour(*self.coordMeshTuple,self.zz,np.arange(-10,70,1),colors="k")
-        
-#         if curves: #Checks if list is nonempty
-#             for (cIter,curve) in enumerate(curves):
-#                 if labels:
-#                     lab = labels[cIter]
-#                 else:
-#                     lab = None
-#                 ax.plot(curve[0,:],curve[1,:],ls="-",marker="o",label=lab)
-                
-#         ax.set_xlabel(r"$r_{AB}$")
-#         ax.set_ylabel(r"$x$")
-        
-#         if labels:
-#             ax.legend()
-                
-#         if fName is not None:
-#             fig.savefig(fName+".pdf")
-        
-#         return None    
-    
-class Utilities_Validation:
-    @staticmethod
-    def val_find_local_minimum():
-        dsets, attrs = \
-            FileIO.read_from_h5("Test_PES.h5","Daniels_Code/Test_Files/")
-                
-        minInds = Utilities.find_local_minimum(dsets["PES"])
-        fig, ax = Utilities.standard_pes(dsets["Q20"],dsets["Q30"],dsets["PES"])
-        
-        ax.scatter(dsets["Q20"][minInds],dsets["Q30"][minInds],color="k",marker="x")
-        ax.set(xlim=(dsets["Q20"].min(),dsets["Q20"].max()),\
-               ylim=(dsets["Q30"].min(),dsets["Q30"].max()))
-            
-        testFolder = "Test_Outputs/Utilities/"
-        if not os.path.isdir(testFolder):
-            os.makedirs(testFolder)
-            
-        fig.savefig(testFolder+"val_find_local_minimum.pdf")
-        
-        return None
-    
-    @staticmethod
-    def val_interpolated_action():
-        testFile = "Test_Files/Test_Path.txt"
-        path = FileIO.read_path(testFile)
-        
-        spot = SylvesterPot()
-        smoothedValues, action = \
-            Utilities.interpolated_action(spot.potential,Utilities.const_mass(),path)
-        
-        fig, ax = Utilities.standard_pes(spot.initialGrid[0],spot.initialGrid[1],
-                                         spot.potential(*spot.initialGrid),\
-                                         clipRange=(-1,10))
-        
-        ax.plot(path[:,0],path[:,1],ls="-",marker="x",color="k")
-        ax.plot(*smoothedValues,ls="-",color="red")
-        
-        #Convergence of action w/ increasing number of points
-        nPtsRange = np.linspace(25,500,num=30,dtype=int)
-        actionVals = np.zeros(nPtsRange.shape)
-        
-        _, baseAction = \
-            Utilities.interpolated_action(spot.potential,Utilities.const_mass(),\
-                                              path,nPts=path.shape[0])
-        
-        for (nIter,nPts) in enumerate(nPtsRange):
-            _, actionVals[nIter] = \
-                Utilities.interpolated_action(spot.potential,Utilities.const_mass(),\
-                                              path,nPts=nPts)
-            
-        fig, ax = plt.subplots()
-        ax.plot(nPtsRange,actionVals,marker=".")
-        ax.axhline(baseAction,color="red")
-        ax.text(nPtsRange[-1]-150,baseAction+0.0005,"Discrete (22 Points)")
-        ax.axvline(200,color="black")
-        ax.text(205,baseAction+0.004,"Default Number of Points",rotation=-90)
-        ax.set_xlim(nPtsRange[0],nPtsRange[-1])
-        
-        ax.set(xlabel="Number of Interpolation Points",ylabel="Trapezoidal Action",\
-               title="Discretized Action Integral\nVersus Number of Points")
-        
-        testFolder = "Test_Outputs/Utilities/"
-        if not os.path.isdir(testFolder):
-            os.makedirs(testFolder)
-            
-        fig.savefig(testFolder+"val_interpolated_action.pdf")
-            
-        return None
-    
+
 class LineIntegralNeb_Validation:
     @staticmethod
     def _q(r,d,alpha,r0):
@@ -1726,16 +1526,27 @@ def uranium_test():
     q20Vals = dsets["Q20"][:,0]
     q30Vals = dsets["Q30"][0]
     
-    custInterp2d = CustomInterp2d(q20Vals,q30Vals,dsets["PES"].T,kind="quintic")
-    potential = Utilities.aux_pot(custInterp2d.potential,0)
+    interpPot = interpnd_wrapper((q20Vals,q30Vals),dsets["PES"])
+    # custInterp2d = CustomInterp2d(q20Vals,q30Vals,dsets["PES"].T,kind="quintic")
+    potential = Utilities.aux_pot(interpPot,0)
+    otherPot = CustomInterp2d(q20Vals,q30Vals,dsets["PES"].T,kind="linear")
+    potential2 = Utilities.aux_pot(otherPot.potential,0)
     
-    interpArgsDict = custInterp2d.kwargs
-    interpArgsDict["function"] = custInterp2d.__str__()
+    thirdPot = CustomInterp2d(q20Vals,q30Vals,dsets["PES"].T,kind="cubic")
+    potential3 = Utilities.aux_pot(thirdPot.potential,0)
+    
+    fourthPot = CustomInterp2d(q20Vals,q30Vals,dsets["PES"].T,kind="quintic")
+    potential4 = Utilities.aux_pot(fourthPot.potential,0)
+    
+    # interpArgsDict = custInterp2d.kwargs
+    # interpArgsDict["function"] = custInterp2d.__str__()
     
     nPts = lnebParamsDict["nPts"]
     """   First segment   """
     initialPoints = np.array((np.linspace(27,185,nPts),np.linspace(0,15,nPts)))
+    FileIO.write_path("252U_Init_Path.txt",initialPoints,columnHeads=["Q20","Q30"])
     initialEnegs = potential(*initialPoints)
+    print(initialEnegs)
     constraintEneg = initialEnegs[0]
     
     print("Constraining to energy %.3f" % constraintEneg)
@@ -1744,58 +1555,46 @@ def uranium_test():
     kappa = lnebParamsDict["kappa"]
     lneb = LineIntegralNeb(potential,Utilities.const_mass(),initialPoints,k,kappa,constraintEneg)
     
-    maxIters = 1000
+    maxIters = 250
     minObj = MinimizationAlgorithms(lneb)
     allPts, allVelocities, allForces, actions = \
         minObj.verlet_minimization_v2(maxIters=maxIters)
     
-    # """   Second segment   """
-    # nPts = 3
-    # initialPoints = np.array((np.linspace(240,260,nPts),np.linspace(22.5,23,nPts)))
-    # lneb2 = LineIntegralNeb(potential,Utilities.const_mass(),initialPoints,k,kappa,constraintEneg)
-    
-    # minObj2 = MinimizationAlgorithms(lneb2)
-    # allPts2, allVelocities2, allForces2, actions2 = \
-    #     minObj2.verlet_minimization_v2(maxIters=maxIters)
+    lneb2 = LineIntegralNeb(potential2,Utilities.const_mass(),initialPoints,k,kappa,constraintEneg)
+    minObj2 = MinimizationAlgorithms(lneb2)
+    allPts2, allVelocities2, allForces2, actions2 = \
+        minObj2.verlet_minimization_v2(maxIters=maxIters)
         
+    lneb3 = LineIntegralNeb(potential3,Utilities.const_mass(),initialPoints,k,kappa,constraintEneg)
+    minObj3 = MinimizationAlgorithms(lneb3)
+    allPts3, allVelocities3, allForces3, actions3 = \
+        minObj3.verlet_minimization_v2(maxIters=maxIters)
         
-    # """   Going through the third minimum   """
-    # nPts = 40
-    # shiftedPotential = Utilities.aux_pot(custInterp2d.potential,0,tol=8)
-    
-    # initialPoints = np.array((np.linspace(27,265,nPts),np.linspace(0,23,nPts)))
-    # initialEnegs = shiftedPotential(*initialPoints)
-    # shiftedConstraintEneg = initialEnegs[0]
-    
-    # lneb3 = LineIntegralNeb(shiftedPotential,Utilities.const_mass(),\
-    #                         initialPoints,k,kappa,shiftedConstraintEneg)
-    
-    # minObj3 = MinimizationAlgorithms(lneb3)
-    # allPts3, allVelocities3, allForces3, actions3 = \
-    #     minObj3.verlet_minimization_v2(maxIters=maxIters)
+    lneb4 = LineIntegralNeb(potential4,Utilities.const_mass(),initialPoints,k,kappa,constraintEneg)
+    minObj4 = MinimizationAlgorithms(lneb4)
+    allPts4, allVelocities4, allForces4, actions4 = \
+        minObj4.verlet_minimization_v2(maxIters=maxIters)
         
     """   Plotting   """
     fig, ax = plt.subplots()
-    ax.plot(actions-actions[-1],label="First segment")
-    # ax.plot(actions2-actions2[-1],label="Second segment")
-    # ax.plot(actions3-actions3[-1],label="Shifted PES")
-    ax.set(xlabel="Iteration",ylabel="Action (shifted to end at 0)")
+    ax.plot(actions,label="ND Linear",color="blue")
+    ax.plot(actions2,label="2D Linear",color="green")
+    ax.plot(actions3,label="2D Cubic",color="red")
+    ax.plot(actions4,label="2D Quintic",color="orange")
+    
+    ax.set(xlabel="Iteration",ylabel="Action")
     ax.legend()
     fig.savefig("Runs/"+str(int(startTime))+"_Action.pdf")
     
     cbarRange = (-5,30)
     fig, ax = Utilities.standard_pes(dsets["Q20"],dsets["Q30"],dsets["PES"])
-    # ax.contour(dsets["Q20"],dsets["Q30"],dsets["PES"],levels=[constraintEneg-5],\
-    #             colors=["black"])
     ax.contour(dsets["Q20"],dsets["Q30"],dsets["PES"],levels=[constraintEneg],\
                 colors=["black"])
-    # ax.plot(allPts[0,0],allPts[0,1],marker=".",label="Initial Path",color="red")
-    # ax.plot(allPts2[0,0],allPts2[0,1],marker=".",color="red")
-    ax.plot(allPts[-1,0],allPts[-1,1],marker=".",label="Original PES",color="blue")
-    # ax.plot(allPts2[-1,0],allPts2[-1,1],marker=".",color="blue")
     
-    # ax.plot(allPts3[0,0],allPts3[0,1],marker=".",label="Shifted, Initial",color="orange")
-    # ax.plot(allPts3[-1,0],allPts3[-1,1],marker=".",label="Shifted PES",color="red")
+    ax.plot(allPts[-1,0],allPts[-1,1],marker=".",label="ND Linear",color="blue")
+    ax.plot(allPts2[-1,0],allPts2[-1,1],marker=".",label="2D Linear",color="green")
+    ax.plot(allPts3[-1,0],allPts3[-1,1],marker=".",label="2D Cubic",color="red")
+    ax.plot(allPts4[-1,0],allPts4[-1,1],marker=".",label="2D Quintic",color="orange")
     
     ax.legend(loc="upper left")
     ax.set_xlim(min(q20Vals),max(q20Vals))
@@ -1856,8 +1655,118 @@ def plutonium_pes_slices():
     return None
 
 def plutonium_test():
-    # sylvesterPath = FileIO.read_path("240Pu_Sylvester_Path.txt")
+    sylvesterPath = FileIO.read_path("240Pu_Sylvester_Path.txt")
+    newPath = FileIO.read_path("3DPUMAL_NEW.txt")
     
+    dsets, _ = FileIO.read_from_h5("240Pu.h5","/",baseDir=os.getcwd())
+    coords = ["Q20","Q30","pairing"]
+    uniqueCoords = [np.unique(dsets[coord]) for coord in coords]
+    desiredShape = np.array([len(c) for c in uniqueCoords],dtype=int)
+    
+    reshapedData = {key:dsets[key].reshape(desiredShape) for key in dsets.keys()}
+    cmesh = tuple([reshapedData[coord] for coord in coords])
+    zz = reshapedData["E_HFB"]
+    minInds = Utilities.find_local_minimum(zz)
+    allowedInds = tuple(np.array([inds[zz[minInds]!=-1760] for inds in minInds]))
+    
+    gsInds = Utilities.extract_gs_inds(allowedInds,cmesh,zz)
+    gsLoc = [c[gsInds] for c in cmesh]
+    absMin = zz.min()
+    zz = zz - absMin
+    eGS = zz[gsInds]
+    # zz = zz - eGS
+    
+    interp_eneg = interpnd_wrapper(uniqueCoords,zz)
+    
+    inertiaKeysArr = np.array(['B2020', 'B2030', 'B20pair', 'B2030','B3030', \
+                               'B30pair', 'B20pair','B30pair','Bpairpair'])
+    inertiaFuncsArr = np.array([interpnd_wrapper(uniqueCoords,reshapedData[key])\
+                                for key in inertiaKeysArr],dtype=object).reshape((3,3))
+    
+    inertia_func = mass_array_func(inertiaFuncsArr)
+    
+    allContours = Utilities.find_approximate_contours(cmesh,zz,eneg=eGS)
+    outerContours = []
+    outerContoursFullDimension = []
+    for (cIter,cont) in enumerate(allContours):
+        fillVal = cmesh[2][0,0,cIter]
+
+        lengths = np.array([c.shape[0] for c in cont])
+        correctInd = np.argmax(lengths)
+        outerContours.append(cont[correctInd])
+        
+        appArr = np.hstack((cont[correctInd],fillVal*np.ones((lengths[correctInd],1))))
+        outerContoursFullDimension.append(appArr)
+    
+    pathList = [Utilities.new_init_on_contour(cont,gsLoc) for \
+                cont in outerContoursFullDimension]
+    
+    tStep = 0.05
+    k = 1
+    kappa = 10
+    lneb = LineIntegralNeb(interp_eneg,inertia_func,pathList[0],k,kappa,eGS,\
+                           endSprForce=True,loggingLevel="output")
+    minObj = MinimizationAlgorithms(lneb,loggingLevel="output")
+    maxIters = 100
+    allPts, allForces, allVelocities, actions = \
+        minObj.verlet_minimization_v2(maxIters=maxIters,tStep=tStep)
+    
+    lneb2 = LineIntegralNeb(interp_eneg,inertia_func,pathList[0],k,kappa,eGS,\
+                            endSprForce=True,loggingLevel="output")
+    
+    minObj2 = MinimizationAlgorithms(lneb,loggingLevel="output")
+    maxIters = 100
+    allPts2, allForces2, actions2 = \
+        minObj2.verlet_minimization(maxIters=maxIters,tStep=tStep)
+    
+    logFile = "Test_Log.h5"
+    lneb.write_log(logFile,overwrite=True)
+    minObj.write_log(logFile)
+    
+    lneb2.write_log(logFile)
+    minObj2.write_log(logFile)
+    
+    dummy1 = LineIntegralNeb(interp_eneg,inertia_func,sylvesterPath.T,1,1,0,toCount=[])
+    sylvesterAction, _, _ = dummy1.target_func(*sylvesterPath.T)
+    
+    dummy2 = LineIntegralNeb(interp_eneg,inertia_func,newPath.T,1,1,0,toCount=[])
+    newAction, _, _ = dummy1.target_func(*newPath.T)
+    
+    fig, ax = plt.subplots()
+    ax.plot(actions,color="blue",label="My Action (With Velocity): %.1f" % actions[-1])
+    ax.plot(actions2,color="black",label="My Action (Without Velocity): %.1f" % actions2[-1])
+    ax.axhline(sylvesterAction,color="red",label="Old Sylvester Action: {:.1}".format(sylvesterAction))
+    ax.axhline(newAction,color="green",label="New Sylvester Action: %.1f" % newAction)
+    ax.set(xlabel="Iteration",ylabel="Action")
+    ax.legend()
+    fig.savefig("240Pu_NEB_Action.pdf")
+    
+    fig, ax = plt.subplots()
+    ax.contourf(cmesh[0][:,:,0],cmesh[1][:,:,0],zz[:,:,0])
+    ax.plot(allPts[0,0],allPts[0,1],marker=".",color="grey",label="Initial Path")
+    ax.plot(allPts[-1,0],allPts[-1,1],marker=".",color="blue",label="Final Path (With Velocity)")
+    ax.plot(allPts2[-1,0],allPts2[-1,1],marker=".",color="black",label="Final Path (Without Velocity)")
+    ax.plot(sylvesterPath[:,0],sylvesterPath[:,1],marker="x",color="red",label="Old Sylvester Path")
+    ax.plot(newPath[:,0],newPath[:,1],marker="x",color="green",label="New Sylvester Path")
+    ax.legend(loc="lower right")
+    ax.set(xlabel="Q20",ylabel="Q30",title=r"Pairing Slice $\lambda_2=0$")
+    fig.savefig("240Pu_NEB.pdf")
+    # anotherLneb = LineIntegralNeb(interp_eneg,inertia_func,pathList[1],5,20,0,\
+    #                               endSprForce=True,loggingLevel="output")
+    # minObj = MinimizationAlgorithms(anotherLneb,loggingLevel="output")
+    # maxIters = 10
+    # allPts, allForces, actions = \
+    #     minObj.verlet_minimization(maxIters=maxIters,tStep=0.01)
+    FileIO.write_path("240Pu_Test_Path_Velocity.csv",allPts[-1],ndims=3,\
+                      columnHeads=["Q20","Q30","pairing"])
+    FileIO.write_path("240Pu_Test_Path_No_Velocity.csv",allPts2[-1],ndims=3,\
+                      columnHeads=["Q20","Q30","pairing"])
+    
+    # anotherLneb.write_log(logFile)
+    # minObj.write_log(logFile)
+    return None
+
+def plutonium_endpoint_test():
     dsets, _ = FileIO.read_from_h5("240Pu.h5","/",baseDir=os.getcwd())
     coords = ["Q20","Q30","pairing"]
     uniqueCoords = [np.unique(dsets[coord]) for coord in coords]
@@ -1899,41 +1808,31 @@ def plutonium_test():
     pathList = [Utilities.new_init_on_contour(cont,gsLoc) for \
                 cont in outerContoursFullDimension]
     
-    lneb = LineIntegralNeb(interp_eneg,inertia_func,pathList[0],5,20,0,\
-                           endSprForce=True,loggingLevel="output")
+    logFile = "Endpoint_Testing.h5"
+    for (pathIter, path) in enumerate(pathList):
+        lneb = LineIntegralNeb(interp_eneg,inertia_func,path,5,20,0,\
+                               endSprForce=True,loggingLevel="output")
+        
+        minObj = MinimizationAlgorithms(lneb,loggingLevel="output")
+        maxIters = 1000
+        allPts, allForces, actions = \
+            minObj.verlet_minimization(maxIters=maxIters,tStep=0.01)
+        
+        lneb.write_log(logFile)
+        minObj.write_log(logFile)
+        
+        FileIO.write_path("./Paths/Endpoint_Testing/Slice_"+str(pathIter)+"_Start.txt",\
+                          allPts[0],ndims=3,columnHeads=["Q20","Q30","pairing"])
+        FileIO.write_path("./Paths/Endpoint_Testing/Slice_"+str(pathIter)+"_Endpoint.txt",\
+                          allPts[-1],ndims=3,columnHeads=["Q20","Q30","pairing"])
+        fig, ax = plt.subplots()
+        ax.plot(actions)
+        
+        ax.set(xlabel="Iteration",ylabel="Action")
+        fig.savefig("Endpoint_Testing_Plots/Slice_"+str(pathIter)+".pdf")
+        plt.show()
     
-    minObj = MinimizationAlgorithms(lneb,loggingLevel="output")
-    maxIters = 10
-    allPts, allForces, actions = \
-        minObj.verlet_minimization(maxIters=maxIters,tStep=0.01)
-    
-    print(lneb.counterDict)
-    
-    logFile = "Test_Log.h5"
-    lneb.write_log(logFile,overwrite=True)
-    minObj.write_log(logFile)
-    
-    fig, ax = plt.subplots()
-    ax.plot(actions,label="My Action: %.1f" % actions[-1])
-    
-    fig, ax = plt.subplots()
-    ax.contourf(cmesh[0][:,:,0],cmesh[1][:,:,0],zz[:,:,0])
-    ax.plot(allPts[0,0],allPts[0,1],marker=".",color="grey",label="Initial Path")
-    ax.plot(allPts[-1,0],allPts[-1,1],marker=".",color="orange",label="Final Path (Projected)")
-    
-    anotherLneb = LineIntegralNeb(interp_eneg,inertia_func,pathList[1],5,20,0,\
-                                  endSprForce=True,loggingLevel="output")
-    minObj = MinimizationAlgorithms(anotherLneb,loggingLevel="output")
-    maxIters = 10
-    allPts, allForces, actions = \
-        minObj.verlet_minimization(maxIters=maxIters,tStep=0.01)
-    # FileIO.write_path("240Pu_Pairing_Final_Path.csv",allPts[-1],ndims=3,\
-    #                   columnHeads=["Q20","Q30","pairing"])
-    
-    anotherLneb.write_log(logFile)
-    minObj.write_log(logFile)
     return None
-
 
 def nd_contour_test():
     dsets, _ = FileIO.read_from_h5("240Pu.h5","/",baseDir=os.getcwd())
@@ -2291,8 +2190,9 @@ if __name__ == "__main__":
     # compare_paths()
     # nd_contour_test()
     # fire_test()
-    plutonium_test()
-    # uranium_test()
+    # plutonium_test()
+    # plutonium_endpoint_test()
+    uranium_test()
     # gp_test()
     # interp_mode_test()
     # lps = LepsPot()
