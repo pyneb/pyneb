@@ -29,6 +29,9 @@ TODO:
 
 """
 
+global fdTol
+fdTol = 10**(-8)
+
 def find_local_minimum(arr):
     """
     Returns the indices corresponding to the local minimum values. Taken 
@@ -148,7 +151,7 @@ def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
     
     Maybe put this + action inside of LeastActionPath? not sure how we want to structure that part
     """
-    eps = 10**(-8)
+    eps = fdTol#10**(-8)
     
     gradOfPes = np.zeros(path.shape)
     gradOfAction = np.zeros(path.shape)
@@ -167,87 +170,6 @@ def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
             gradOfAction[ptIter,dimIter] = (actionAtStep - actionOnPath)/eps
     
     return gradOfAction, gradOfPes
-
-class CustomLogging:
-    """
-    A note on parallelization:
-        -If one runs multiple instances of the NEB solver concurrently, one
-            should output all instances into separate folders *outside* of
-            this program (e.g. in the submit script)
-        -If one uses a parallelized energy evaluation (e.g. a DFT solver),
-            one should be careful when updating the log. Probably, we can
-            assume that parallel energy evaluations will have their own
-            parallelized logging, and we can simply update the log here once
-            we gather all of the energy outputs, without parallelizing anything
-    """
-    def __init__(self,loggingLevel):
-        allowedLogLevels = [None,"output"]#"output" doesn't keep track of intermediate steps
-        assert loggingLevel in allowedLogLevels
-        self.loggingLevel = loggingLevel
-        if self.loggingLevel == "output":
-            self.logDict = {}
-            self.outputNms = {}
-            
-            self.stringRep = self.__str__()+"_"+datetime.datetime.now().isoformat()
-    
-    def update_log(self,strRep,outputTuple,outputNmsTuple,isTuple=True):
-        #If returning a single value, set isTuple -> False
-        if self.loggingLevel is None:
-            return None
-        
-        if self.loggingLevel == "output":
-            if not isTuple:
-                outputTuple = (outputTuple,)
-                outputNmsTuple = (outputNmsTuple,)
-            
-            gpName = self.stringRep+"/"+strRep
-            if gpName not in self.logDict:
-                self.logDict[gpName] = []
-                for t in outputTuple:
-                    if isinstance(t,np.ndarray):
-                        self.logDict[gpName].append(np.expand_dims(t,axis=0))
-                    else:
-                        self.logDict[gpName].append([t])
-                self.outputNms[gpName] = outputNmsTuple
-            else:
-                assert len(outputTuple) == len(self.logDict[gpName])
-                for (tIter,t) in enumerate(outputTuple):
-                    if isinstance(t,np.ndarray):
-                        self.logDict[gpName][tIter] = \
-                            np.concatenate((self.logDict[gpName][tIter],np.expand_dims(t,axis=0)))
-                    else:
-                        self.logDict[gpName][tIter].append(t)
-                        
-        return None
-    
-    def write_log(self,fName,overwrite=False):
-        #WARNING: probably doesn't handle anything that isn't a numpy array, although
-            #that's almost all that I intend to log at the moment
-        #WARNING: does not handle multiple of the same class instance
-        if not hasattr(self,"logDict"):
-            return None
-        
-        if not fName.startswith("Logs/"):
-            fName = "Logs/"+fName
-        os.makedirs("Logs",exist_ok=True)
-        
-        if (overwrite) and (os.path.isfile(fName)):
-            os.remove(fName)
-        
-        h5File = h5py.File(fName,"a")
-        for key in self.logDict.keys():
-            splitKey = key.split("/")
-            for (sIter,s) in enumerate(splitKey):
-                subGp = "/".join(splitKey[:sIter+1])
-                if not subGp in h5File:
-                    h5File.create_group(subGp)
-            for (oIter,outputNm) in enumerate(self.outputNms[key]):
-                h5File[key].create_dataset(outputNm,data=self.logDict[key][oIter])
-        
-        h5File.close()
-        
-        return None
-    
 
 class LeastActionPath:
     """
@@ -435,19 +357,25 @@ class LeastActionPath:
         for i in range(1,self.nPts-1):
             netForce[i] = perpForce[i] + springForce[i]
         
-        #Avoids throwing divide-by-zero errors
-        if not np.array_equal(trueForce[0],np.zeros(self.nDims)):
+        #TODO: add check if force is very small...?
+        
+        #Avoids throwing divide-by-zero errors, but also deals with points with
+            #gradient within the finite-difference error from 0. Simplest example
+            #is V(x,y) = x^2+y^2, at the origin. There, the gradient is the finite
+            #difference value fdTol, in both directions, and so normalizing the
+            #force artificially creates a force that should not be present
+        if not np.allclose(trueForce[0],np.zeros(self.nDims),atol=fdTol):
             normForce = trueForce[0]/np.linalg.norm(trueForce[0])
         else:
             normForce = np.zeros(self.nDims)
-            
+        
         if self.endpointHarmonicForce[0]:
             netForce[0] = springForce[0] - (np.dot(springForce[0],normForce)-\
                                             self.kappa*(energies[0]-self.constraintEneg))*normForce
         else:
             netForce[0] = springForce[0]
         
-        if not np.array_equal(trueForce[-1],np.zeros(self.nDims)):
+        if not np.allclose(trueForce[-1],np.zeros(self.nDims),atol=fdTol):
             normForce = trueForce[-1]/np.linalg.norm(trueForce[-1])
         else:
             normForce = np.zeros(self.nDims)

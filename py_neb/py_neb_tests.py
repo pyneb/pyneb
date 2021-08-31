@@ -25,6 +25,11 @@ List of tests to add:
         
 Tests added:
     ==========================================================================
+    31/08/2021
+    -LeastActionPath.compute_force:
+        *Feed in allowed points with quadratic potential, and confirmed gradient
+            by hand
+    ==========================================================================
     30/08/2021
     -forward_action_grad:
         *Test with all correct inputs
@@ -409,8 +414,12 @@ class LeastActionPath_compute_force(unittest.TestCase):
         lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1,"kappa":2})
         
         netForce = lap.compute_force(points)
-        print(netForce)
-        #WARNING: have not computed the expected values by hand yet
+        
+        #Computed with Mathematica
+        correctNetForce = np.array([[1,1],[1,1],[-25.455844,-25.455844]])
+        
+        self.assertIsNone(np.testing.assert_allclose(netForce,correctNetForce))
+        
         
         return None
 
