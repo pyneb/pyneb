@@ -148,7 +148,44 @@ def grad(f,coords,h=10**(-8)):
     else:
         pass
     return(gradOut)
-
+def cdot_prod(M,vec1,vec2):
+    ## computes dot producted using M as the metric tensor
+    ## M is the nDim x nDim metic tensor 
+    ## vec is a np.array of vectors
+    if isinstance(vec1,np.ndarray):
+        pass
+    else:
+        vec1 = np.array(vec1)
+    if isinstance(vec2,np.ndarray):
+        pass
+    else:
+        vec2 = np.array(vec2)
+    shape1 = np.array(vec1.shape)
+    shape2 = np.array(vec2.shape)
+    shape3 = np.array(M.shape)
+    if len(shape1) == 1:
+        vec1.resize(1,shape1[0])
+    else:pass
+    if len(shape2) == 1:
+        vec2.resize(1,shape2[0])
+    else:pass
+    ## check if it is a list of tensors or just a single tensor
+    if np.array_equal(shape1,shape2) == True:
+        products = np.zeros(vec1.shape[0])
+        nPnts,nDims = vec1.shape
+        if shape3[0] != nPnts :
+            # if it is a single tensor, generate a list of length nPts with this tensor in every index
+            M = np.full((nPnts,*shape3),M)
+        else: pass  
+        
+        # for every vector in path, take its t
+        for i in range(nPnts):
+            result = np.dot(vec2[i],np.dot(M[i],vec1[i].T))
+            products[i] = np.dot(vec2[i],np.dot(M[i],vec1[i].T))
+        if products.shape[0] == 1:
+            products = products.item()
+    return(products)
+        
 
 def mass_tensor_wrapper(data_dict,nDims,coord_keys,mass_keys,mass_func=None):
     uniq_coords = []
@@ -162,10 +199,13 @@ def mass_tensor_wrapper(data_dict,nDims,coord_keys,mass_keys,mass_func=None):
         uniq_coords.append(array)
         l_bnds[i] = min(array)
         u_bnds[i] = max(array) 
-    for key in mass_keys:
-        mass_mins.append(min(data_dict[key]))
-        M_grid = make_nd_grid(data_dict,coord_keys,key,return_grid=False)
-        func_list.append(interp_wrapper(uniq_coords,M_grid))
+    if mass_func == None:
+        pass
+    else:
+        for key in mass_keys:
+            mass_mins.append(min(data_dict[key]))
+            M_grid = make_nd_grid(data_dict,coord_keys,key,return_grid=False)
+            func_list.append(interp_wrapper(uniq_coords,M_grid))
     def mass_tensor(coords):
         if mass_func == None:
             M = np.identity(nDims)
@@ -188,32 +228,34 @@ def mass_tensor_wrapper(data_dict,nDims,coord_keys,mass_keys,mass_func=None):
             M = M.reshape(nDims,nDims)
         return(M)
     return(mass_tensor)
-def eps(V,mass_func,coords,E_gs):
-    ## M is a nDim x nDim matrix
-    ## coords is number of images x nDim matrix
-    # V is the potential function
-    # E_gs is the energy of the ground state ( aka the constrain energy)
-    npts = coords.shape[0]
-    nDims = coords.shape[1]
-    dx = np.zeros(coords.shape)
-    result = np.zeros(coords.shape[0])
-    lin_eles = np.zeros(coords.shape[0])
-    for i in np.arange(0,npts-1,1):
-        pot = V(coords[i])
-        dx[i] = coords[i+1] - coords[i]
-        lin_ele = np.dot(dx[i],np.dot(mass_func(coords[i]),dx[i]))
-        result[i] = np.sqrt(2*(pot - E_gs)*lin_ele)
-        lin_eles[i] = lin_ele
-    return(result,lin_eles)
+def eps(V,path,mu,E_gs):
+    pot = V(path)
+    #### note sometimes the difference will be a very small negative number. Add some delta to make it positive?
+    for i in range(len(pot)):
+        if pot[i] < E_gs:
+            pot[i] = E_gs
+        else: pass
+    print('pot')
+    print(pot)
+    print(E_gs)
+    print('diff')
+    print(pot- E_gs)
+    result = np.sqrt(2*mu*(pot - E_gs))
+    return(result)
    
-def action(path,eps):
+def action(V,mass_func,path,mu,E_gs):
     a = 0
-    ### loop over rows (coords of each image)
-    for i in np.arange(0,eps.shape[0],1):
-        if i== 0:
-            pass
-        else:
-            a += .5*(eps[i] + eps[i-1])*np.linalg.norm(path[i] - path[i-1])
+    npts = path.shape[0]
+    nDims = path.shape[1]
+    result = np.zeros(path.shape[0])
+    for i in np.arange(0,npts-1,1):
+        pot = V(path[i])
+        M = mass_func(path[i])
+        lin_ele = mu*cdot_prod(M,path[i] - path[i-1],path[i]-path[i-1])
+        if pot < E_gs:
+            pot = E_gs + 10**(-9)
+        else: pass
+        a += np.sqrt(2*mu*(pot - E_gs)*lin_ele)
     return a
 
 ### inerpolators 
@@ -258,19 +300,39 @@ def coord_interp_wrapper(orig_data,orig_V,l_rb,u_rb):
         else:pass
         return(result)
     return(coord_nd_interp)
-def interp_wrapper(orig_data,orig_V):
-    def nd_interp(eval_point):
-        result = interpolate.interpn(orig_data,orig_V,eval_point)
-        if isinstance(result,np.float64) == True:
-            pass
-        elif len(result) == 1:
-            result = result.item()
-        else:pass
-        return(result)
-    return(nd_interp)
+def interp_wrapper(orig_data,orig_V,kind):
+    if kind =='NDLinear':
+        def nd_interp(eval_point):
+            result = interpolate.interpn(orig_data,orig_V,eval_point)
+            if isinstance(result,np.float64) == True:
+                pass
+            elif len(result) == 1:
+                result = result.item()
+            else:pass
+            return(result)
+        return(nd_interp)
+    elif kind == 'bivariant':
+        function = interpolate.RectBivariateSpline(orig_data[0], orig_data[1], orig_V, kx=5, ky=5, s=0)
+        def bivariant_spline(eval_point):
+            if isinstance(eval_point,np.ndarray)==True:
+                pass
+            else:
+                eval_point = np.array(eval_point)
+            if len(eval_point.shape) == 1:
+                result = function(*eval_point)
+                if len(result) == 1:
+                    result = result.item()
+                else:pass
+            else: 
+                result = np.zeros(len(eval_point))
+                for i in range(len(eval_point)):    
+                    result[i] = function(eval_point[:,0][i],eval_point[:,1][i]).item()
+            return(result)
+        return(bivariant_spline)
+    
 
 class NEB():
-    def __init__(self,f,mass_func,M,N,R0,RN,glb_min,lower_bndy,upper_bndy):
+    def __init__(self,f,mass_func,M,N,R0,RN,E_const,lower_bndy,upper_bndy,**kwargs):
         self.f = f # potential function (can be analytic or an interpolated functions)
         self.mass_func = mass_func ## function that computes the mass tensor at a given \vec{r}
         self.N = N # number of images
@@ -279,10 +341,13 @@ class NEB():
         self.RN = RN # intial band ending point 
         self.lower_bndy = lower_bndy ### row vector containing upper bounds of each coord
         self.upper_bndy = upper_bndy ### row vector containing lower bounds of each coord
-        self.glb_min = glb_min
-        self.E_gs_0 = self.shift_V(self.R0)
+        self.E_const = E_const
+        self.E_shift = kwargs.get('E_shift',None)
     def shift_V(self,r):
-        result = self.f(r) - self.glb_min 
+        if self.E_shift != None:
+            result = self.f(r) - self.E_shift
+        else:
+            result = self.f(r)
         return(result)
     def get_end_points(self):
         return(self.shift_V(self.R0),self.shift_V(self.RN))
@@ -355,17 +420,19 @@ class NEB():
                 result = -grad_V + np.dot(grad_V,tan[i])*tan[i]
                 force[i] = result
         return(force)
-    def g_perp(self,path,E,mu,tau,params):
+    def g_perp(self,path,tau,params):
         ## Taken from a talk Calculations of Tunneling Rates using the Line Integral NEB and Acceleration of Path Optimization using
         ## Gaussian Process Regression by Vilhjálmur Ásgeirsson 
         nDim = path.shape[1]
         E_const = params['E_const']
         k = params['k']
+        mu = params['mu']
         kappa = params['kappa']
         fix_r0 = params['fix_r0']
         fix_rn = params['fix_rn']
         N_idx = np.arange(0,len(path),1)
         g_perp= np.zeros((len(N_idx),nDim))
+        E = eps(self.shift_V,path,mu,self.E_const) 
         E_R0 = E[0]
         E_RN = E[-1]
         delta = .01 ## tolerance for defining when to apply spring force.
@@ -393,12 +460,14 @@ class NEB():
                     f_unit = f/f_norm
                     g_perp[i] = (g_spr_0 - (np.dot(g_spr_0,f_unit) - kappa*(self.shift_V(path[i]) - E_const))*f_unit)
             else:
+                M_array = self.mass_func(path[i])
                 f = -1*np.array(grad(self.shift_V,path[i]))
-                d_i = np.linalg.norm(path[i] - path[i-1])
-                d_ip1 = np.linalg.norm(path[i+1] - path[i])
+                d_i = np.sqrt(cdot_prod(M_array,path[i]-path[i-1],path[i]-path[i-1]))
+                M_array = self.mass_func(path[i+1])
+                d_ip1 = np.sqrt(cdot_prod(M_array,path[i+1]-path[i],path[i+1]-path[i]))
                 d_ivec = (path[i] - path[i-1])/d_i
                 d_ip1vec = (path[i+1] - path[i])/d_ip1
-                g_i =.5*((mu[i]/E[i])*(d_i + d_ip1)*f - (E[i] + E[i-1])*d_ivec + (E[i+1] + E[i])*d_ip1vec) 
+                g_i =.5*((mu/E[i])*(d_i + d_ip1)*f - (E[i] + E[i-1])*d_ivec + (E[i+1] + E[i])*d_ip1vec) 
                 g_perp[i] = g_i - np.dot(g_i,tau[i])*tau[i]
         return(g_perp) 
     
@@ -427,6 +496,7 @@ class NEB():
         ### define force function
         force = self.get_forces()[target]
         k = force_params['k']
+        mu = force_params['mu']
         ### FIRE parameters, should maybe be passed in?
         min_fire=10
         dtmax=10.0
@@ -438,20 +508,19 @@ class NEB():
         alpha=alpha_st
         maxmove=0.2
         fire_steps=0
-        delta = 10**(-4) ### convergence threshold for the action defined by abs(action[i] - actions[i-1]) < delta 
+        delta = 10**(-5) ### convergence threshold for the action defined by abs(action[i] - actions[i-1]) < delta 
         #### MAIN KERNEL (FIRE)
         for i in np.arange(0,self.M,1):
+            #print('starting iteration: ',i)
             # calculate the mass comp M_{ij}dx^{i}dx^{j} and eps = \sqrt(2 (V(\vect{r}) - E_gs) M_{ij}dx^{i}dx^{j}) of each image
-            var_eps,mu = eps(self.shift_V,self.mass_func,path[i],0.0)
             ## calculate the new tangent vectors and forces after each shift.
             tau = self.get_tang_vect(path[i])
             # calculate the spring/harmonic force on each image
             F_spring = self.F_s(k,path[i],tau)
             # calculate the "real" force of the image
-            g = force(path[i],var_eps,mu,tau,force_params)
+            g = force(path[i],tau,force_params)
             ## note the g for boundary images can contain a spring force. By default F_spring = 0 for boundary images.
             F =  F_spring + g
-
             for j in np.arange(0,self.N,1):
                 if i==0:
                     vp[i][j]= np.zeros(v[i][j].shape)
@@ -486,10 +555,10 @@ class NEB():
                             pass
                     '''
             #print('finished iteration', i)
-            action_array[i] = action(path[i],var_eps)
+            action_array[i] = action(self.shift_V,self.mass_func,path[i],mu,self.E_const) ### HARDCODE E_gs
             ## action convergence test
             #if i > 10:
-           #     if abs(action_array[i] - action_array[i-1]) < delta:
+            #    if abs(action_array[i] - action_array[i-1]) < delta:
             #        n = i
             #        break
             #    else:
@@ -517,15 +586,22 @@ class NEB():
         ### define force function
         force = self.get_forces()[target]
         k = force_params['k']
+        mu = force_params['mu']
         delta = 10**(-4) ### convergence threshold for the action defined by abs(action[i] - actions[i-1]) < delta 
         #### MAIN KERNEL (QM Verlet)
         for i in np.arange(0,self.M,1):
+            print('starting iteration ',i)
             ## calculate the new tangent vectors and forces after each shift.
             tau = self.get_tang_vect(path[i])
             F_spring = self.F_s(k,path[i],tau)
+            #print('calling g function')
             g = force(path[i],tau,force_params)
+            #print('g-force')
+            #print(g)
             ## note the g for boundary images can contain a spring force. By default F_spring = 0 for boundary images.
             F =  F_spring + g
+            #print('path')
+            #print(path[i])
             for j in np.arange(0,self.N,1):
                 if i==0:
                     vp[i][j]= np.zeros(v[i][j].shape)
@@ -542,17 +618,21 @@ class NEB():
                     shift[i][j] = v[i][j]*dt + .5*a[i][j]*dt**2
                     path[i+1][j] = path[i][j] + shift[i][j]
                     
-            action_array[i] = action(path[i],self.shift_V,self.glb_min)
-            if i > 10:
-                if abs(action_array[i] - action_array[i-1]) < delta:
-                    n = i
-                    break
-                else:
-                    n = i
-                    pass
+            action_array[i] = action(self.shift_V,self.mass_func,path[i],mu,self.E_const) ### HARDCODE E_gs
+            #if i > 10:
+            #    if abs(action_array[i] - action_array[i-1]) < delta:
+            #        n = i
+            #        break
+            #    else:
+            #        n = i
+            #        pass
         end = time.time()
         total_time = end - start
-        return(path[n],action_array[:n],total_time)
+        #np.savetxt('QMV_forces_NDLinear.txt',)
+        #np.savetxt('QMV_acc_NDLinear.txt',)
+        #np.savetxt('QMV_vel.txt',)
+        #np.savetxt('QMV_paths.txt',)
+        return(path[-1],action_array,total_time)
     
     def backtrack(self,Fi,Fim,alpha_0,gamma,N_0):
         eps = 10**(-3)
@@ -581,7 +661,7 @@ class NEB():
                     alpha = alpha/gamma
             else: pass
         return(alpha,skip)
-    
+    ### BFGS NOT WORKING 
     def BFGS(self,init_path,alpha,beta,gamma,s_max,force_params,target='LAP'):
         ### Initialize arrays
         action_array = np.zeros((self.M))
@@ -644,8 +724,8 @@ class NEB():
                     mat_mul1 = np.matmul(H[i][j],B)
                     H[i+1][j] = np.matmul(A,mat_mul1) + np.outer(sigma[i][j],sigma[i][j])*rho[i]
             
-            action_array[i] = action(path[i],self.V,self.glb_min)
-            energies[i] = energy(self.V,path[i],self.glb_min)
+            action_array[i] = action(path[i],self.V,self.E_const)
+            energies[i] = energy(self.V,path[i],self.E_const)
         end = time.time()
         total_time = end - start
         return(path[-1],action_array,energies,total_time)
@@ -682,27 +762,29 @@ def make_time_plot(iters,times,N,M,k,dt,savefig=False):
         else:pass
         plt.show()
         plt.clf()       
-def make_cplot(init_paths,paths,grid,zz,params,savefig=False):
+def make_cplot(init_paths,paths,grid,zz,params,names,savefig=False):
     ##plotting function. takes in multiply pathes and init pathes. assumes the init paths and pathes have the same order.
     ## params is a dictionary that should at least contain 'M', 'N', and 'k'.
-    color=iter(cm.rainbow(np.linspace(0,1,len(paths))))
+    color=iter(['blue','red','magenta','black','orange','cyan','silver','tan','crimson'])
     fig, ax = plt.subplots(1,1,figsize = (12, 10))
-    im = ax.contourf(grid[0],grid[1],zz,cmap='Spectral_r',levels=MaxNLocator(nbins = 200).tick_values(-5,9))
+    im = ax.contourf(grid[0],grid[1],zz,cmap='Spectral_r',levels=MaxNLocator(nbins = 200).tick_values(.1,15))
     ax.contour(grid[0],grid[1],zz,colors=['black'],levels=[params['E_gs']])              
     for init_path in init_paths:
-        ax.plot(init_path[:, 0], init_path[:, 1], '.-', color = 'orange',ms=10)
-    for path in paths:
+        ax.plot(init_path[:, 0], init_path[:, 1], '.-', color = 'green',ms=10,label='Initial Path')
+    for i,path in enumerate(paths):
         c=next(color)
-        ax.plot(path[:, 0], path[:, 1], '.-', color = c,ms=10)
+        ax.plot(path[:, 0], path[:, 1], '.-', color = c,ms=10,label=names[i])
         
     ax.set_ylabel('$Q_{30}$',size=20)
     ax.set_xlabel('$Q_{20}$',size=20)
     ax.set_title('M = '+str(params['M'])+' N = '+str(params['N'])+' k='+str(params['k']))
+    ax.legend()
     cbar = fig.colorbar(im)
     if savefig is not False:
         plt.savefig('Finalpath_M_'+str(params['M'])+'_N_'+str(params['N'])+'_k_'+str(params['k'])+'.pdf')
     else:pass
     plt.show()  
+    
  ### Analytic surfaces
 def V_sin(x,y,ax,ay):
     result = ax*np.cos(2.0*np.pi*x) + ay*np.cos(2.0*np.pi*y) 
