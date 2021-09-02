@@ -76,7 +76,7 @@ class Utilities:
         allowedMinInds = tuple([inds[allowedIndsOfIndices] for inds in allMinInds])
         actualMinIndOfInds = np.argmin(zz[allowedMinInds])
         
-        gsInds = tuple([inds[actualMinIndOfInds] for inds in allMinInds])
+        gsInds = tuple([inds[actualMinIndOfInds] for inds in allowedMinInds])
         
         return gsInds
     
@@ -1198,8 +1198,6 @@ def uranium_test():
     return None
 
 def uranium_pyneb_test():
-    startTime = time.time()
-    
     fDir = "Daniels_Code/"
     fName = "252U_PES.h5"
     dsets, attrs = FileIO.read_from_h5(fName,fDir)
@@ -1208,10 +1206,11 @@ def uranium_pyneb_test():
     q20Vals = dsets["Q20"][:,0]
     q30Vals = dsets["Q30"][0]
     
-    zz = dsets["PES"] - np.min(dsets["PES"])
+    zz = dsets["PES"]# - np.min(dsets["PES"])
+    additionalShift = 0#-1.
     
     interpPot = interpnd_wrapper((q20Vals,q30Vals),zz)
-    potential = Utilities.aux_pot(interpPot,0)
+    potential = Utilities.aux_pot(interpPot,additionalShift)
     
     # flattenedPts = np.array([dsets["Q20"],dsets["Q30"]]).reshape((2,-1))
     # enegs = potential(flattenedPts)
@@ -1239,14 +1238,18 @@ def uranium_pyneb_test():
     
     print("Constraining to energy %.3f" % constraintEneg)
     
-    maxIters = 250
+    maxIters = 750
     
     lap = py_neb.LeastActionPath(potential,nPts,2,nebParams={"k":k,"kappa":kappa,"constraintEneg":constraintEneg})
     # lneb = LineIntegralNeb(potential,Utilities.const_mass(),initialPoints,k,kappa,constraintEneg)
     minObj = MinimizationAlgorithms(lap,initialPoints=initialPoints)
+    
+    startTime = time.time()
     allPts, allVelocities, allForces, actions = \
         minObj.verlet_minimization_v2(maxIters=maxIters)
-    print(actions)
+    endTime = time.time()
+    print("Run time: "+str(endTime-startTime))
+    # print(actions)
     # lneb2 = LineIntegralNeb(potential2,Utilities.const_mass(),initialPoints,k,kappa,constraintEneg)
     # minObj2 = MinimizationAlgorithms(lneb2)
     # allPts2, allVelocities2, allForces2, actions2 = \
@@ -1279,10 +1282,10 @@ def uranium_pyneb_test():
     #            colors=["black"])
     
     fig, ax = Utilities.standard_pes(dsets["Q20"],dsets["Q30"],zz)
-    ax.contour(dsets["Q20"],dsets["Q30"],zz,levels=[constraintEneg],\
+    ax.contour(dsets["Q20"],dsets["Q30"],zz,levels=[constraintEneg+additionalShift],\
                colors=["black"])
     
-    ax.plot(allPts[-1,0],allPts[-1,1],marker=".",label="ND Linear",color="blue")
+    ax.plot(allPts[-1,0],allPts[-1,1],marker=".",label="252U_ND_Linear",color="blue")
     # ax.plot(allPts2[-1,0],allPts2[-1,1],marker=".",label="2D Linear",color="green")
     # ax.plot(allPts3[-1,0],allPts3[-1,1],marker=".",label="2D Cubic",color="red")
     # ax.plot(allPts4[-1,0],allPts4[-1,1],marker=".",label="2D Quintic",color="orange")
@@ -1292,13 +1295,26 @@ def uranium_pyneb_test():
     ax.set_ylim(min(q30Vals),max(q30Vals))
     ax.set(title=r"${}^{252}$U PES")
         
-    # fig.savefig("Runs/"+str(int(startTime))+".pdf")
+    fig.savefig("252U.pdf")
     
-    # FileIO.write_path("ND_Linear.txt",allPts[-1])
+    FileIO.write_path("252U_ND_Linear.txt",allPts[-1],columnHeads=["Q20","Q30"])
     # FileIO.write_path("2D_Linear.txt",allPts2[-1])
     # FileIO.write_path("2D_Cubic.txt",allPts3[-1])
     # FileIO.write_path("2D_Quintic.txt",allPts4[-1])
     
+    # print(allPts[-1])
+    eGS = potential(allPts[-1])[0]
+    print(eGS)
+    potential_with_zero_egs = Utilities.aux_pot(potential,eGS,tol=10**(-4))
+    # print(potential_with_zero_egs(allPts[-1]))
+    
+    # finalAction, _, _ = py_neb.action(allPts[-1].T,potential_with_zero_egs)
+    print("Action shifted up: "+str(actions[-1]))
+    # print("Action unshifted: "+str(finalAction))
+    
+    return None
+
+def u232_test():
     return None
 
 def plutonium_pes_slices():
@@ -1872,8 +1888,9 @@ if __name__ == "__main__":
     # fire_test()
     # plutonium_test()
     # plutonium_endpoint_test()
-    uranium_test()
-    uranium_pyneb_test()
+    # uranium_test()
+    # uranium_pyneb_test()
+    u232_test()
     # gp_test()
     # interp_mode_test()
     # lps = LepsPot()
