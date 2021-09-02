@@ -2,3 +2,5 @@ Created_by: Daniel
 Created_on: 02/09/2021
 Method: NEB
 Method_description: {k: 10, kappa: 20, nPts: 22, nIterations: 750, optimization: velocity_verlet, endpointForce: on}
+Action: 437.6
+Run_time: 151.7

@@ -10,4 +10,6 @@ Conventions:
     -When the path was made
     -What method was used (NEB/dynamic programming/Euler-Lagrange)
     -Any other parameters necessary to fully describe the method
+    -Final action value
+    -Run time
 -Remove files when you update them
