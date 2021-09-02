@@ -10,9 +10,6 @@ import pandas as pd
 import h5py
 
 
-
-
-
 if __name__ == "__main__":
     ### Define surface here
     data_path = '../PES/252U_PES.h5'
@@ -94,7 +91,7 @@ if __name__ == "__main__":
     mu = 1.0
     
     R0 = np.array(gs_coord) # start at GS
-    RN = np.array((300,25)) # end at final OTL
+    RN = np.array((280,15)) # end at final OTL
     E_const = E_gs ## constraint should be on the GS which is at 0 after shifting
 
     band =  NEB.NEB(f,mass_tensor,M,N,R0,RN,E_const,l_bndy,u_bndy)
@@ -107,7 +104,7 @@ if __name__ == "__main__":
     plot_params = {'M':M,'N':N,'k':k,'E_gs':E_const}
     #path_FIRE,action_FIRE,total_time_FIRE = band.FIRE(init_path,dt,eta,force_params,target='LAP')
 
-    path_QMV,action_QMV,total_time_QMV = band.QMV(init_path,dt,eta,force_params,target='LAP')
+    path_QMV,action_QMV,total_time_QMV = band.QMV(init_path,dt,eta,force_params,target='LAP2')
     #eric_action = np.around(action_FIRE[-1],2)
     eric_action = np.around(action_QMV[-1],2)
     #plt.plot(np.arange(len(action_FIRE)),action_FIRE,label='Eric Min '+str(eric_action))
