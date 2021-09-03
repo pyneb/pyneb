@@ -180,6 +180,22 @@ class Utilities:
         return initialPoints
     
     @staticmethod
+    def new_init_on_contour(contour,gsLoc,nPts=22):
+        nPoints, nCoords = contour.shape
+        assert len(gsLoc) == nCoords
+        
+        cartesianDist = np.zeros(nPoints)
+        for ptIter in range(nPoints):
+            diffVec = contour[ptIter] - gsLoc
+            cartesianDist[ptIter] = np.linalg.norm(diffVec)
+        
+        minIter = np.argmin(cartesianDist)
+        initPath = np.array([np.linspace(gsLoc[cIter],contour[minIter,cIter],num=nPts) for\
+                             cIter in range(nCoords)])
+        
+        return initPath
+    
+    @staticmethod
     def aux_pot(eneg_func,eGS,tol=10**(-2)):
         def pot_out(*coords):
             return eneg_func(*coords) - eGS + tol
@@ -242,9 +258,49 @@ class Utilities:
         ax.set(xlabel=r"$Q_{20}$ (b)",ylabel=r"$Q_{30}$ (b${}^{3/2}$)")
         return fig, ax
     
-def interpnd_wrapper(uniqueGridPts,gridValues):
+def interpnd_wrapper(uniqueGridPts,gridValues,tol=10**(-5)):
+    #Really, a wrapper that also puts a quadratic growth once you leave the
+    #interpolated region
+    nCoords = len(uniqueGridPts)
+    endPoints = np.array([[g[0],g[-1]] for g in uniqueGridPts])
+    
     def func(*coords):
-        return interpn(uniqueGridPts,gridValues,coords)
+        coords = np.array(coords).T
+        if len(coords.shape) == 1:
+            nPoints = 1
+            coords = coords.reshape((1,-1))
+        else:
+            nPoints = coords.shape[0]
+            
+        retVal = np.zeros(nPoints)
+        for ptIter in range(nPoints):
+            if np.count_nonzero(np.isnan(coords[ptIter])) != 0:
+                sys.exit("Err: point reached with some number of NaNs")
+            isAllowed = np.ones((nCoords,2),dtype=bool)
+            for coordIter in range(nCoords):
+                if coords[ptIter,coordIter] < endPoints[coordIter,0]:
+                    isAllowed[coordIter,0] = False
+                if coords[ptIter,coordIter] > endPoints[coordIter,1]:
+                    isAllowed[coordIter,1] = False
+            if isAllowed.all():
+                retVal[ptIter] = \
+                    interpn(uniqueGridPts,gridValues,coords[ptIter]) + tol
+            else:
+                #Basically projects onto the nearest allowed endpoint of the grid,
+                #allowing for multiple points being off of the grid
+                nearestAllowed = np.zeros(nCoords)
+                for coordIter in range(nCoords):
+                    if isAllowed[coordIter].all():
+                        nearestAllowed[coordIter] = coords[ptIter,coordIter]
+                    else:
+                        failedInd = np.nonzero(isAllowed[coordIter])
+                        nearestAllowed[coordIter] = endPoints[coordIter,failedInd]
+                dist = np.linalg.norm(nearestAllowed - coords[ptIter])
+                #For getting the scale correct
+                evalAtNearest = interpn(uniqueGridPts,gridValues,nearestAllowed) + tol
+                retVal[ptIter] = evalAtNearest*np.exp(np.sqrt(dist))#dist**2
+        
+        return retVal
     return func
 
 def mass_array_func(arrayOfFuncs):
@@ -540,25 +596,56 @@ class FileIO(): #Tried using inheritance here, but I think the static methods
         return None
     
     @staticmethod
-    def read_path(fname):
-        df = pd.read_csv(fname,sep=",",header=None,index_col=None)
-        return np.array(df)
+    def read_path(fname,returnHeads=False):
+        df = pd.read_csv(fname,sep=",",index_col=None,header=None)
+        
+        firstRow = np.array(df.loc[0])
+        try:
+            firstRow = firstRow.astype(float)
+            ret = np.array(df)
+            heads = None
+        except ValueError:
+            ret = np.array(df.loc[1:]).astype(float)
+            heads = df.loc[0]
+        
+        if returnHeads:
+            ret = (ret,heads)
+        
+        return ret
     
     @staticmethod
-    def write_path(fname,path,ndims=2):
+    def write_path(fname,path,ndims=2,columnHeads=None):
+        if columnHeads is None:
+            print("Warning: columnHeads should probably not be None")
+            
         #TODO: error handling when path exists
         if ndims not in path.shape:
             sys.exit("Err: path shape is "+str(path.shape)+"; expected one dimension to be "+str(ndims))
             
         if path.shape[0] == ndims:
             path = path.T
-        
-        df = pd.DataFrame(data=path)
-        df.to_csv(fname,sep=",",header=False,index=False)
+            
+        df = pd.DataFrame(data=path,columns=columnHeads)
+        if columnHeads is None:
+            includeHeader = False
+        else:
+            includeHeader = True
+        df.to_csv(fname,sep=",",header=includeHeader,index=False)
         
         return None
     
 class CustomLogging():
+    """
+    A note on parallelization:
+        -If one runs multiple instances of the NEB solver concurrently, one
+            should output all instances into separate folders *outside* of
+            this program (e.g. in the submit script)
+        -If one uses a parallelized energy evaluation (e.g. a DFT solver),
+            one should be careful when updating the log. Probably, we can
+            assume that parallel energy evaluations will have their own
+            parallelized logging, and we can simply update the log here once
+            we gather all of the energy outputs, without parallelizing anything
+    """
     def __init__(self,loggingLevel):
         allowedLogLevels = [None,"output"]#"output" doesn't keep track of intermediate steps
         assert loggingLevel in allowedLogLevels
@@ -566,6 +653,8 @@ class CustomLogging():
         if self.loggingLevel == "output":
             self.logDict = {}
             self.outputNms = {}
+            
+            self.stringRep = self.__str__()+"_"+datetime.datetime.now().isoformat()
     
     def update_log(self,strRep,outputTuple,outputNmsTuple,isTuple=True):
         #If returning a single value, set isTuple -> False
@@ -577,22 +666,23 @@ class CustomLogging():
                 outputTuple = (outputTuple,)
                 outputNmsTuple = (outputNmsTuple,)
             
-            if strRep not in self.logDict:
-                self.logDict[strRep] = []
+            gpName = self.stringRep+"/"+strRep
+            if gpName not in self.logDict:
+                self.logDict[gpName] = []
                 for t in outputTuple:
                     if isinstance(t,np.ndarray):
-                        self.logDict[strRep].append(np.expand_dims(t,axis=0))
+                        self.logDict[gpName].append(np.expand_dims(t,axis=0))
                     else:
-                        self.logDict[strRep].append([t])
-                self.outputNms[strRep] = outputNmsTuple
+                        self.logDict[gpName].append([t])
+                self.outputNms[gpName] = outputNmsTuple
             else:
-                assert len(outputTuple) == len(self.logDict[strRep])
+                assert len(outputTuple) == len(self.logDict[gpName])
                 for (tIter,t) in enumerate(outputTuple):
                     if isinstance(t,np.ndarray):
-                        self.logDict[strRep][tIter] = \
-                            np.concatenate((self.logDict[strRep][tIter],np.expand_dims(t,axis=0)))
+                        self.logDict[gpName][tIter] = \
+                            np.concatenate((self.logDict[gpName][tIter],np.expand_dims(t,axis=0)))
                     else:
-                        self.logDict[strRep][tIter].append(t)
+                        self.logDict[gpName][tIter].append(t)
                         
         return None
     
@@ -612,13 +702,13 @@ class CustomLogging():
         
         h5File = h5py.File(fName,"a")
         for key in self.logDict.keys():
-            splitKey = key.split(".")
+            splitKey = key.split("/")
             for (sIter,s) in enumerate(splitKey):
                 subGp = "/".join(splitKey[:sIter+1])
                 if not subGp in h5File:
                     h5File.create_group(subGp)
             for (oIter,outputNm) in enumerate(self.outputNms[key]):
-                h5File[key.replace(".","/")].create_dataset(outputNm,data=self.logDict[key][oIter])
+                h5File[key].create_dataset(outputNm,data=self.logDict[key][oIter])
         
         h5File.close()
         
@@ -626,30 +716,53 @@ class CustomLogging():
     
 class LineIntegralNeb(CustomLogging):
     def __init__(self,potential,mass,initialPoints,k,kappa,constraintEneg,\
-                 targetFunc="action",endSprForce=False,loggingLevel=None):
+                 targetFunc="action",endSprForce=False,loggingLevel=None,\
+                 toCount=["potential","mass"]):
         super().__init__(loggingLevel)#Believe it or not - still unclear what this does...
         
         targetFuncDict = {"action":self._construct_standard_action}
         if targetFunc not in targetFuncDict.keys():
             sys.exit("Err: requested target function "+str(targetFunc)+\
                      "; allowed functions are "+str(targetFuncDict.keys()))
-                
+        self.counterFuncDict = {"potential":potential,"mass":mass}
+        
+        self.counterDict = {}
+        #I guess technically allows for counting other things, like self._compute_tangents
+        for c in toCount:
+            if c not in self.counterFuncDict:
+                sys.exit("Err: requested counting of "+c)
+            self.counterDict[c] = 0
+            setattr(self,c,self.count_evals_wrapper(c))
+        
         self.k = k
         self.kappa = kappa
         self.constraintEneg = constraintEneg
         
         self.nCoords, self.nPts = initialPoints.shape
-        self.potential = potential
-        self.mass = mass
+        
+        #Only set the potential and mass by name
+        for f in ["potential","mass"]:
+            if not hasattr(self,f):
+                setattr(self,f,self.counterFuncDict[f])
+        
         self.initialPoints = initialPoints
         self.endSprForce = endSprForce
         
         #Is an approximation of the integral
         self.target_func = targetFuncDict[targetFunc]()
-        self.target_func(*initialPoints)
         
     def __str__(self):
+        #Kind of useful b/c it exists regardless of the state of self.__init__().
+        #For instance, I would otherwise have to define this before calling
+        #super().__init__(), or else it doesn't exist
         return "LineIntegralNeb"
+    
+    def count_evals_wrapper(self,counterString):
+        def func_out(*args,**kwargs):
+            func = self.counterFuncDict[counterString]
+            self.counterDict[counterString] += 1
+            return func(*args,**kwargs)
+        return func_out
     
     def _construct_standard_action(self):
         def standard_action(*path,enegs=None,masses=None):
@@ -666,7 +779,9 @@ class LineIntegralNeb(CustomLogging):
             if masses is None:
                 masses = self.mass(*path)
                 
-            assert masses.shape == (self.nPts, self.nCoords, self.nCoords)
+            if masses.shape != (self.nPts, self.nCoords, self.nCoords):
+                sys.exit("Err: mass.shape = "+str(masses.shape)+\
+                         ", required shape = "+str((self.nPts, self.nCoords, self.nCoords)))
             
             retVal = 0
             for ptIter in np.arange(1,self.nPts):
@@ -678,7 +793,7 @@ class LineIntegralNeb(CustomLogging):
         return standard_action
     
     def _compute_tangents(self,currentPts,energies):
-        strRep = "LineIntegralNeb._compute_tangents"
+        strRep = "_compute_tangents"
         
         tangents = np.zeros((self.nCoords,self.nPts))
         for ptIter in range(1,self.nPts-1): #Range selected to exclude endpoints
@@ -712,7 +827,7 @@ class LineIntegralNeb(CustomLogging):
         return ret
     
     def _negative_gradient(self,points,enegsOnPath,massesOnPath):
-        strRep = "LineIntegralNeb._negative_gradient"
+        strRep = "_negative_gradient"
         
         eps = 10**(-8)
         
@@ -748,7 +863,7 @@ class LineIntegralNeb(CustomLogging):
         return ret
     
     def _spring_force(self,points,tangents):
-        strRep = "LineIntegralNeb._spring_force"
+        strRep = "_spring_force"
         
         diffArr = np.array([points[:,i+1] - points[:,i] for i in range(points.shape[1]-1)]).T
         diffScal = np.array([np.linalg.norm(diffArr[:,i]) for i in range(diffArr.shape[1])])
@@ -771,7 +886,7 @@ class LineIntegralNeb(CustomLogging):
         return ret
     
     def compute_force(self,points):
-        strRep = "LineIntegralNeb.compute_force"
+        strRep = "compute_force"
         
         integVal, energies, masses = self.target_func(*points)
         
@@ -789,12 +904,18 @@ class LineIntegralNeb(CustomLogging):
         for i in range(1,self.nPts-1):
             netForce[:,i] = perpForce[:,i] + springForce[:,i]
             
-        normForce = trueForce[:,0]/np.linalg.norm(trueForce[:,0])
+        if np.array_equal(trueForce[:,0],np.zeros(self.nCoords)):
+            normForce = np.zeros(self.nCoords)
+        else:
+            normForce = trueForce[:,0]/np.linalg.norm(trueForce[:,0])
         netForce[:,0] = springForce[:,0] - \
             (np.dot(springForce[:,0],normForce)-\
               self.kappa*(energies[0]-self.constraintEneg))*normForce
             
-        normForce = trueForce[:,-1]/np.linalg.norm(trueForce[:,-1])
+        if np.array_equal(trueForce[:,-1],np.zeros(self.nCoords)):
+            normForce = np.zeros(self.nCoords)
+        else:
+            normForce = trueForce[:,-1]/np.linalg.norm(trueForce[:,-1])
         netForce[:,-1] = springForce[:,-1] - \
             (np.dot(springForce[:,-1],normForce)-\
               self.kappa*(energies[-1]-self.constraintEneg))*normForce
@@ -802,6 +923,9 @@ class LineIntegralNeb(CustomLogging):
         ret = netForce
         outputNms = "netForce"
         self.update_log(strRep,ret,outputNms,isTuple=False)
+        
+        #Testing for now
+        netForce[:,0] = np.zeros(self.nCoords)
         
         return ret
     
@@ -811,9 +935,12 @@ class MinimizationAlgorithms(CustomLogging):
         
         self.lneb = lnebObj
         self.action_func = self.lneb.target_func #Idk why I did this
+        
+    def __str__(self):
+        return "MinimizationAlgorithms"
     
     def verlet_minimization(self,maxIters=1000,tStep=0.05):
-        strRep = "MinimizationAlgorithms.verlet_minimization"
+        strRep = "verlet_minimization"
         
         allPts = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
         allForces = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
@@ -834,7 +961,7 @@ class MinimizationAlgorithms(CustomLogging):
         return ret
     
     def verlet_minimization_v2(self,maxIters=1000,tStep=0.05):
-        strRep = "MinimizationAlgorithms.verlet_minimization_v2"
+        strRep = "verlet_minimization_v2"
         
         allPts = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
         allVelocities = np.zeros((maxIters+1,self.lneb.nCoords,self.lneb.nPts))
@@ -863,12 +990,12 @@ class MinimizationAlgorithms(CustomLogging):
         outputNms = ("allPts","allVelocities","allForces","actions")
         self.update_log(strRep,ret,outputNms)
         
-        return allPts, allVelocities, allForces, actions
+        return ret
     
     def verlet_minimization_with_fire(self,maxIters=1000,dtMin=0.1,minFire=10,dtMax=10,\
                                       finc=1.1,fdec=0.5,fadec=0.99,alphaInit=0.1,\
                                       trimNans=True):
-        strRep = "MinimizationAlgorithms.verlet_minimization_with_fire"
+        strRep = "verlet_minimization_with_fire"
         
         fireSteps = 0
         tStep = dtMin
@@ -1729,6 +1856,8 @@ def plutonium_pes_slices():
     return None
 
 def plutonium_test():
+    # sylvesterPath = FileIO.read_path("240Pu_Sylvester_Path.txt")
+    
     dsets, _ = FileIO.read_from_h5("240Pu.h5","/",baseDir=os.getcwd())
     coords = ["Q20","Q30","pairing"]
     uniqueCoords = [np.unique(dsets[coord]) for coord in coords]
@@ -1741,9 +1870,9 @@ def plutonium_test():
     allowedInds = tuple(np.array([inds[zz[minInds]!=-1760] for inds in minInds]))
     
     gsInds = Utilities.extract_gs_inds(allowedInds,cmesh,zz)
+    gsLoc = [c[gsInds] for c in cmesh]
     eGS = zz[gsInds]
-    # print([c[gsInds] for c in cmesh])
-    # print(eGS)
+    zz = zz - eGS
     
     interp_eneg = interpnd_wrapper(uniqueCoords,zz)
     
@@ -1751,12 +1880,58 @@ def plutonium_test():
                                'B30pair', 'B20pair','B30pair','Bpairpair'])
     inertiaFuncsArr = np.array([interpnd_wrapper(uniqueCoords,reshapedData[key])\
                                 for key in inertiaKeysArr],dtype=object).reshape((3,3))
-    print(np.array_equal(inertiaFuncsArr[0,0](*cmesh),reshapedData["B2020"]))
     
     inertia_func = mass_array_func(inertiaFuncsArr)
-    inertEval = inertia_func(*cmesh)
-    print(inertEval.shape)
     
+    allContours = Utilities.find_approximate_contours(cmesh,zz)
+    outerContours = []
+    outerContoursFullDimension = []
+    for (cIter,cont) in enumerate(allContours):
+        fillVal = cmesh[2][0,0,cIter]
+
+        lengths = np.array([c.shape[0] for c in cont])
+        correctInd = np.argmax(lengths)
+        outerContours.append(cont[correctInd])
+        
+        appArr = np.hstack((cont[correctInd],fillVal*np.ones((lengths[correctInd],1))))
+        outerContoursFullDimension.append(appArr)
+    
+    pathList = [Utilities.new_init_on_contour(cont,gsLoc) for \
+                cont in outerContoursFullDimension]
+    
+    lneb = LineIntegralNeb(interp_eneg,inertia_func,pathList[0],5,20,0,\
+                           endSprForce=True,loggingLevel="output")
+    
+    minObj = MinimizationAlgorithms(lneb,loggingLevel="output")
+    maxIters = 10
+    allPts, allForces, actions = \
+        minObj.verlet_minimization(maxIters=maxIters,tStep=0.01)
+    
+    print(lneb.counterDict)
+    
+    logFile = "Test_Log.h5"
+    lneb.write_log(logFile,overwrite=True)
+    minObj.write_log(logFile)
+    
+    fig, ax = plt.subplots()
+    ax.plot(actions,label="My Action: %.1f" % actions[-1])
+    
+    fig, ax = plt.subplots()
+    ax.contourf(cmesh[0][:,:,0],cmesh[1][:,:,0],zz[:,:,0])
+    ax.plot(allPts[0,0],allPts[0,1],marker=".",color="grey",label="Initial Path")
+    ax.plot(allPts[-1,0],allPts[-1,1],marker=".",color="orange",label="Final Path (Projected)")
+    
+    anotherLneb = LineIntegralNeb(interp_eneg,inertia_func,pathList[1],5,20,0,\
+                                  endSprForce=True,loggingLevel="output")
+    minObj = MinimizationAlgorithms(anotherLneb,loggingLevel="output")
+    maxIters = 10
+    allPts, allForces, actions = \
+        minObj.verlet_minimization(maxIters=maxIters,tStep=0.01)
+    # FileIO.write_path("240Pu_Pairing_Final_Path.csv",allPts[-1],ndims=3,\
+    #                   columnHeads=["Q20","Q30","pairing"])
+    
+    anotherLneb.write_log(logFile)
+    minObj.write_log(logFile)
     return None
 
 
@@ -2115,9 +2290,9 @@ if __name__ == "__main__":
     # cProfile.run("sylvester_otl_test()",sort="tottime")
     # compare_paths()
     # nd_contour_test()
-    # plutonium_test()
     # fire_test()
     plutonium_test()
+    # uranium_test()
     # gp_test()
     # interp_mode_test()
     # lps = LepsPot()
