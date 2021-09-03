@@ -69,7 +69,7 @@ def extract_gs_inds(allMinInds,coordMeshTuple,zz,pesPerc=0.5):
     allowedMinInds = tuple([inds[allowedIndsOfIndices] for inds in allMinInds])
     actualMinIndOfInds = np.argmin(zz[allowedMinInds])
     
-    gsInds = tuple([inds[actualMinIndOfInds] for inds in allMinInds])
+    gsInds = tuple([inds[actualMinIndOfInds] for inds in allowedMinInds])
     
     return gsInds
 def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
@@ -229,17 +229,21 @@ def mass_tensor_wrapper(data_dict,nDims,coord_keys,mass_keys,mass_func=None):
         for key in mass_keys:
             mass_mins.append(min(data_dict[key]))
             M_grid = make_nd_grid(data_dict,coord_keys,key,return_grid=False)
-            func_list.append(interp_wrapper(uniq_coords,M_grid))
+            func_list.append(interp_wrapper(uniq_coords,M_grid,kind='bivariant'))
     def mass_tensor(coords):
+        #print('calling mass tensor')
         if mass_func == None:
+            #print('mass func is none')
             M = np.identity(nDims)
         elif mass_func == True:
+            #print('mass func is true')
             if isinstance(coords,np.ndarray)==True:
                 pass
             else:
                 coords = np.array(coords)
             M = np.zeros((nDims,nDims)).flatten()
             if len(coords.shape) == 1:
+                
                 for i in range(len(coords)):
                     if coords[i] > u_bnds[i]:
                         coords[i] = u_bnds[i]
@@ -260,7 +264,7 @@ def eps(V,path,mu,E_gs):
             pot[i] = E_gs
         else: pass
     #print('eps',pot)
-    result = np.sqrt(2*mu*(pot - E_gs+ 10**(-6)))
+    result = np.sqrt(2*mu*(pot - E_gs))
     return(result)
 def action_wrapper(V,mass_func,E_gs):
     def action(path):
@@ -271,21 +275,9 @@ def action_wrapper(V,mass_func,E_gs):
             pot = V(path[i])
             M = mass_func(path[i])
             lin_ele = cdot_prod(M,path[i+1] - path[i],path[i+1]-path[i])
-            #print('pot')
-            #print(pot)
-            #print('line element')
-            #print(lin_ele)
-            #print(lin_ele)
             if pot < E_gs:
                 pot = E_gs
-            #else: pass
-            #print('diff')
-            #print(pot-E_gs)
-            #if i == npts-2:
-                #print('diff',pot-E_gs)
-            a += np.sqrt(2.0*(pot - E_gs + 10**(-6))*lin_ele)
-        #print('a')
-        #print(a)
+            a += np.sqrt(2.0*(pot - E_gs)*lin_ele)
         return a
     return(action)
 ### inerpolators 
@@ -423,7 +415,7 @@ class NEB():
             tan_vects[i] = tan
         tan_vects = np.array(tan_vects)
         return(tan_vects)
-    def F_s(self,k,R,tan_vects):
+    def F_s(self,M,k,R,tan_vects):
         #returns 2d-array calculating force at each image.
         # R is an array of the position vectors on the chain. each ith row is assumed to be R_{i}
         nDim = R.shape[1]
@@ -434,7 +426,10 @@ class NEB():
             elif i==len(R)-1:
                 force[i] = np.zeros((1,nDim))[0]
             else:
-                result = k*(np.linalg.norm(R[i+1] - R[i]) - np.linalg.norm(R[i]  - R[i-1]))*tan_vects[i]
+                #result = k*(np.linalg.norm(R[i+1] - R[i]) - \ 
+                #            np.linalg.norm(R[i]  - R[i-1]))*tan_vects[i]
+                result = k*(np.sqrt(cdot_prod(M(R[i]),R[i+1] - R[i],R[i+1] - R[i])) 
+                            - np.sqrt(cdot_prod(M(R[i-1]),R[i]  - R[i-1],R[i]  - R[i-1])))*tan_vects[i]
                 force[i] = result
         return(force)
     def F_r_finite(self,R,tan,params):
@@ -487,6 +482,7 @@ class NEB():
                     if E_RN <= E_const+delta:
                         print('end point below')
                         g_spr_0 = -1.0*np.linalg.norm(path[i]  - path[i-1])*tau[i]
+                        g_spr_0 = -1.0*cdot_prod()*tau[i]
                     else:
                         g_spr_0 = 0.0
                     f = -1.0*np.array(grad(self.shift_V,path[i]))
@@ -505,37 +501,25 @@ class NEB():
                 g_perp[i] = g_i - np.dot(g_i,tau[i])*tau[i]
         return(g_perp) 
     
-    def calc_force(self,action_func,path,tau,params):
-        #p = mp.Pool(mp.cpu_count())
+    def calc_force(self,action_func,mass_func,path,tau,params):
+
         h= 10**(-8)
         fix_r0 = params['fix_r0']
         fix_rn = params['fix_rn']
         mu = params['mu']
         kappa = params['kappa']
         nPts, nDims = path.shape
-        #E = eps(self.shift_V,path,mu,self.E_const) 
-        #E_R0 = E[0]
-        #E_RN = E[-1]
-        #print(E_RN)
-        #print(self.E_const)
         gradS = np.zeros((nPts,nDims))
         S_i = action_func(path)
         product = itertools.product(range(path.shape[0]),range(path.shape[1]))
-        #functional_variation(func,path,S_i,tuple_in)
-        #fixed_func = partial(functional_variation,action_func,path,S_i)
-        #gradS = np.array(p.map(fixed_func,product))
-        #print(gradS)
-        #print(gradS.shape)
+
         for element in product:
             i = element[0]
             j = element[1]
             ds = np.zeros(path.shape)
             delta_path_f = path.copy()
             ds[i][j] =  h*.5
-            #print('ds',ds)
             delta_path_f += ds
-            #delta_path_b += - ds
-            #print('computing actions')
             gradS[i] = (action_func(delta_path_f) - S_i)/h
         force = -gradS   
         delta = .01
@@ -552,7 +536,8 @@ class NEB():
         else: 
             #if E_RN <= self.E_const+delta:
             #print('endpoint below')
-            g_spr_0 = -1.0*np.linalg.norm(path[nPts-1]  - path[nPts-2])*tau[-1]
+            #g_spr_0 = -1.0*np.linalg.norm(path[nPts-1]  - path[nPts-2])*tau[-1]
+            g_spr_0 = -1.0*np.sqrt(cdot_prod(mass_func(path[nPts-1]),path[nPts-1]  - path[nPts-2],path[nPts-1]  - path[nPts-2]))*tau[-1]
             #else:
             #g_spr_0 = 0.0
             f = -1.0*np.array(grad(self.shift_V,path[-1]))
@@ -609,11 +594,11 @@ class NEB():
             ## calculate the new tangent vectors and forces after each shift.
             tau = self.get_tang_vect(path[i])
             # calculate the spring/harmonic force on each image
-            F_spring = self.F_s(k,path[i],tau)
+            F_spring = self.F_s(self.mass_func,k,path[i],tau)
             # calculate action of the path
             action_array[i] = self.action_func(path[i])
             # calculate the "real" force of the image
-            g = force(self.action_func,path[i],tau,force_params)
+            g = force(self.action_func,self.mass_func,path[i],tau,force_params)
             #g = force(path[i],tau,force_params)
             ## note the g for boundary images can contain a spring force. By default F_spring = 0 for boundary images.
             F =  F_spring + g
