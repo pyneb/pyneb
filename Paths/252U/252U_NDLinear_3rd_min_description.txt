@@ -1,0 +1,8 @@
+title: 252U_NDLinear_3rd_min
+Created_by: Eric
+Created_on: 9-2-21
+method: NEB
+method_description: {'k': 10.0, 'kappa': 20.0, 'NImages': 32, 'Iterations': 300, 'optimization': 'FIRE', 'fix_r0': False, 'fix_rn': False}
+surface_shift: 0.0 and -1.3907999999998992
+action: 454.53
+run_time: 182.7155818939209

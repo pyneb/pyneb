@@ -29,6 +29,9 @@ TODO:
 
 """
 
+global fdTol
+fdTol = 10**(-8)
+
 def find_local_minimum(arr):
     """
     Returns the indices corresponding to the local minimum values. Taken 
@@ -111,16 +114,20 @@ def action(path,potential,masses=None):
     else:
         massArr = masses
         
-    if massArr.shape != (nPoints, nDims, nDims):
-        sys.exit("Err: massArr "+str(massArr)+" not allowed; see action function")
+    massDim = (nPoints, nDims, nDims)
+    if massArr.shape != massDim:
+        raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
+                         "; required shape is "+str(massDim)+". See action function.")
     
     if not isinstance(potential,np.ndarray):
         potArr = potential(path)
     else:
         potArr = potential
         
-    if potArr.shape != (nPoints,):
-        sys.exit("Err: potArr "+str(potArr)+" not allowed; see action function")
+    potShape = (nPoints,)
+    if potArr.shape != potShape:
+        raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
+                         "; required shape is "+str(potShape)+". See action function.")
         
     #Actual calculation
     actOut = 0
@@ -144,7 +151,7 @@ def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
     
     Maybe put this + action inside of LeastActionPath? not sure how we want to structure that part
     """
-    eps = 10**(-8)
+    eps = fdTol#10**(-8)
     
     gradOfPes = np.zeros(path.shape)
     gradOfAction = np.zeros(path.shape)
@@ -153,9 +160,9 @@ def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
     
     actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
     
-    for ptIter in range(self.nPts):
-        for dimIter in range(self.nDims):
-            steps = points.copy()
+    for ptIter in range(nPts):
+        for dimIter in range(nDims):
+            steps = path.copy()
             steps[ptIter,dimIter] += eps
             actionAtStep, potAtStep, massAtStep = target_func(steps,potential,mass)
             
@@ -168,8 +175,9 @@ class LeastActionPath:
     """
     class documentation...?
     """
-    def __init__(self,potential,endpointSpringForce,nPts,nDims,mass=None,\
-                 target_func=action,target_func_grad=forward_action_grad,nebParams={}):
+    def __init__(self,potential,nPts,nDims,mass=None,endpointSpringForce=True,\
+                 endpointHarmonicForce=True,target_func=action,\
+                 target_func_grad=forward_action_grad,nebParams={}):
         """
         asdf
 
@@ -213,7 +221,7 @@ class LeastActionPath:
         """
         #TODO: consider not having NEB parameters as a dictionary. Could be confusing...?
         defaultNebParams = {"k":10,"kappa":20,"constraintEneg":0}
-        for key in defaultNebParams.values():
+        for key in defaultNebParams.keys():
             if key not in nebParams:
                 nebParams[key] = defaultNebParams[key]
         
@@ -223,12 +231,19 @@ class LeastActionPath:
         if isinstance(endpointSpringForce,bool):
             endpointSpringForce = 2*(endpointSpringForce,)
         if not isinstance(endpointSpringForce,tuple):
-            sys.exit("Err: unknown value "+str(endpointSpringForce)+\
-                     " for endpointSpringForce")
+            raise ValueError("Unknown value "+str(endpointSpringForce)+\
+                             " for endpointSpringForce")
+                
+        if isinstance(endpointHarmonicForce,bool):
+            endpointHarmonicForce = 2*(endpointHarmonicForce,)
+        if not isinstance(endpointHarmonicForce,tuple):
+            raise ValueError("Unknown value "+str(endpointHarmonicForce)+\
+                             " for endpointSpringForce")
         
         self.potential = potential
         self.mass = mass
         self.endpointSpringForce = endpointSpringForce
+        self.endpointHarmonicForce = endpointHarmonicForce
         self.nPts = nPts
         self.nDims = nDims
         self.target_func = target_func
@@ -237,7 +252,7 @@ class LeastActionPath:
     def _compute_tangents(self,points,energies):
         """
         Here for testing sphinx autodoc
-
+        
         Parameters
         ----------
         points : TYPE
@@ -274,28 +289,45 @@ class LeastActionPath:
             else:
                 tangents[ptIter] = tp*dVMin + tm*dVMax
                 
-            #Normalizing vectors
-            tangents[ptIter] = tangents[ptIter]/np.linalg.norm(tangents[ptIter])
+            #Normalizing vectors, without throwing errors about zero tangent vector
+            if not np.array_equal(tangents[ptIter],np.zeros(self.nDims)):
+                tangents[ptIter] = tangents[ptIter]/np.linalg.norm(tangents[ptIter])
         
         return tangents
     
     def _spring_force(self,points,tangents):
-        springForce = np.zeros(points.shape)
+        """
+        Spring force taken from https://doi.org/10.1063/1.5007180 eqns 20-22
+
+        Parameters
+        ----------
+        points : TYPE
+            DESCRIPTION.
+        tangents : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        springForce : TYPE
+            DESCRIPTION.
+
+        """
+        springForce = np.zeros((self.nPts,self.nDims))
         for i in range(1,self.nPts-1):
-            forwardDist = np.linalg.norm(poinst[i+1] - points[i])
+            forwardDist = np.linalg.norm(points[i+1] - points[i])
             backwardsDist = np.linalg.norm(points[i] - points[i-1])
-            springForce[:,i] = self.k*(forwardDist - backwardsDist)*tangents[i]
+            springForce[i] = self.k*(forwardDist - backwardsDist)*tangents[i]
             
         if self.endpointSpringForce[0]:
             springForce[0] = self.k*(points[1] - points[0])
         
         if self.endpointSpringForce[1]:
-            springForce[-1] = -self.k*(points[self.nPts] - points[self.nPts-1])
+            springForce[-1] = self.k*(points[self.nPts-2] - points[self.nPts-1])
         
         return springForce
     
     def compute_force(self,points):
-        expectedShape = (self.nPoints,self.nDims)
+        expectedShape = (self.nPts,self.nDims)
         if points.shape != expectedShape:
             if (points.T).shape == expectedShape:
                 points = points.T
@@ -313,25 +345,45 @@ class LeastActionPath:
         negIntegGrad = -gradOfAction
         trueForce = -gradOfPes
         
-        #Note: don't care about the tangents on the endpoints; they don't show up
-        #in the net force
-        perpForce = negIntegGrad - tangents*(np.array([np.dot(negIntegGrad[i],tangents[i]) \
-                                                       for i in range(self.nPoints)]))
+        projection = np.array([np.dot(negIntegGrad[i],tangents[i]) \
+                               for i in range(self.nPts)])
+        parallelForce = np.array([projection[i]*tangents[i] for i in range(self.nPts)])
+        perpForce = negIntegGrad - parallelForce
+
         springForce = self._spring_force(points,tangents)
         
         #Computing optimal tunneling path force
         netForce = np.zeros(points.shape)
         for i in range(1,self.nPts-1):
             netForce[i] = perpForce[i] + springForce[i]
-            
-        #TODO: error checking in case trueForce[0] == np.zeros(...)
-        normForce = trueForce[0]/np.linalg.norm(trueForce[0])
-        netForce[0] = springForce[0] - (np.dot(springForce[0],normForce)-\
-                                        self.kappa*(energies[0]-self.constraintEneg))*normForce
-            
-        normForce = trueForce[-1]/np.linalg.norm(trueForce[-1])
-        netForce[-1] = springForce[-1] - (np.dot(springForce[-1],normForce)-\
-                                          self.kappa*(energies[-1]-self.constraintEneg))*normForce
+        
+        #TODO: add check if force is very small...?
+        
+        #Avoids throwing divide-by-zero errors, but also deals with points with
+            #gradient within the finite-difference error from 0. Simplest example
+            #is V(x,y) = x^2+y^2, at the origin. There, the gradient is the finite
+            #difference value fdTol, in both directions, and so normalizing the
+            #force artificially creates a force that should not be present
+        if not np.allclose(trueForce[0],np.zeros(self.nDims),atol=fdTol):
+            normForce = trueForce[0]/np.linalg.norm(trueForce[0])
+        else:
+            normForce = np.zeros(self.nDims)
+        
+        if self.endpointHarmonicForce[0]:
+            netForce[0] = springForce[0] - (np.dot(springForce[0],normForce)-\
+                                            self.kappa*(energies[0]-self.constraintEneg))*normForce
+        else:
+            netForce[0] = springForce[0]
+        
+        if not np.allclose(trueForce[-1],np.zeros(self.nDims),atol=fdTol):
+            normForce = trueForce[-1]/np.linalg.norm(trueForce[-1])
+        else:
+            normForce = np.zeros(self.nDims)
+        if self.endpointHarmonicForce[1]:
+            netForce[-1] = springForce[-1] - (np.dot(springForce[-1],normForce)-\
+                                              self.kappa*(energies[-1]-self.constraintEneg))*normForce
+        else:
+            netForce[-1] = springForce[-1]
         
         return netForce
     
