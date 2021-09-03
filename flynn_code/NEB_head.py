@@ -13,16 +13,17 @@ import multiprocessing as mp
 if __name__ == "__main__":
     #p = mp.Pool(mp.cpu_count())
     ### Define surface here
-    data_path = '../PES/232U.h5'
+    data_path = '../PES/252U_PES.h5'
     data = h5py.File(data_path, 'r')
 
-    wanted_keys = ['Q20','Q30','PES', 'B2020','B2030','B3030'] # keys for 240Pu
+    wanted_keys = ['Q20','Q30','PES'] # keys for 240Pu
     #wanted_keys = ['PES','Q20','Q30']
     #coord_keys = ['Q20','Q30'] ## coords for 252U. warning, this has implict ordering for the grids.
     
     coord_keys = ['Q20','Q30'] ## coords for 240Pu. warning, this has implict ordering for the grids.
     ## should contain all of the tensor components
-    mass_keys = ['B2020','B2030','B2030','B3030'] 
+    #mass_keys = ['B2020','B2030','B2030','B3030'] 
+    mass_keys = []
     data_dict = {}
     for key in wanted_keys:
         data_dict[key] = np.array(data[key])
@@ -79,28 +80,28 @@ if __name__ == "__main__":
     gs_ind = NEB.extract_gs_inds(allowedInds,coord_grids,zz,pesPerc=0.25)
     E_gs = zz[gs_ind]
     
-    
+    mass_setting = None
     # define mass function
-    mass_tensor = NEB.mass_tensor_wrapper(data_dict,dims,coord_keys,mass_keys,mass_func =True)
-    N = 32
-    M = 500
+    mass_tensor = NEB.mass_tensor_wrapper(data_dict,dims,coord_keys,mass_keys,mass_func =mass_setting)
+    N = 42
+    M = 100
     dt = .1
     eta = 1.0 ## damping coeff for QMV
-    k = 10.0
+    k = 1.0
     kappa = 20.0
     fix_r0= False
     fix_rn= False
     mu = 1.0
     R0 = np.array(gs_coord) # start at GS
     #RN = np.array((213.92,19.83)) # end at final OTL
-    RN= np.array((300,30))
+    RN= np.array((175,12))
     E_const = E_gs ### constrain it to the ground state energy (assumed to be the starting point)
     band =  NEB.NEB(f,mass_tensor,M,N,R0,RN,E_const,l_bndy,u_bndy,)
     init_path = band.get_init_path()
     end_point_energy = band.get_end_points()
     
     
-    title = '232U_Bivariant_constMass'
+    title = '252U_Bivariant_Mass'+str(mass_setting)
     interpolator = 'Bivariant'
     force_params= {'E_const':E_const,'k':k,'mu':mu,'kappa':kappa,'fix_r0':fix_r0,'fix_rn':fix_rn}
     plot_params = {'M':M,'N':N,'k':k,'E_gs':E_const,'file_name':title }
@@ -117,6 +118,7 @@ if __name__ == "__main__":
     plt.xlabel('Iteration')
     plt.ylabel('Action')
     plt.legend()
+    plt.title(title)
     plt.show()
     plt.clf()
     
@@ -130,14 +132,14 @@ if __name__ == "__main__":
     
 
 
-    method_dict = {'k':k,'kappa':kappa,'NImages': N,'Iterations':M,'optimization':'FIRE','fix_r0':fix_r0, \
-                   'fix_rn': fix_rn}
-    metadata = {'title':title,'Created_by': 'Eric','Created_on':'9-3-21','method':'NEB','method_description':method_dict, \
-                'surface_shift': str(E_gs_shift) +' and '+str(glb_min),'action':final_action,'run_time':total_time_FIRE}
-    NEB.make_metadata(metadata)
-    np.savetxt(title+'_path.txt',path_FIRE,comments='',delimiter=',',header="Q20\tQ30")
+    #method_dict = {'k':k,'kappa':kappa,'NImages': N,'Iterations':M,'optimization':'FIRE','fix_r0':fix_r0, \
+    #               'fix_rn': fix_rn}
+    #metadata = {'title':title,'Created_by': 'Eric','Created_on':'9-3-21','method':'NEB','method_description':method_dict, \
+    #            'surface_shift': str(E_gs_shift) +' and '+str(glb_min),'action':final_action,'run_time':total_time_FIRE}
+    #NEB.make_metadata(metadata)
+    #np.savetxt(title+'_path.txt',path_FIRE,comments='',delimiter=',',header="Q20\tQ30")
     print(total_time_FIRE)
     
-    names = ['Bivariant']
+    names = [interpolator]
     NEB.make_cplot([init_path],[path_FIRE],[coord_grids[0],coord_grids[1]],zz,plot_params,names,savefig=True)
     

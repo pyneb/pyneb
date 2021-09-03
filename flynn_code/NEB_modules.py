@@ -415,7 +415,7 @@ class NEB():
             tan_vects[i] = tan
         tan_vects = np.array(tan_vects)
         return(tan_vects)
-    def F_s(self,M,k,R,tan_vects):
+    def F_s(self,mass,k,R,tan_vects):
         #returns 2d-array calculating force at each image.
         # R is an array of the position vectors on the chain. each ith row is assumed to be R_{i}
         nDim = R.shape[1]
@@ -428,8 +428,8 @@ class NEB():
             else:
                 #result = k*(np.linalg.norm(R[i+1] - R[i]) - \ 
                 #            np.linalg.norm(R[i]  - R[i-1]))*tan_vects[i]
-                result = k*(np.sqrt(cdot_prod(M(R[i]),R[i+1] - R[i],R[i+1] - R[i])) 
-                            - np.sqrt(cdot_prod(M(R[i-1]),R[i]  - R[i-1],R[i]  - R[i-1])))*tan_vects[i]
+                result = k*(np.sqrt(cdot_prod(mass(R[i]),R[i+1] - R[i],R[i+1] - R[i])) 
+                            - np.sqrt(cdot_prod(mass(R[i-1]),R[i]  - R[i-1],R[i]  - R[i-1])))*tan_vects[i]
                 force[i] = result
         return(force)
     def F_r_finite(self,R,tan,params):
@@ -502,7 +502,6 @@ class NEB():
         return(g_perp) 
     
     def calc_force(self,action_func,mass_func,path,tau,params):
-
         h= 10**(-8)
         fix_r0 = params['fix_r0']
         fix_rn = params['fix_rn']
@@ -518,7 +517,7 @@ class NEB():
             j = element[1]
             ds = np.zeros(path.shape)
             delta_path_f = path.copy()
-            ds[i][j] =  h*.5
+            ds[i][j] =  h
             delta_path_f += ds
             gradS[i] = (action_func(delta_path_f) - S_i)/h
         force = -gradS   
@@ -537,7 +536,7 @@ class NEB():
             #if E_RN <= self.E_const+delta:
             #print('endpoint below')
             #g_spr_0 = -1.0*np.linalg.norm(path[nPts-1]  - path[nPts-2])*tau[-1]
-            g_spr_0 = -1.0*np.sqrt(cdot_prod(mass_func(path[nPts-1]),path[nPts-1]  - path[nPts-2],path[nPts-1]  - path[nPts-2]))*tau[-1]
+            g_spr_0 = -1.0*np.sqrt(cdot_prod(mass_func(path[nPts-1]),path[nPts-1]-path[nPts-2],path[nPts-1]-path[nPts-2]))*tau[-1]
             #else:
             #g_spr_0 = 0.0
             f = -1.0*np.array(grad(self.shift_V,path[-1]))
