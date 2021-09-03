@@ -8,9 +8,10 @@ import time
 from matplotlib.pyplot import cm
 import pandas as pd
 import h5py
-
+import multiprocessing as mp
 
 if __name__ == "__main__":
+    #p = mp.Pool(mp.cpu_count())
     ### Define surface here
     data_path = '../PES/252U_PES.h5'
     data = h5py.File(data_path, 'r')
@@ -52,7 +53,19 @@ if __name__ == "__main__":
 
     gs_ind = NEB.extract_gs_inds(allowedInds,coord_grids,EE,pesPerc=0.25)
     
-    local_minima = EE[minima_ind]
+    E_gs_shift = EE[gs_ind] 
+    EE = EE - E_gs_shift
+    gs_coord = np.array([coord_grids[i][gs_ind] for i in range(len(coord_grids))])
+    
+    
+    # define potential function
+    #f = NEB.coord_interp_wrapper(uniq_coord,EE,l_bndy,u_bndy)
+    f = NEB.interp_wrapper(uniq_coord,EE,kind='bivariant')
+    #zz = f((coord_grids[0],coord_grids[1])) ### for ND linear interpolation
+    
+    zz = f((Q20,Q30)) ### for bivariant interpolation
+    minima_ind = NEB.find_local_minimum(zz)
+    local_minima = zz[minima_ind]
     order = np.argsort(local_minima)
     ordered_minima = local_minima[order]
     x_minima,y_minima = coord_grids[0][minima_ind],coord_grids[1][minima_ind]
@@ -60,28 +73,15 @@ if __name__ == "__main__":
     glb_min_idx = np.argmin(local_minima)
     glb_min = local_minima[glb_min_idx]
     glb_min_coords = (x_minima[glb_min_idx],y_minima[glb_min_idx])
-    print(ordered_minima)
-    third_min_E = ordered_minima[1]
-    third_min_coord = (x_minima[1],y_minima[1])
-    EE = EE - glb_min
-    gs_coord = np.array([coord_grids[i][gs_ind] for i in range(len(coord_grids))])
-    E_gs = EE[gs_ind] 
-    print(E_gs)
-    
-    # define potential function
+    allowedInds = tuple(np.array([inds[zz[minima_ind]!=-1760] for inds in minima_ind]))
 
-    #f = NEB.coord_interp_wrapper(uniq_coord,EE,l_bndy,u_bndy)
-    f = NEB.interp_wrapper(uniq_coord,EE,kind='bivariant')
-    #print(f([ 33.80845336,1.72618612]))
-    #zz = f((coord_grids[0],coord_grids[1])) ### for ND linear interpolation
-    zz = f((Q20,Q30)) ### for bivariant interpolation
-    
-    
+    gs_ind = NEB.extract_gs_inds(allowedInds,coord_grids,zz,pesPerc=0.25)
+    E_gs = zz[gs_ind]
     
     # define mass function
     mass_tensor = NEB.mass_tensor_wrapper(data_dict,dims,coord_keys,mass_keys,mass_func = None)
-    N = 52
-    M = 3
+    N = 32
+    M = 300
     dt = .1
     eta = 1.0 ## damping coeff for QMV
     k = 10.0
@@ -89,26 +89,31 @@ if __name__ == "__main__":
     fix_r0= False
     fix_rn= False
     mu = 1.0
-    
+    E_shift = 0
+    print(E_shift)
     R0 = np.array(gs_coord) # start at GS
-    RN = np.array((280,15)) # end at final OTL
-    E_const = E_gs ## constraint should be on the GS which is at 0 after shifting
-
-    band =  NEB.NEB(f,mass_tensor,M,N,R0,RN,E_const,l_bndy,u_bndy)
+    #RN = np.array((213.92,19.83)) # end at final OTL
+    RN= np.array((180,15))
+    E_const = E_gs ### constrain it to the ground state energy (assumed to be the starting point)
+    band =  NEB.NEB(f,mass_tensor,M,N,R0,RN,E_const,l_bndy,u_bndy,E_shift=E_shift)
     init_path = band.get_init_path()
     end_point_energy = band.get_end_points()
     
     
-    E_const = E_gs ### constrain it to the ground state energy (assumed to be the starting point)
+    title = '252U_Bivariant_3rd_min'
+    interpolator = 'Bivariant Order 5'
     force_params= {'E_const':E_const,'k':k,'mu':mu,'kappa':kappa,'fix_r0':fix_r0,'fix_rn':fix_rn}
-    plot_params = {'M':M,'N':N,'k':k,'E_gs':E_const}
-    #path_FIRE,action_FIRE,total_time_FIRE = band.FIRE(init_path,dt,eta,force_params,target='LAP')
+    plot_params = {'M':M,'N':N,'k':k,'E_gs':E_const-E_shift,'file_name':title }
+    
+    
+    
+    path_FIRE,action_FIRE,total_time_FIRE = band.FIRE(init_path,dt,eta,force_params,target='LAP2')
 
-    path_QMV,action_QMV,total_time_QMV = band.QMV(init_path,dt,eta,force_params,target='LAP2')
-    #eric_action = np.around(action_FIRE[-1],2)
-    eric_action = np.around(action_QMV[-1],2)
-    #plt.plot(np.arange(len(action_FIRE)),action_FIRE,label='Eric Min '+str(eric_action))
-    plt.plot(np.arange(len(action_QMV)),action_QMV,label='Eric Min '+str(eric_action))
+    #path_QMV,action_QMV,total_time_QMV = band.QMV(init_path,dt,eta,force_params,target='LAP2')
+    final_action = np.around(action_FIRE[-1],2)
+    #eric_action = np.around(action_QMV[-1],2)
+    plt.plot(np.arange(len(action_FIRE)),action_FIRE,label='Eric Min '+str(final_action))
+    #plt.plot(np.arange(len(action_QMV)),action_QMV,label='Eric Min '+str(eric_action))
     plt.xlabel('Iteration')
     plt.ylabel('Action')
     plt.legend()
@@ -122,10 +127,10 @@ if __name__ == "__main__":
     xx_s,yy_s,zz_s = NEB.subspace_2d(data_dict,const_names,const_comps,plane_names)
 
     zz_s = zz_s - E_gs
-    '''
+    
     #np.savetxt('QMV_final_path_bivar_order5.txt',path_QMV)
     #np.savetxt('QMV_action_bivar_order5.txt',action_QMV)
-    '''
+
     ND_lin_path = np.loadtxt('QMV_final_path_NDLinear.txt')
     order1 = np.loadtxt('QMV_final_path_bivar_order1.txt')
     order5 = np.loadtxt('QMV_final_path_bivar_order5.txt')
@@ -134,7 +139,16 @@ if __name__ == "__main__":
     dan3 = np.loadtxt('./dan_demos/paths/2D_Quintic.txt',delimiter=',')
     sly = np.loadtxt('../PES/fission_path_dpm_252U.txt')
     '''
-    names = ['NDLinear','Bivariant Order 1','Bivariant Order 5','Dan NDLinear','Dan Order 1','Dan Order 5','Dynamic Programming']
-    NEB.make_cplot([init_path],[path_QMV],[coord_grids[0],coord_grids[1]],EE,plot_params,names,savefig=False)
+
+    method_dict = {'k':k,'kappa':kappa,'NImages': N,'Iterations':M,'optimization':'FIRE','fix_r0':fix_r0, \
+                   'fix_rn': fix_rn}
+    metadata = {'title':title,'Created_by': 'Eric','Created_on':'9-2-21','method':'NEB','method_description':method_dict, \
+                'surface_shift': str(E_gs_shift) +' and '+str(glb_min),'action':final_action,'run_time':total_time_FIRE}
+    NEB.make_metadata(metadata)
+    np.savetxt(title+'_path.txt',path_FIRE,comments='',delimiter=',',header="Q20\tQ30")
+    print(total_time_FIRE)
+    
+    names = ['Bivariant Order 5']
+    NEB.make_cplot([init_path],[path_FIRE],[coord_grids[0],coord_grids[1]],zz,plot_params,names,savefig=True)
 
     

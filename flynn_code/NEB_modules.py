@@ -6,6 +6,20 @@ from scipy.ndimage import filters, morphology #For minimum finding
 import time
 from matplotlib.pyplot import cm
 import pandas as pd
+import itertools
+import multiprocessing as mp
+from functools import partial
+
+
+def make_metadata(meta_dict):
+    ## should include plot title, method, date created, creator, action value, wall time
+    ## model description {k: 10, kappa: 20, nPts: 22, nIterations: 750, optimization: velocity_verlet, endpointForce: on}
+    keys = meta_dict.keys()
+    title = meta_dict['title']
+    with open(title+'_description.txt', 'w+') as f:
+        for key in keys:
+            f.write(str(key)+': '+str(meta_dict[key])+'\n')
+    return(None)
 def find_local_minimum(arr):
     """
     Returns the indices corresponding to the local minimum values. Taken 
@@ -130,12 +144,15 @@ def make_nd_grid(data_dict,coord_keys,energy_key,return_grid=True):
         return(zz)
     
 def grad(f,coords,h=10**(-8)):
+    ## check if it is a scalar
     if len(coords.shape) == 1:
         coords = coords.reshape((1,-1))
     nPoints,dim = coords.shape
     gradOut = np.zeros((nPoints,dim))
+    ### pick a column
     for i in range(dim):
         ds = np.zeros(coords.shape)
+        ## pick a row
         for j in range(nPoints):
             ds[j][i] =  h*.5
         forward = coords + ds
@@ -147,6 +164,15 @@ def grad(f,coords,h=10**(-8)):
     else:
         pass
     return(gradOut)
+def functional_variation(func,path,S_i,tuple_in,h=10**(-8)):
+    ds = np.zeros(tuple_in)
+    i = tuple_in[0]
+    j = tuple_in[1]
+    ds[i][j] =  h*.5
+    path += ds
+    grad = (func(path) - S_i)/h  
+    return(grad)
+
 def cdot_prod(M,vec1,vec2):
     ## computes dot producted using M as the metric tensor
     ## M is the nDim x nDim metic tensor 
@@ -233,25 +259,33 @@ def eps(V,path,mu,E_gs):
         if pot[i] < E_gs:
             pot[i] = E_gs
         else: pass
-    print('pot')
-    print(pot)
-    print(E_gs)
-    print('diff')
-    print(pot- E_gs)
-    result = np.sqrt(2*mu*(pot - E_gs))
+    #print('eps',pot)
+    result = np.sqrt(2*mu*(pot - E_gs+ 10**(-6)))
     return(result)
 def action_wrapper(V,mass_func,E_gs):
-    def action_functional(path):
+    def action(path):
+        # computes action of the path.
         a = 0
         npts = path.shape[0]
         for i in np.arange(0,npts-1,1):
             pot = V(path[i])
             M = mass_func(path[i])
-            lin_ele = cdot_prod(M,path[i] - path[i-1],path[i]-path[i-1])
+            lin_ele = cdot_prod(M,path[i+1] - path[i],path[i+1]-path[i])
+            #print('pot')
+            #print(pot)
+            #print('line element')
+            #print(lin_ele)
+            #print(lin_ele)
             if pot < E_gs:
                 pot = E_gs
-            else: pass
-            a += np.sqrt(2.0*(pot - E_gs)*lin_ele)
+            #else: pass
+            #print('diff')
+            #print(pot-E_gs)
+            #if i == npts-2:
+                #print('diff',pot-E_gs)
+            a += np.sqrt(2.0*(pot - E_gs + 10**(-6))*lin_ele)
+        #print('a')
+        #print(a)
         return a
     return(action)
 ### inerpolators 
@@ -320,6 +354,7 @@ def interp_wrapper(orig_data,orig_V,kind):
                     result = result.item()
                 else:pass
             else: 
+                
                 result = np.zeros(len(eval_point))
                 for i in range(len(eval_point)):    
                     result[i] = function(eval_point[:,0][i],eval_point[:,1][i]).item()
@@ -339,7 +374,7 @@ class NEB():
         self.upper_bndy = upper_bndy ### row vector containing lower bounds of each coord
         self.E_const = E_const
         self.E_shift = kwargs.get('E_shift',None)
-        self.action_func = action_wrapper(self.f,self.mass_func,self.E_const)
+        self.action_func = action_wrapper(self.shift_V,self.mass_func,self.E_const)
     def shift_V(self,r):
         if self.E_shift != None:
             result = self.f(r) - self.E_shift
@@ -432,6 +467,7 @@ class NEB():
         E = eps(self.shift_V,path,mu,self.E_const) 
         E_R0 = E[0]
         E_RN = E[-1]
+        
         delta = .01 ## tolerance for defining when to apply spring force.
         for i in N_idx:
             if i==0:
@@ -449,6 +485,7 @@ class NEB():
                     g_perp[i] = np.zeros((1,nDim))[0]
                 else:
                     if E_RN <= E_const+delta:
+                        print('end point below')
                         g_spr_0 = -1.0*np.linalg.norm(path[i]  - path[i-1])*tau[i]
                     else:
                         g_spr_0 = 0.0
@@ -467,14 +504,64 @@ class NEB():
                 g_i =.5*((mu/E[i])*(d_i + d_ip1)*f - (E[i] + E[i-1])*d_ivec + (E[i+1] + E[i])*d_ip1vec) 
                 g_perp[i] = g_i - np.dot(g_i,tau[i])*tau[i]
         return(g_perp) 
-    def calc_force(self,action_func,path):
-        action = action_func(path)
-        print(action)
-        result = -1.0*grad(action_func,path)
+    
+    def calc_force(self,action_func,path,tau,params):
+        #p = mp.Pool(mp.cpu_count())
+        h= 10**(-8)
+        fix_r0 = params['fix_r0']
+        fix_rn = params['fix_rn']
+        mu = params['mu']
+        kappa = params['kappa']
+        nPts, nDims = path.shape
+        #E = eps(self.shift_V,path,mu,self.E_const) 
+        #E_R0 = E[0]
+        #E_RN = E[-1]
+        #print(E_RN)
+        #print(self.E_const)
+        gradS = np.zeros((nPts,nDims))
+        S_i = action_func(path)
+        product = itertools.product(range(path.shape[0]),range(path.shape[1]))
+        #functional_variation(func,path,S_i,tuple_in)
+        #fixed_func = partial(functional_variation,action_func,path,S_i)
+        #gradS = np.array(p.map(fixed_func,product))
+        #print(gradS)
+        #print(gradS.shape)
+        for element in product:
+            i = element[0]
+            j = element[1]
+            ds = np.zeros(path.shape)
+            delta_path_f = path.copy()
+            ds[i][j] =  h*.5
+            #print('ds',ds)
+            delta_path_f += ds
+            #delta_path_b += - ds
+            #print('computing actions')
+            gradS[i] = (action_func(delta_path_f) - S_i)/h
+        force = -gradS   
+        delta = .01
+        if fix_r0 is not False:
+            gradS[0] = np.zeros((1,nDims))[0]
+        else:
+            g_spr_0 = 0.0
+            f = -1.0*np.array(grad(self.shift_V,path[0]))
+            f_norm = np.linalg.norm(f)
+            f_unit = f/f_norm
+            force[0] = (g_spr_0 - (np.dot(g_spr_0,f_unit) - kappa*(self.shift_V(path[0]) - self.E_const))*f_unit)
+        if fix_rn is not False:
+            force[-1] = np.zeros((1,nDims))[0]
+        else: 
+            #if E_RN <= self.E_const+delta:
+            #print('endpoint below')
+            g_spr_0 = -1.0*np.linalg.norm(path[nPts-1]  - path[nPts-2])*tau[-1]
+            #else:
+            #g_spr_0 = 0.0
+            f = -1.0*np.array(grad(self.shift_V,path[-1]))
+            f_norm = np.linalg.norm(f)
+            f_unit = f/f_norm
+            force[-1] = (g_spr_0 - (np.dot(g_spr_0,f_unit) - kappa*(self.shift_V(path[-1]) - self.E_const))*f_unit)
         
-        #calculates the force by taking a numerical gradient of the action function
-        
-        return(result)
+        #print('force',force)
+        return(force)
     def get_forces(self):
         functions = {
             'MEP': self.F_r_finite,
@@ -487,7 +574,7 @@ class NEB():
         ### minimize target function using FIRE algo
         ### Initialize the initial path. R0 is the starting point on V and RN is the end point
         nDim= init_path.shape[1]
-        action_array = np.zeros((self.M))
+        path_action_array = np.zeros((self.M))
         #energies = np.zeros((self.M))
         ### Initialize the path array
         path = np.full((self.M,self.N,nDim),init_path)
@@ -495,6 +582,7 @@ class NEB():
         v = np.full((self.M,self.N,nDim),np.zeros(init_path.shape))
         vp = np.full((self.M,self.N,nDim),np.zeros(init_path.shape))
         #a = np.full((self.M,self.N,nDim),np.zeros(init_path.shape))
+        action_array = np.full((self.M,self.N,nDim),np.zeros(init_path.shape))
         mass = np.full(init_path.shape[0],1)
         shift = np.full((self.M,self.N,nDim),np.zeros(init_path.shape))
         start = time.time()
@@ -516,15 +604,17 @@ class NEB():
         delta = 10**(-5) ### convergence threshold for the action defined by abs(action[i] - actions[i-1]) < delta 
         #### MAIN KERNEL (FIRE)
         for i in np.arange(0,self.M,1):
-            #print('starting iteration: ',i)
+            print('starting iteration: ',i)
             # calculate the mass comp M_{ij}dx^{i}dx^{j} and eps = \sqrt(2 (V(\vect{r}) - E_gs) M_{ij}dx^{i}dx^{j}) of each image
             ## calculate the new tangent vectors and forces after each shift.
             tau = self.get_tang_vect(path[i])
             # calculate the spring/harmonic force on each image
             F_spring = self.F_s(k,path[i],tau)
+            # calculate action of the path
+            action_array[i] = self.action_func(path[i])
             # calculate the "real" force of the image
+            g = force(self.action_func,path[i],tau,force_params)
             #g = force(path[i],tau,force_params)
-            g = force(path[i])
             ## note the g for boundary images can contain a spring force. By default F_spring = 0 for boundary images.
             F =  F_spring + g
             for j in np.arange(0,self.N,1):
@@ -561,7 +651,8 @@ class NEB():
                             pass
                     '''
             #print('finished iteration', i)
-            action_array[i] = self.action_func(path[i]) ### HARDCODE E_gs
+            print(self.action_func(path[i]).shape)
+            path_action_array[i] = self.action_func(path[i])
             ## action convergence test
             #if i > 10:
             #    if abs(action_array[i] - action_array[i-1]) < delta:
@@ -572,22 +663,24 @@ class NEB():
             #        pass
         end = time.time()
         total_time = end - start
-        return(path[-1],action_array,total_time)
+        return(path[-1],path_action_array,total_time)
 
     def QMV(self,init_path,dt,eta,force_params,target='LAP'):
         ### minimize target function using Quick min Verlet algo
         ### This algo seems much more stable than BFGS.
         ### Initialize the initial path. R0 is the starting point on V and RN is the end point
-        action_array = np.zeros((self.M))
+        nDim= init_path.shape[1]
         #energies = np.zeros((self.M))
         ### Initialize the path array
-        path = np.full((self.M,self.N,2),init_path)
+        path = np.full((self.M,self.N,nDim),init_path)
         ### Initialize the velocities, masses, and shift arrays for the QM Verlet Algorithm 
-        v = np.full((self.M,self.N,2),np.zeros(init_path.shape))
-        vp = np.full((self.M,self.N,2),np.zeros(init_path.shape))
-        a = np.full((self.M,self.N,2),np.zeros(init_path.shape))
+        path_action_array = np.zeros((self.M))
+        #action_array = np.zeros(self.M)
+        v = np.full((self.M,self.N,nDim),np.zeros(init_path.shape))
+        vp = np.full((self.M,self.N,nDim),np.zeros(init_path.shape))
+        a = np.full((self.M,self.N,nDim),np.zeros(init_path.shape))
         mass = np.full(init_path.shape[0],1)
-        shift = np.full((self.M,self.N,2),np.zeros(init_path.shape))
+        shift = np.full((self.M,self.N,nDim),np.zeros(init_path.shape))
         start = time.time()
         ### define force function
         force = self.get_forces()[target]
@@ -602,7 +695,7 @@ class NEB():
             F_spring = self.F_s(k,path[i],tau)
             #print('calling g function')
             #g = force(path[i],tau,force_params)
-            g = force(self.action_func,path[i])
+            g = force(self.action_func,path[i],tau,force_params)
             #print('g-force')
             #print(g)
             ## note the g for boundary images can contain a spring force. By default F_spring = 0 for boundary images.
@@ -624,8 +717,8 @@ class NEB():
                     v[i][j] = vp[i][j] + dt*a[i][j] 
                     shift[i][j] = v[i][j]*dt + .5*a[i][j]*dt**2
                     path[i+1][j] = path[i][j] + shift[i][j]
-                    
-            action_array[i] = self.action_func(path[i]) ### HARDCODE E_gs
+            #print(self.action_func(path[i]).shape)
+            path_action_array[i] = self.action_func(path[i]) ### HARDCODE E_gs
             #if i > 10:
             #    if abs(action_array[i] - action_array[i-1]) < delta:
             #        n = i
@@ -639,7 +732,7 @@ class NEB():
         #np.savetxt('QMV_acc_NDLinear.txt',)
         #np.savetxt('QMV_vel.txt',)
         #np.savetxt('QMV_paths.txt',)
-        return(path[-1],action_array,total_time)
+        return(path[-1],path_action_array,total_time)
     
     def backtrack(self,Fi,Fim,alpha_0,gamma,N_0):
         eps = 10**(-3)
@@ -774,7 +867,7 @@ def make_cplot(init_paths,paths,grid,zz,params,names,savefig=False):
     ## params is a dictionary that should at least contain 'M', 'N', and 'k'.
     color=iter(['blue','red','magenta','black','orange','cyan','silver','tan','crimson'])
     fig, ax = plt.subplots(1,1,figsize = (12, 10))
-    im = ax.contourf(grid[0],grid[1],zz,cmap='Spectral_r',levels=MaxNLocator(nbins = 200).tick_values(.1,15))
+    im = ax.contourf(grid[0],grid[1],zz,cmap='Spectral_r',levels=MaxNLocator(nbins = 200).tick_values(-2,15))
     ax.contour(grid[0],grid[1],zz,colors=['black'],levels=[params['E_gs']])              
     for init_path in init_paths:
         ax.plot(init_path[:, 0], init_path[:, 1], '.-', color = 'green',ms=10,label='Initial Path')
@@ -788,7 +881,8 @@ def make_cplot(init_paths,paths,grid,zz,params,names,savefig=False):
     ax.legend()
     cbar = fig.colorbar(im)
     if savefig is not False:
-        plt.savefig('Finalpath_M_'+str(params['M'])+'_N_'+str(params['N'])+'_k_'+str(params['k'])+'.pdf')
+        plt.savefig(params['file_name']+'.pdf')
+        #plt.savefig('Finalpath_M_'+str(params['M'])+'_N_'+str(params['N'])+'_k_'+str(params['k'])+'.pdf')
     else:pass
     plt.show()  
     
