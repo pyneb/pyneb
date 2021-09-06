@@ -83,8 +83,8 @@ if __name__ == "__main__":
     mass_setting = None
     # define mass function
     mass_tensor = NEB.mass_tensor_wrapper(data_dict,dims,coord_keys,mass_keys,mass_func =mass_setting)
-    N = 42
-    M = 100
+    N = 52
+    M = 500
     dt = .1
     eta = 1.0 ## damping coeff for QMV
     k = 1.0
@@ -139,7 +139,7 @@ if __name__ == "__main__":
     #NEB.make_metadata(metadata)
     #np.savetxt(title+'_path.txt',path_FIRE,comments='',delimiter=',',header="Q20\tQ30")
     print(total_time_FIRE)
-    
-    names = [interpolator]
-    NEB.make_cplot([init_path],[path_FIRE],[coord_grids[0],coord_grids[1]],zz,plot_params,names,savefig=True)
+    dan_path = np.loadtxt('../Paths/252U/252U_ND_Linear.txt',delimiter=',',skiprows= 1)
+    names = [interpolator,'dan_path']
+    NEB.make_cplot([init_path],[path_FIRE,dan_path],[coord_grids[0],coord_grids[1]],zz,plot_params,names,savefig=True)
     

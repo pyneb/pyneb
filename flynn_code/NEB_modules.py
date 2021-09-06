@@ -482,7 +482,7 @@ class NEB():
                     if E_RN <= E_const+delta:
                         print('end point below')
                         g_spr_0 = -1.0*np.linalg.norm(path[i]  - path[i-1])*tau[i]
-                        g_spr_0 = -1.0*cdot_prod()*tau[i]
+                        #g_spr_0 = -1.0*cdot_prod()*tau[i]
                     else:
                         g_spr_0 = 0.0
                     f = -1.0*np.array(grad(self.shift_V,path[i]))
