@@ -1,7 +1,14 @@
 import numpy as np
 from scipy.ndimage import filters, morphology #For minimum finding
+
+#For ND interpolation
+from scipy.interpolate import interpnd
+import itertools
+
 import h5py
+import pandas as pd
 import sys
+import warnings
 
 """
 CONVENTIONS:
@@ -123,12 +130,17 @@ def action(path,potential,masses=None):
         potArr = potential(path)
     else:
         potArr = potential
-        
+    
     potShape = (nPoints,)
     if potArr.shape != potShape:
         raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
                          "; required shape is "+str(potShape)+". See action function.")
-        
+    if np.any(potArr<0):
+        print("Path: ")
+        print(path)
+        print("Potential: ")
+        print(potArr)
+        sys.exit("Stopping")
     #Actual calculation
     actOut = 0
     for ptIter in range(1,nPoints):
@@ -170,6 +182,173 @@ def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
             gradOfAction[ptIter,dimIter] = (actionAtStep - actionOnPath)/eps
     
     return gradOfAction, gradOfPes
+
+class GridInterpWithBoundary:
+    """
+    Based on scipy.interpolate.RegularGridInterpolator
+    """
+    def __init__(self, points, values, boundaryHandler="exponential",minVal=0):
+        if boundaryHandler not in ["exponential"]:
+            raise ValueError("boundaryHandler '%s' is not defined" % boundaryHandler)
+        
+        if not hasattr(values, 'ndim'):
+            #In case "values" is not an array
+            values = np.asarray(values)
+
+        if len(points) > values.ndim:
+            raise ValueError("There are %d point arrays, but values has %d "
+                             "dimensions" % (len(points), values.ndim))
+
+        if hasattr(values, 'dtype') and hasattr(values, 'astype'):
+            if not np.issubdtype(values.dtype, np.inexact):
+                values = values.astype(float)
+
+        for i, p in enumerate(points):
+            if not np.all(np.diff(p) > 0.):
+                raise ValueError("The points in dimension %d must be strictly "
+                                 "ascending" % i)
+            if not np.asarray(p).ndim == 1:
+                raise ValueError("The points in dimension %d must be "
+                                 "1-dimensional" % i)
+            if not values.shape[i] == len(p):
+                raise ValueError("There are %d points and %d values in "
+                                 "dimension %d" % (len(p), values.shape[i], i))
+        
+        self.grid = tuple([np.asarray(p) for p in points])
+        self.values = values
+        self.boundaryHandler = boundaryHandler
+        self.minVal = minVal
+
+    def __call__(self, xi):
+        """
+        Interpolation at coordinates
+        Parameters
+        ----------
+        xi : ndarray of shape (..., ndim)
+            The coordinates to sample the gridded data at
+        """
+        ndim = len(self.grid)
+        xi = interpnd._ndim_coords_from_arrays(xi, ndim=ndim)
+        if xi.shape[-1] != len(self.grid):
+            raise ValueError("The requested sample points xi have dimension "
+                             "%d, but this RegularGridInterpolator has "
+                             "dimension %d" % (xi.shape[1], ndim))
+            
+        xi_shape = xi.shape
+        xi = xi.reshape(-1, xi_shape[-1])
+        
+        #Iterating over dimensions and checking for out-of-bounds
+        isInBounds = np.zeros((2,)+xi.T.shape,dtype=bool)
+        for i, p in enumerate(xi.T):
+            isInBounds[0,i] = (self.grid[i][0] <= p)
+            isInBounds[1,i] = (p <= self.grid[i][-1])
+
+        indices, norm_distances = self._find_indices(xi.T)
+        
+        resultAssumingInBounds = self._evaluate_linear(indices, norm_distances)
+        if self.boundaryHandler == "exponential":
+            result = self._exp_boundary_handler(xi,resultAssumingInBounds,isInBounds,\
+                                                indices)
+        
+        if self.minVal is not None:
+            for rIter in range(len(result)):
+                if result[rIter] < self.minVal:
+                    result[rIter] = self.minVal
+        return result
+
+    def _evaluate_linear(self, indices, norm_distances):
+        """
+        A complicated way of implementing repeated linear interpolation. See
+        e.g. https://en.wikipedia.org/wiki/Bilinear_interpolation#Repeated_linear_interpolation
+        for the 2D case.
+
+        Parameters
+        ----------
+        indices : TYPE
+            DESCRIPTION.
+        norm_distances : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        values : TYPE
+            DESCRIPTION.
+
+        """
+        # slice for broadcasting over trailing dimensions in self.values
+        vslice = (slice(None),) + (None,)*(self.values.ndim - len(indices))
+        
+        # find relevant values
+        # each i and i+1 represents a edge
+        edges = itertools.product(*[[i, i + 1] for i in indices])
+        values = 0.
+        for edge_indices in edges:
+            weight = 1.
+            for ei, i, yi in zip(edge_indices, indices, norm_distances):
+                weight *= np.where(ei == i, 1 - yi, yi)
+            values += np.asarray(self.values[edge_indices]) * weight[vslice]
+        return values
+    
+    def _exp_boundary_handler(self,xi,resultIn,isInBounds,indices):
+        resultOut = resultIn.copy()
+        
+        for ptIter in range(len(resultIn)):
+            if np.count_nonzero(~isInBounds[:,:,ptIter]) > 0:
+                nearestAllowed = np.zeros(len(self.grid))
+                for coordIter in range(len(self.grid)):
+                    if np.count_nonzero(~isInBounds[:,coordIter,ptIter]) > 0:
+                        nearestAllowed[coordIter] = self.grid[coordIter][indices[coordIter][ptIter]]
+                    else:
+                        nearestAllowed[coordIter] = xi[ptIter,coordIter]
+                
+                dist = np.linalg.norm(xi[ptIter] - nearestAllowed)
+                
+                locInds, locDists = self._find_indices(np.expand_dims(nearestAllowed,1))
+                nearestActualVal = self._evaluate_linear(locInds,locDists)[0]
+                
+                #Yes, I mean to take an additional square root here
+                resultOut[ptIter] = nearestActualVal*np.exp(np.sqrt(dist))
+        
+        return resultOut
+
+    def _find_indices(self, xi):
+        """
+        Finds indices of nearest gridpoint (utilizing the regularity of the grid).
+        Also computes how far in each coordinate dimension every point is from
+        the previous gridpoint (not the nearest), normalized such that the next 
+        gridpoint (in a particular dimension) is distance 1 from the nearest gridpoint.
+        
+        As an example, returned indices of [[2,3],[1,7],[3,2]] indicates that the
+        first point has nearest grid index (2,1,3), and the second has nearest
+        grid index (3,7,2).
+
+        Parameters
+        ----------
+        xi : Numpy array
+            Array of coordinate(s) to evaluate at. Of dimension (ndims,_)
+
+        Returns
+        -------
+        indices : Tuple of numpy arrays
+            The indices of the nearest gridpoint for all points of xi. Can
+            be used as indices of a numpy array
+        norm_distances : List of numpy arrays
+            The distance along each dimension to the nearest gridpoint
+
+        """
+        # find relevant edges between which xi are situated
+        indices = []
+        # compute distance to lower edge in unity units
+        norm_distances = []
+        # iterate through dimensions
+        for x, grid in zip(xi, self.grid):
+            i = np.searchsorted(grid, x) - 1
+            i[i < 0] = 0
+            i[i > grid.size - 2] = grid.size - 2
+            indices.append(i)
+            norm_distances.append((x - grid[i]) /
+                                  (grid[i + 1] - grid[i]))
+        return tuple(indices), norm_distances
 
 class LeastActionPath:
     """
@@ -330,6 +509,7 @@ class LeastActionPath:
         expectedShape = (self.nPts,self.nDims)
         if points.shape != expectedShape:
             if (points.T).shape == expectedShape:
+                warnings.warn("Transposing points; (points.T).shape == expectedShape")
                 points = points.T
             else:
                 sys.exit("Err: points "+str(points)+\
@@ -386,6 +566,14 @@ class LeastActionPath:
             netForce[-1] = springForce[-1]
         
         return netForce
+    
+class VerletMinimization:
+    def __init__(self,nebObj):
+        #It'll probably do this automatically, but whatever
+        if not hasattr(nebObj,"compute_force"):
+            raise AttributeError("Object "+str(nebObj)+" has no attribute compute_force")
+            
+        self.nebObj = nebObj
     
 # class Minimum_energy_path_NEB():
 
