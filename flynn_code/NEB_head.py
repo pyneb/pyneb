@@ -14,18 +14,18 @@ if __name__ == "__main__":
     today = date.today()
     #p = mp.Pool(mp.cpu_count())
     ### Define surface here
-    nucleus = "232U"
-    data_path = f"../PES/{nucleus}.h5"
+    nucleus = "252U"
+    data_path = f"../PES/{nucleus}_PES.h5"
     data = h5py.File(data_path, 'r')
 
     #wanted_keys = ['Q20','Q30','PES'] # keys for 240Pu
-    wanted_keys = ['PES','Q20','Q30','B2020','B2030','B2030','B3030']
+    wanted_keys = ['PES','Q20','Q30']
     #coord_keys = ['Q20','Q30'] ## coords for 252U. warning, this has implict ordering for the grids.
     
     coord_keys = ['Q20','Q30'] ## coords for 240Pu. warning, this has implict ordering for the grids.
     ## should contain all of the tensor components
-    mass_keys = ['B2020','B2030','B2030','B3030'] 
-    #mass_keys = []
+    #mass_keys = ['B2020','B2030','B2030','B3030'] 
+    mass_keys = []
     data_dict = {}
     for key in wanted_keys:
         data_dict[key] = np.array(data[key])
@@ -63,15 +63,15 @@ if __name__ == "__main__":
 
     
     # define potential function
-    interp_kind = 'NDLinear'
-    mass_setting = True
-    title = f"{nucleus}_{interp_kind}_Mass_{mass_setting}"
+    interp_kind = 'bivariant'
+    mass_setting = None
+    title = f"{nucleus}_{interp_kind}_Mass_{mass_setting}_Experimental"
     
-    f = NEB.coord_interp_wrapper(uniq_coord,EE,l_bndy,u_bndy)
-    #f = NEB.interp_wrapper(uniq_coord,EE,kind=interp_kind)
-    zz = f((coord_grids[0],coord_grids[1])) ### for ND linear interpolation
+    #f = NEB.coord_interp_wrapper(uniq_coord,EE,l_bndy,u_bndy)
+    f = NEB.interp_wrapper(uniq_coord,EE,kind=interp_kind)
+    #zz = f((coord_grids[0],coord_grids[1])) ### for ND linear interpolation
     
-    #zz = f((Q20,Q30)) ### for bivariant interpolation
+    zz = f((Q20,Q30)) ### for bivariant interpolation
     minima_ind = NEB.find_local_minimum(zz)
     local_minima = zz[minima_ind]
     order = np.argsort(local_minima)
@@ -90,18 +90,18 @@ if __name__ == "__main__":
     # define mass function
     mass_tensor = NEB.mass_tensor_wrapper(data_dict,dims,coord_keys,mass_keys,mass_func=mass_setting,interp_kind=interp_kind)
 
-    N = 42
-    M = 300
+    N = 32
+    M = 600
     dt = .1
     eta = 1.0 ## damping coeff for QMV
-    k = 15.0
+    k = 10.0
     kappa = 20.0
     fix_r0= False
     fix_rn= False
     mu = 1.0
     R0 = np.array(gs_coord) # start at GS
     #RN = np.array((213.92,19.83)) # end at final OTL
-    RN= np.array((295,30))
+    RN= np.array((280,22))
     E_const = E_gs ### constrain it to the ground state energy (assumed to be the starting point)
     band =  NEB.NEB(f,mass_tensor,M,N,R0,RN,E_const,l_bndy,u_bndy,)
     init_path = band.get_init_path()
@@ -147,7 +147,7 @@ if __name__ == "__main__":
     NEB.make_metadata(metadata)
     np.savetxt(title+'_path.txt',path_FIRE,comments='',delimiter=',',header="Q20\tQ30")
     print(total_time_FIRE)
-    #dan_path = np.loadtxt('../Paths/252U/252U_ND_Linear.txt',delimiter=',',skiprows= 1)
-    names = [interp_kind]
-    NEB.make_cplot([init_path],[path_FIRE],[coord_grids[0],coord_grids[1]],zz,plot_params,names,savefig=True)
+    dan_path = np.loadtxt('../Paths/252U/252U_ND_Linear.txt',delimiter=',',skiprows= 1)
+    names = [interp_kind,'dan_path']
+    NEB.make_cplot([init_path],[path_FIRE,dan_path],[coord_grids[0],coord_grids[1]],zz,plot_params,names,savefig=True)
     

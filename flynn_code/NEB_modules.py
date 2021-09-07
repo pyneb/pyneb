@@ -261,9 +261,8 @@ def eps(V,path,mu,E_gs):
     #### note sometimes the difference will be a very small negative number. Add some delta to make it positive?
     for i in range(len(pot)):
         if pot[i] < E_gs:
-            pot[i] = E_gs
+            pot[i] = -1.0*pot[i]
         else: pass
-    #print('eps',pot)
     result = np.sqrt(2*mu*(pot - E_gs))
     return(result)
 def action_wrapper(V,mass_func,E_gs):
@@ -276,7 +275,7 @@ def action_wrapper(V,mass_func,E_gs):
             M = mass_func(path[i])
             lin_ele = cdot_prod(M,path[i+1] - path[i],path[i+1]-path[i])
             if pot < E_gs:
-                pot = E_gs
+                pot = -1.0*pot
             a += np.sqrt(2.0*(pot - E_gs)*lin_ele)
         return a
     return(action)
@@ -480,7 +479,6 @@ class NEB():
                     g_perp[i] = np.zeros((1,nDim))[0]
                 else:
                     if E_RN <= E_const+delta:
-                        print('end point below')
                         g_spr_0 = -1.0*np.linalg.norm(path[i]  - path[i-1])*tau[i]
                         #g_spr_0 = -1.0*cdot_prod()*tau[i]
                     else:
