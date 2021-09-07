@@ -9,7 +9,7 @@ import pandas as pd
 import itertools
 import multiprocessing as mp
 from functools import partial
-
+import sys
 
 def make_metadata(meta_dict):
     ## should include plot title, method, date created, creator, action value, wall time
@@ -211,7 +211,7 @@ def cdot_prod(M,vec1,vec2):
     return(products)
         
 
-def mass_tensor_wrapper(data_dict,nDims,coord_keys,mass_keys,mass_func=None):
+def mass_tensor_wrapper(data_dict,nDims,coord_keys,mass_keys,mass_func=None,interp_kind='NDLinear'):
     uniq_coords = []
     mass_mins = []
     func_list = []
@@ -229,7 +229,7 @@ def mass_tensor_wrapper(data_dict,nDims,coord_keys,mass_keys,mass_func=None):
         for key in mass_keys:
             mass_mins.append(min(data_dict[key]))
             M_grid = make_nd_grid(data_dict,coord_keys,key,return_grid=False)
-            func_list.append(interp_wrapper(uniq_coords,M_grid,kind='bivariant'))
+            func_list.append(interp_wrapper(uniq_coords,M_grid,kind=interp_kind))
     def mass_tensor(coords):
         #print('calling mass tensor')
         if mass_func == None:
@@ -241,9 +241,9 @@ def mass_tensor_wrapper(data_dict,nDims,coord_keys,mass_keys,mass_func=None):
                 pass
             else:
                 coords = np.array(coords)
+            
             M = np.zeros((nDims,nDims)).flatten()
             if len(coords.shape) == 1:
-                
                 for i in range(len(coords)):
                     if coords[i] > u_bnds[i]:
                         coords[i] = u_bnds[i]
@@ -297,7 +297,7 @@ def coord_interp_wrapper(orig_data,orig_V,l_rb,u_rb):
                         rb[i] = l_rb[i]
                     else: pass
                 E = interpolate.interpn(orig_data,orig_V,rb).item()
-                result = E*np.exp(np.linalg.norm(eval_point-rb)**(1/2)) + np.linalg.norm(eval_point-rb)*5
+                result = E*np.exp(np.linalg.norm(eval_point-rb)) + np.linalg.norm(eval_point-rb)*5
             else: # case where we have a n x d matrix of coordinates
                 # pick row
                 index = []
@@ -635,7 +635,6 @@ class NEB():
                             pass
                     '''
             #print('finished iteration', i)
-            print(self.action_func(path[i]).shape)
             path_action_array[i] = self.action_func(path[i])
             ## action convergence test
             #if i > 10:
@@ -851,7 +850,7 @@ def make_cplot(init_paths,paths,grid,zz,params,names,savefig=False):
     ## params is a dictionary that should at least contain 'M', 'N', and 'k'.
     color=iter(['blue','red','magenta','black','orange','cyan','silver','tan','crimson'])
     fig, ax = plt.subplots(1,1,figsize = (12, 10))
-    im = ax.contourf(grid[0],grid[1],zz,cmap='Spectral_r',levels=MaxNLocator(nbins = 200).tick_values(-2,15))
+    im = ax.contourf(grid[0],grid[1],zz,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(-2,15))
     ax.contour(grid[0],grid[1],zz,colors=['black'],levels=[params['E_gs']])              
     for init_path in init_paths:
         ax.plot(init_path[:, 0], init_path[:, 1], '.-', color = 'green',ms=10,label='Initial Path')
