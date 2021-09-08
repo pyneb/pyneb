@@ -194,15 +194,15 @@ class GridInterpWithBoundary:
         if not hasattr(values, 'ndim'):
             #In case "values" is not an array
             values = np.asarray(values)
-
+            
         if len(points) > values.ndim:
             raise ValueError("There are %d point arrays, but values has %d "
                              "dimensions" % (len(points), values.ndim))
-
+            
         if hasattr(values, 'dtype') and hasattr(values, 'astype'):
             if not np.issubdtype(values.dtype, np.inexact):
                 values = values.astype(float)
-
+                
         for i, p in enumerate(points):
             if not np.all(np.diff(p) > 0.):
                 raise ValueError("The points in dimension %d must be strictly "
@@ -228,99 +228,48 @@ class GridInterpWithBoundary:
             The coordinates to sample the gridded data at
         """
         ndim = len(self.grid)
+        
+        #Don't really understand what this does
         xi = interpnd._ndim_coords_from_arrays(xi, ndim=ndim)
         if xi.shape[-1] != len(self.grid):
             raise ValueError("The requested sample points xi have dimension "
-                             "%d, but this RegularGridInterpolator has "
-                             "dimension %d" % (xi.shape[1], ndim))
+                              "%d, but this RegularGridInterpolator has "
+                              "dimension %d" % (xi.shape[1], ndim))
+        
+        #Checking if each point is acceptable, and interpolating individual points.
+        #Might as well just make the user deal with reshaping, unless I find I need
+        #to do so repeatedly
+        nPoints = int(xi.size/len(self.grid))
+        result = np.zeros(nPoints)
+        
+        for (ptIter, point) in enumerate(xi):
+            isInBounds = np.zeros((2,ndim),dtype=bool)
+            isInBounds[0] = (np.array([g[0] for g in self.grid]) <= point)
+            isInBounds[1] = (point <= np.array([g[-1] for g in self.grid]))
             
-        xi_shape = xi.shape
-        xi = xi.reshape(-1, xi_shape[-1])
-        
-        #Iterating over dimensions and checking for out-of-bounds
-        isInBounds = np.zeros((2,)+xi.T.shape,dtype=bool)
-        for i, p in enumerate(xi.T):
-            isInBounds[0,i] = (self.grid[i][0] <= p)
-            isInBounds[1,i] = (p <= self.grid[i][-1])
-
-        indices, norm_distances = self._find_indices(xi.T)
-        
-        resultAssumingInBounds = self._evaluate_linear(indices, norm_distances)
-        if self.boundaryHandler == "exponential":
-            result = self._exp_boundary_handler(xi,resultAssumingInBounds,isInBounds,\
-                                                indices)
-        
-        if self.minVal is not None:
-            for rIter in range(len(result)):
-                if result[rIter] < self.minVal:
-                    result[rIter] = self.minVal
+            if np.count_nonzero(~isInBounds) == 0:
+                indices, normDistances = self._find_indices(np.expand_dims(point,1))
+                result[ptIter] = self._evaluate_linear(indices, normDistances)
+            else:
+                if self.boundaryHandler == "exponential":
+                    result[ptIter] = self._exp_boundary_handler(point,isInBounds)
+                
         return result
-
-    def _evaluate_linear(self, indices, norm_distances):
-        """
-        A complicated way of implementing repeated linear interpolation. See
-        e.g. https://en.wikipedia.org/wiki/Bilinear_interpolation#Repeated_linear_interpolation
-        for the 2D case.
-
-        Parameters
-        ----------
-        indices : TYPE
-            DESCRIPTION.
-        norm_distances : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        values : TYPE
-            DESCRIPTION.
-
-        """
-        # slice for broadcasting over trailing dimensions in self.values
-        vslice = (slice(None),) + (None,)*(self.values.ndim - len(indices))
-        
-        # find relevant values
-        # each i and i+1 represents a edge
-        edges = itertools.product(*[[i, i + 1] for i in indices])
-        values = 0.
-        for edge_indices in edges:
-            weight = 1.
-            for ei, i, yi in zip(edge_indices, indices, norm_distances):
-                weight *= np.where(ei == i, 1 - yi, yi)
-            values += np.asarray(self.values[edge_indices]) * weight[vslice]
-        return values
     
-    def _exp_boundary_handler(self,xi,resultIn,isInBounds,indices):
-        resultOut = resultIn.copy()
-        
-        for ptIter in range(len(resultIn)):
-            if np.count_nonzero(~isInBounds[:,:,ptIter]) > 0:
-                nearestAllowed = np.zeros(len(self.grid))
-                for coordIter in range(len(self.grid)):
-                    if np.count_nonzero(~isInBounds[:,coordIter,ptIter]) > 0:
-                        nearestAllowed[coordIter] = self.grid[coordIter][indices[coordIter][ptIter]]
-                    else:
-                        nearestAllowed[coordIter] = xi[ptIter,coordIter]
-                
-                dist = np.linalg.norm(xi[ptIter] - nearestAllowed)
-                
-                locInds, locDists = self._find_indices(np.expand_dims(nearestAllowed,1))
-                nearestActualVal = self._evaluate_linear(locInds,locDists)[0]
-                
-                #Yes, I mean to take an additional square root here
-                resultOut[ptIter] = nearestActualVal*np.exp(np.sqrt(dist))
-        
-        return resultOut
-
     def _find_indices(self, xi):
         """
         Finds indices of nearest gridpoint (utilizing the regularity of the grid).
         Also computes how far in each coordinate dimension every point is from
         the previous gridpoint (not the nearest), normalized such that the next 
         gridpoint (in a particular dimension) is distance 1 from the nearest gridpoint.
+        The distance is normed to make the interpolation simpler.
         
         As an example, returned indices of [[2,3],[1,7],[3,2]] indicates that the
         first point has nearest grid index (2,1,3), and the second has nearest
         grid index (3,7,2).
+        
+        Note that, if the nearest edge is the outermost edge in a given coordinate,
+        the inner edge is return instead.
 
         Parameters
         ----------
@@ -332,23 +281,90 @@ class GridInterpWithBoundary:
         indices : Tuple of numpy arrays
             The indices of the nearest gridpoint for all points of xi. Can
             be used as indices of a numpy array
-        norm_distances : List of numpy arrays
+        normDistances : List of numpy arrays
             The distance along each dimension to the nearest gridpoint
 
         """
-        # find relevant edges between which xi are situated
+        
         indices = []
         # compute distance to lower edge in unity units
-        norm_distances = []
+        normDistances = []
         # iterate through dimensions
         for x, grid in zip(xi, self.grid):
+            #This is why the grid must be sorted - this search is now quick. All
+            #this does is find the index in which to place x such that the list
+            #self.grid[coordIter] remains sorted.
             i = np.searchsorted(grid, x) - 1
+            
+            #If x would be the new first element, index it as zero
             i[i < 0] = 0
+            #If x would be the last element, make it not so. However, the way
+            #the interpolation scheme is set up, we need the nearest gridpoint
+            #that is not the outermost gridpoint. See below with grid[i+1]
             i[i > grid.size - 2] = grid.size - 2
+            
             indices.append(i)
-            norm_distances.append((x - grid[i]) /
-                                  (grid[i + 1] - grid[i]))
-        return tuple(indices), norm_distances
+            normDistances.append((x - grid[i]) / (grid[i + 1] - grid[i]))
+            
+        return tuple(indices), normDistances
+
+    def _evaluate_linear(self, indices, normDistances):
+        """
+        A complicated way of implementing repeated linear interpolation. See
+        e.g. https://en.wikipedia.org/wiki/Bilinear_interpolation#Weighted_mean
+        for the 2D case. Note that the weights simplify because of the normed
+        distance that's returned from self._find_indices
+
+        Parameters
+        ----------
+        indices : TYPE
+            DESCRIPTION.
+        normDistances : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        values : TYPE
+            DESCRIPTION.
+
+        """
+        #TODO: remove extra dimension handling
+        # slice for broadcasting over trailing dimensions in self.values.
+        vslice = (slice(None),) + (None,)*(self.values.ndim - len(indices))
+        
+        # find relevant values
+        # each i and i+1 represents a edge
+        edges = itertools.product(*[[i, i + 1] for i in indices])
+        values = 0.
+        for edge_indices in edges:
+            weight = 1.
+            for ei, i, yi in zip(edge_indices, indices, normDistances):
+                weight *= np.where(ei == i, 1 - yi, yi)
+            values += np.asarray(self.values[edge_indices]) * weight[vslice]
+        return values
+    
+    def _exp_boundary_handler(self,point,isInBounds):
+        nearestAllowed = np.zeros(point.shape)
+        
+        for dimIter in range(point.size):
+            if np.all(isInBounds[:,dimIter]):
+                nearestAllowed[dimIter] = point[dimIter]
+            else:
+                #To convert from tuple -> numpy array -> int
+                failedInd = np.nonzero(isInBounds[:,dimIter]==False)[0].item()
+                if failedInd == 1:
+                    failedInd = -1
+                nearestAllowed[dimIter] = self.grid[dimIter][failedInd]
+        
+        #Evaluating the nearest allowed point on the boundary of the allowed region
+        indices, normDist = self._find_indices(np.expand_dims(nearestAllowed,1))
+        valAtNearest = self._evaluate_linear(indices,normDist)
+        
+        dist = np.linalg.norm(nearestAllowed-point)
+        
+        #Yes, I mean to take an additional square root here
+        result = valAtNearest*np.exp(np.sqrt(dist))
+        return result
 
 class LeastActionPath:
     """

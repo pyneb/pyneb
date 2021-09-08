@@ -293,7 +293,11 @@ class GridInterpWithBoundaries_call_(unittest.TestCase):
         
         g = GridInterpWithBoundary((x,y),zz,minVal=None)
         values = g(point)
-        print(values)
+        
+        #Computed in Mathematica
+        correctVal = np.array([39.41149756])
+        
+        self.assertIsNone(np.testing.assert_allclose(values,correctVal))
         return None
     
     def test_in_and_out_of_bounds(self):
@@ -309,7 +313,9 @@ class GridInterpWithBoundaries_call_(unittest.TestCase):
         
         g = GridInterpWithBoundary((x,y),zz,minVal=None)
         values = g(points)
-        print(values)
+        
+        correctVals = np.array([39.41149756,0.05,10])
+        self.assertIsNone(np.testing.assert_allclose(values,correctVals))
         return None
 
 class LeastActionPath_compute_tangents_(unittest.TestCase):
