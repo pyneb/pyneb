@@ -7,8 +7,10 @@ import pandas as pd
 import itertools
 import h5py
 import sys
-sys.path.insert(0, '../../py_neb')
-import py_neb
+import warnings
+#sys.path.insert(0, '../../py_neb')
+import py_neb_temp
+
 
 class PES():
     '''
@@ -66,7 +68,7 @@ class PES():
             grids = [self.data_dict[key].reshape(*shape) for key in uniq_coords.keys()]
             zz = self.data_dict[self.energy_key[0]].reshape(*shape)
             if shift_GS==True:
-                minima_ind = py_neb.find_local_minimum(zz)
+                minima_ind = py_neb_temp.find_local_minimum(zz)
                 ### ignore the fill values. Stolen from Dan's Code
                 allowedInds = tuple(np.array([inds[zz[minima_ind]!=ignore_val] for inds in minima_ind]))
                 gs_ind = extract_gs_inds(allowedInds,grids,zz,pesPerc=0.25)
@@ -80,16 +82,16 @@ class PES():
             shape = [len(uniq_coords[key]) for key in uniq_coords.keys()]
             zz = self.data_dict[self.energy_key].reshape(*shape)
             if shift_GS==True:
-                minima_ind = py_neb.find_local_minimum(zz)
+                minima_ind = py_neb_temp.find_local_minimum(zz)
                 ### ignore the fill values. Stolen from Dan's Code
                 allowedInds = tuple(np.array([inds[zz[minima_ind]!=ignore_val] for inds in minima_ind]))
-                gs_ind = py_neb.extract_gs_inds(allowedInds,grids,zz,pesPerc=0.25)
+                gs_ind = py_neb_temp.extract_gs_inds(allowedInds,grids,zz,pesPerc=0.25)
                 E_gs_shift = zz[gs_ind] 
                 EE = zz - E_gs_shift
                 gs_coord = np.array([grids[i][gs_ind] for i in range(len(grids))])
             else: pass
             return(zz)
-    def get_mass_grids(self,tensor_keys):
+    def get_mass_grids(self):
         # returns the grids for each comp. of the tensor as a flattend array
         # ex) tensor (B2020,B2030 \n B2030,B3030) will be represented as 
         # [B2020,B2030,B2030,B3030] where each index contains a grid.
@@ -97,7 +99,7 @@ class PES():
         grids = []
         coord_arrays = [uniq_coords[key] for key in uniq_coords.keys()]
         shape = [len(coord_arrays[i]) for i in range(len(uniq_coords.keys()))]
-        grids = [self.data_dict[key].reshape(*shape) for key in tensor_keys]
+        grids = {key:self.data_dict[key].reshape(*shape) for key in self.mass_keys}
         return(grids)
     def get_2dsubspace(self,restrict_dict,plane):
         # returns a 2d slice of parameter space given fixed coordinates
@@ -182,4 +184,4 @@ def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
         if not show:
             plt.close(fig)
         
-        return allContours       
+        return allContours   
