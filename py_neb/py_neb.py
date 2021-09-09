@@ -183,6 +183,74 @@ def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
     
     return gradOfAction, gradOfPes
 
+def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
+    """
+    Formats a collection of functions for use in computing the inertia tensor.
+    Assumes the inertia tensor is symmetric.
+    
+    Parameters
+    ----------
+    dictOfFuncs : dict
+        Contains functions for each component of the inertia tensor
+        
+    uniqueKeys : list
+        Labels the unique coordinates of the inertia tensor, in the order they
+        are used in the inertia. For instance, if one uses (q20, q30) as the 
+        coordinates in this order, one should feed in ['20','30'], and the
+        inertia will be reshaped as
+        
+                    [[M_{20,20}, M_{20,30}]
+                     [M_{30,20}, M_{30,30}]].
+                    
+        Contrast this with feeding in ['30','20'], in which the inertia will
+        be reshaped as
+        
+                    [[M_{30,30}, M_{30,20}]
+                     [M_{20,30}, M_{20,20}]].
+
+    Returns
+    -------
+    func_out : function
+        The inertia tensor. Can be called as func_out(coords).
+
+    """
+    nDims = len(uniqueKeys)
+    pairedKeys = np.array([c1+c2 for c1 in uniqueKeys for c2 in uniqueKeys]).reshape(2*(nDims,))
+    dictKeys = np.zeros(pairedKeys.shape,dtype=object)
+    
+    for (idx, key) in np.ndenumerate(pairedKeys):
+        for dictKey in dictOfFuncs.keys():
+            if key in dictKey:
+                dictKeys[idx] = dictKey
+                
+    nFilledKeys = np.count_nonzero(dictKeys)
+    nExpectedFilledKeys = nDims*(nDims+1)/2
+    if nFilledKeys != nExpectedFilledKeys:
+        raise ValueError("Expected "+str(nExpectedFilledKeys)+" but found "+\
+                         str(nFilledKeys)+" instead. dictKeys = "+str(dictKeys))
+    
+    def func_out(coords):
+        if len(coords.shape) == 1:
+            coords = coords.reshape((1,nDims))
+        elif len(coords.shape) > 2:
+            raise ValueError("coords.shape = "+str(coords.shape)+\
+                             "; coords.shape must have length <= 2")
+        
+        nPoints = coords.shape[0]
+        outVals = np.zeros((nPoints,)+2*(nDims,))
+        
+        #Mass array is always 2D
+        for iIter in range(nDims):
+            for jIter in np.arange(iIter,nDims):
+                key = dictKeys[iIter,jIter]
+                fEvals = dictOfFuncs[key](coords)
+                
+                outVals[:,iIter,jIter] = fEvals
+                outVals[:,jIter,iIter] = fEvals
+                
+        return outVals
+    return func_out
+
 class GridInterpWithBoundary:
     """
     Based on scipy.interpolate.RegularGridInterpolator
