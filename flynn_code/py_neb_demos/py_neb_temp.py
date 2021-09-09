@@ -183,6 +183,7 @@ def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
     
     return gradOfAction, gradOfPes
 
+
 def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
     """
     Formats a collection of functions for use in computing the inertia tensor.
@@ -250,6 +251,7 @@ def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
                 
         return outVals
     return func_out
+
 
 class GridInterpWithBoundary:
     """
@@ -658,8 +660,38 @@ class VerletMinimization:
             raise AttributeError("Object "+str(nebObj)+" has no attribute compute_force")
             
         self.nebObj = nebObj
-    
-# class Minimum_energy_path_NEB():
 
-
+class MinimumEnergyPath:
+    def __init__(self,potential,nPts,nDims,mass=None,endpointSpringForce=True,\
+                 endpointHarmonicForce=True,target_func=action,\
+                 target_func_grad=forward_action_grad,nebParams={}):       
+        #TODO: consider not having NEB parameters as a dictionary. Could be confusing...?
+        defaultNebParams = {"k":10,"kappa":20,"constraintEneg":0}
+        for key in defaultNebParams.keys():
+            if key not in nebParams:
+                nebParams[key] = defaultNebParams[key]
+        
+        for key in nebParams.keys():
+            setattr(self,key,nebParams[key])
+            
+        if isinstance(endpointSpringForce,bool):
+            endpointSpringForce = 2*(endpointSpringForce,)
+        if not isinstance(endpointSpringForce,tuple):
+            raise ValueError("Unknown value "+str(endpointSpringForce)+\
+                             " for endpointSpringForce")
+                
+        if isinstance(endpointHarmonicForce,bool):
+            endpointHarmonicForce = 2*(endpointHarmonicForce,)
+        if not isinstance(endpointHarmonicForce,tuple):
+            raise ValueError("Unknown value "+str(endpointHarmonicForce)+\
+                             " for endpointSpringForce")
+        
+        self.potential = potential
+        self.mass = mass
+        self.endpointSpringForce = endpointSpringForce
+        self.endpointHarmonicForce = endpointHarmonicForce
+        self.nPts = nPts
+        self.nDims = nDims
+        self.target_func = target_func
+        self.target_func_grad = target_func_grad
     

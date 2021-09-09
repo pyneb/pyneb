@@ -1,5 +1,11 @@
-from py_neb import *
+#Bad practice? Idk. Fixes import issues when I modify my path in other files, though
+try:
+    from py_neb.py_neb import *
+except ModuleNotFoundError:
+    from py_neb import *
+
 import unittest
+
 
 """
 Use module unittest (see https://docs.python.org/3/library/unittest.html#module-unittest)
@@ -25,28 +31,11 @@ List of tests to add:
         
 Tests added:
     ==========================================================================
-    31/08/2021
-    -LeastActionPath.compute_force:
-        *Feed in allowed points with quadratic potential, and confirmed gradient
-            by hand
-    ==========================================================================
-    30/08/2021
-    -forward_action_grad:
-        *Test with all correct inputs
-    -LeastActionPath._compute_tangents:
-        *Should handle every if-else branch
-    -LeastActionPath._spring_force:
-        *Should check all combinations of endpoint force
-    ==========================================================================
-    27/08/2021
-    -Action:
-        *Constant mass, function potential
-        *Grid mass, array potential
-        *Grid mass, function potential
-        *Function mass, array potential
-        *Function mass, function potential
-        *Array mass of wrong size for path, to check one error
-        *Array potential of wrong size for path, to check other error
+    07/09/2021
+    -GridInterpWithBoundary.__init__:
+        *Test unallowed boundaryHandler
+    -GridInterpWithBoundary._find_indices:
+        *Test with one point, inside of the grid region
     ==========================================================================
 """
 
@@ -210,6 +199,144 @@ class forward_action_grad_(unittest.TestCase):
         self.assertIsNone(np.testing.assert_allclose(gradOfAction,correctGradOfAction,\
                                                      atol=10**(-8)))
         
+        return None
+
+class mass_funcs_to_array_func_(unittest.TestCase):
+    def test_allowed_keys(self):
+        def dummy_func(idx):
+            def func_out(coords):
+                return idx*coords[:,0]
+            return func_out
+        
+        uniqueKeys = ["20","30"]
+        dictOfFuncs = {"B2020":dummy_func(0),"B2030":dummy_func(1),\
+                       "B3030":dummy_func(2)}
+        
+        func_out = mass_funcs_to_array_func(dictOfFuncs,uniqueKeys)
+        coords = np.array([[0,0],[1,1],[2,2]])
+        
+        outputs = func_out(coords)
+        correctOutputs = np.array([[[0,0],[0,0]],[[0,1],[1,2]],[[0,2],[2,4]]])
+        
+        self.assertIsNone(np.testing.assert_array_equal(outputs,correctOutputs))
+            
+        return None
+
+class GridInterpWithBoundary_init_(unittest.TestCase):
+    def test_unallowed_boundary_handler(self):
+        dummyHandler = "linear"
+        with self.assertRaises(ValueError):
+            g = GridInterpWithBoundary(None,None,boundaryHandler=dummyHandler)
+            
+            
+        return None
+    
+class GridInterpWithBoundary_find_indices_(unittest.TestCase):
+    def test_in_bounds(self):
+        x = np.arange(-5,5.5,0.5)
+        y = x.copy()
+        
+        xx, yy = np.meshgrid(x,y)
+        zz = xx**2 + yy**2
+        
+        #GridInterpWithBoundary is weird. In the current implementation, *calling*
+        #g(xi) transposes the points beforce calling g._find_indices. There, it
+        #is expected that xi has shape (ndims,-), while calling g(xi) expects
+        #xi to have shape (-,ndims)
+        point = np.array([0.2,0.4]).reshape((2,1))
+        
+        g = GridInterpWithBoundary((x,y),zz,minVal=None)
+        
+        indices, normDistances = g._find_indices(point)
+        
+        correctIndices = 2*(np.array([10],dtype=int),)
+        correctDistances = [np.array([0.4]),np.array([0.8])]
+        
+        self.assertEqual(indices,correctIndices)
+        self.assertEqual(normDistances,correctDistances)
+        
+        return None
+
+class GridInterpWithBoundaries_evaluate_linear_(unittest.TestCase):
+    def test_in_bounds(self):
+        x = np.arange(-5,5.5,0.5)
+        y = x.copy()
+        
+        xx, yy = np.meshgrid(x,y)
+        zz = xx**2 + yy**2
+        
+        point = np.array([0.2,0.4]).reshape((2,1))
+        
+        g = GridInterpWithBoundary((x,y),zz,minVal=None)
+        indices, normDist = g._find_indices(point)
+        
+        values = g._evaluate_linear(indices, normDist)
+        
+        #Verified via Mathematica
+        correctVal = np.array([0.3])
+        
+        #correctVal is off from expected value by ~floating point precision
+        self.assertIsNone(np.testing.assert_allclose(values,correctVal))
+        return None
+    
+class GridInterpWithBoundaries_call_(unittest.TestCase):
+    def test_in_bounds(self):
+        x = np.arange(-5,5.5,0.5)
+        y = x.copy()
+        
+        xx, yy = np.meshgrid(x,y)
+        zz = xx**2 + yy**2
+        
+        #Reminder that when calling GridInterpWithBoundary, the points should
+        #have their *first* dimension equal to the number of coordinates
+        point = np.array([0.2,0.4])
+        
+        g = GridInterpWithBoundary((x,y),zz,minVal=None)
+        values = g(point)
+        
+        #Since we're in the interpolation region, should be the same output
+        #as evaluating g._evaluate_linear()
+        correctValues = np.array([0.3])
+        
+        self.assertIsNone(np.testing.assert_allclose(values,correctValues))
+        return None
+    
+    def test_out_of_bounds(self):
+        x = np.arange(-5,5.5,0.5)
+        y = x.copy()
+        
+        xx, yy = np.meshgrid(x,y)
+        zz = xx**2 + yy**2
+        
+        #Reminder that when calling GridInterpWithBoundary, the points should
+        #have their *first* dimension equal to the number of coordinates
+        point = np.array([5.2,0.4])
+        
+        g = GridInterpWithBoundary((x,y),zz,minVal=None)
+        values = g(point)
+        
+        #Computed in Mathematica
+        correctVal = np.array([39.41149756])
+        
+        self.assertIsNone(np.testing.assert_allclose(values,correctVal))
+        return None
+    
+    def test_in_and_out_of_bounds(self):
+        x = np.arange(-5,5.5,0.5)
+        y = x.copy()
+        
+        xx, yy = np.meshgrid(x,y)
+        zz = xx**2 + yy**2
+        
+        #Reminder that when calling GridInterpWithBoundary, the points should
+        #have their *first* dimension equal to the number of coordinates
+        points = np.array([[5.2,0.4],[0.,0.1],[-1,3]])
+        
+        g = GridInterpWithBoundary((x,y),zz,minVal=None)
+        values = g(points)
+        
+        correctVals = np.array([39.41149756,0.05,10])
+        self.assertIsNone(np.testing.assert_allclose(values,correctVals))
         return None
 
 class LeastActionPath_compute_tangents_(unittest.TestCase):
