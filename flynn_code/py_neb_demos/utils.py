@@ -31,10 +31,16 @@ class PES():
         self.data_dict = {}
         for key in wanted_keys:
             self.data_dict[key] = np.array(data[key])
-    def return_keys(self):
+    def get_keys(self,choice='coords'):
         string_out = f'Coordinates: {self.coord_keys} \nMass Components: {self.mass_keys} \nEnergy Key: {self.energy_key}'
         print(string_out)
-        return(string_out)
+        if choice == 'coords':
+            return(self.coord_keys)
+        elif choice == 'mass':
+            return(self.mass_keys)
+        else:
+            raise ValueError('choice must be mass or coords')
+            return()
     def get_data_shapes(self):
         shape_dict = {}
         for key in self.data_dict.keys():
@@ -83,12 +89,15 @@ class PES():
                 gs_coord = np.array([grids[i][gs_ind] for i in range(len(grids))])
             else: pass
             return(zz)
-    def get_mass_grids(self):
+    def get_mass_grids(self,tensor_keys):
+        # returns the grids for each comp. of the tensor as a flattend array
+        # ex) tensor (B2020,B2030 \n B2030,B3030) will be represented as 
+        # [B2020,B2030,B2030,B3030] where each index contains a grid.
         uniq_coords = self.get_unique(return_type='dict')
         grids = []
         coord_arrays = [uniq_coords[key] for key in uniq_coords.keys()]
         shape = [len(coord_arrays[i]) for i in range(len(uniq_coords.keys()))]
-        grids = [self.data_dict[key].reshape(*shape) for key in self.mass_keys]
+        grids = [self.data_dict[key].reshape(*shape) for key in tensor_keys]
         return(grids)
     def get_2dsubspace(self,restrict_dict,plane):
         # returns a 2d slice of parameter space given fixed coordinates

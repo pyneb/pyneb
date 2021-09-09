@@ -184,22 +184,16 @@ def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
     return gradOfAction, gradOfPes
 
 
-def make_mass_tensor(uniq_coords,mass_keys):
-    desiredShape = np.array([len(c) for c in uniq_coords],dtype=int)
-    
-    reshapedData = {key:dsets[key].reshape(desiredShape) for key in dsets.keys()}
-    massFuncsArr = np.array([GridInterpWithBoundary(uniq_coords,reshapedData[key])\
-                                for key in mass_keys],dtype=object).reshape((3,3))
-    #Wrapper. Can abstract this plus other
-    #wrappers to allow for different shapes
-    nCoords = arrayOfFuncs.shape[0]
-    if not arrayOfFuncs.shape == (nCoords,nCoords):
-        raise ValueError("arrayOfFuncs is not square; has shape "+str(arrayOfFuncs.shape))
-        
+def make_mass_tensor(uniq_coords,mass_grids,mass_keys):
+    print(len(mass_grids))
+    massFuncArr = np.array([GridInterpWithBoundary(uniq_coords,grid)\
+                                for grid in mass_grids],dtype=object).reshape((3,3))
+    nCoords = massFuncArr.shape[0]
+    if not massFuncArr.shape == (nCoords,nCoords):
+        raise ValueError("massFuncArr is not square; has shape "+str(massFuncArr.shape))
     def func_out(coords):
         if len(coords.shape) == 1:
             coords = coords.reshape((nCoords,1))
-            
         if coords.shape[0] != nCoords:
             if coords.shape[1] == nCoords:
                 warnings.warn("Transposing coords; coords.shape[0] != nCoords")
@@ -208,16 +202,12 @@ def make_mass_tensor(uniq_coords,mass_keys):
                 raise ValueError("coords.shape "+str(coords.shape)+\
                                  " does not match nCoords "+\
                                  str(nCoords))
-        
         nPoints = coords.shape[1]
-        
         outVals = np.zeros((nPoints,nCoords,nCoords))
-        
         #Mass array is always 2D
         for iIter in range(nCoords):
             for jIter in np.arange(iIter,nCoords):
-                fEvals = arrayOfFuncs[iIter,jIter](coords)
-                
+                fEvals = massFuncArr[iIter,jIter](coords)
                 outVals[:,iIter,jIter] = fEvals
                 outVals[:,jIter,iIter] = fEvals
                 
