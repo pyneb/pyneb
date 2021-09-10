@@ -667,27 +667,63 @@ class VerletMinimization:
             raise ValueError("Obj "+str(self.nebObj)+" and initialPoints have "\
                              +"a different number of points")
         
-    def velocity_verlet(self,tStep,maxIters):
-        allPts = np.zeros((maxIters+1,self.nPts,self.nDims))
+    def velocity_verlet(self,tStep,maxIters,dampingParameter=0):
+        """
+        Implements Algorithm 6 of https://doi.org/10.1021/acs.jctc.7b00360
+        with optional damping force.
+
+        Parameters
+        ----------
+        tStep : TYPE
+            DESCRIPTION.
+        maxIters : TYPE
+            DESCRIPTION.
+        dampingParameter : TYPE, optional
+            DESCRIPTION. The default is 0.
+
+        Returns
+        -------
+        allPts : TYPE
+            DESCRIPTION.
+        allVelocities : TYPE
+            DESCRIPTION.
+        allForces : TYPE
+            DESCRIPTION.
+
+        """
+        #allPts is longer by 1 than the velocities/forces, because the last 
+        #velocity/force computed should be used to update the points one 
+        #last time (else that's computational time that's wasted)
+        allPts = np.zeros((maxIters+2,self.nPts,self.nDims))
         allVelocities = np.zeros((maxIters+1,self.nPts,self.nDims))
         allForces = np.zeros((maxIters+1,self.nPts,self.nDims))
         
+        vProj = np.zeros((self.nPts,self.nDims))
+        
         allPts[0] = self.initialPoints
         allForces[0] = self.nebObj.compute_force(self.initialPoints)
+        allVelocities[0] = tStep*allForces[0]
+        allPts[1] = allPts[0] + allVelocities[0]*tStep + 0.5*allForces[0]*tStep**2
         
-        for step in range(0,maxIters):
-            #Velocity update taken from "Classical and Quantum Dynamics in Condensed Phase Simulations",
-            #page 397
+        for step in range(1,maxIters+1):
+            allForces[step] = self.nebObj.compute_force(allPts[step])
+            
             for ptIter in range(self.nPts):
-                product = np.dot(allVelocities[step,ptIter],allForces[step,ptIter])
+                product = np.dot(allVelocities[step-1,ptIter],allForces[step,ptIter])
                 if product > 0:
-                    vProj = \
-                        product*allForces[step,ptIter]/np.dot(allForces[step,ptIter],allForces[step,ptIter])
+                    vProj[ptIter] = \
+                        product*allForces[step,ptIter]/\
+                            np.dot(allForces[step,ptIter],allForces[step,ptIter])
                 else:
-                    vProj = np.zeros(self.nDims)
-                allVelocities[step+1,ptIter] = vProj + allForces[step,ptIter]*tStep
-            allPts[step+1] = allPts[step] + allVelocities[step+1]*tStep+1/2*allForces[step]*tStep**2
-            allForces[step+1] = self.nebObj.compute_force(allPts[step+1])
+                    vProj[ptIter] = np.zeros(self.nDims)
+                    
+            #Damping term. Algorithm 6 uses allVelocities[step], but that hasn't
+            #been computed yet. Note that this isn't applied to compute allPts[1].
+            accel = allForces[step] - dampingParameter*allVelocities[step-1]                
+            allVelocities[step] = vProj + tStep * accel
+            
+            allPts[step+1] = allPts[step] + allVelocities[step]*tStep + \
+                0.5*accel*tStep**2
             
         return allPts, allVelocities, allForces
     
