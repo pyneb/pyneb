@@ -74,8 +74,9 @@ class PES():
                 gs_ind = extract_gs_inds(allowedInds,grids,zz,pesPerc=0.25)
                 E_gs_shift = zz[gs_ind] 
                 EE = zz - E_gs_shift
+                E_gs = EE[gs_ind]
                 gs_coord = np.array([grids[i][gs_ind] for i in range(len(grids))])
-                return(grids,zz,gs_coord)
+                return(grids,zz,E_gs,gs_coord)
             else:
                 return(grids,zz)
         else:
