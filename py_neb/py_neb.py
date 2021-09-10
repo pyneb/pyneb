@@ -650,16 +650,52 @@ class LeastActionPath:
             netForce[-1] = springForce[-1]
         
         return netForce
-    
+
+#TODO: maybe rename something like ForceMinimization?   
+#TODO: do we compute the action for all points after optimizing? or let someone else do that? 
 class VerletMinimization:
-    def __init__(self,nebObj):
+    def __init__(self,nebObj,initialPoints):
         #It'll probably do this automatically, but whatever
         if not hasattr(nebObj,"compute_force"):
             raise AttributeError("Object "+str(nebObj)+" has no attribute compute_force")
             
         self.nebObj = nebObj
+        self.initialPoints = initialPoints
+        self.nPts, self.nDims = initialPoints.shape
+        
+        if self.nPts != self.nebObj.nPts:
+            raise ValueError("Obj "+str(self.nebObj)+" and initialPoints have "\
+                             +"a different number of points")
+        
+    def velocity_verlet(self,tStep,maxIters):
+        allPts = np.zeros((maxIters+1,self.nPts,self.nDims))
+        allVelocities = np.zeros((maxIters+1,self.nPts,self.nDims))
+        allForces = np.zeros((maxIters+1,self.nPts,self.nDims))
+        
+        allPts[0] = self.initialPoints
+        allForces[0] = self.nebObj.compute_force(self.initialPoints)
+        
+        for step in range(0,maxIters):
+            #Velocity update taken from "Classical and Quantum Dynamics in Condensed Phase Simulations",
+            #page 397
+            for ptIter in range(self.nPts):
+                product = np.dot(allVelocities[step,ptIter],allForces[step,ptIter])
+                if product > 0:
+                    vProj = \
+                        product*allForces[step,ptIter]/np.dot(allForces[step,ptIter],allForces[step,ptIter])
+                else:
+                    vProj = np.zeros(self.nDims)
+                allVelocities[step+1,ptIter] = vProj + allForces[step,ptIter]*tStep
+            allPts[step+1] = allPts[step] + allVelocities[step+1]*tStep+1/2*allForces[step]*tStep**2
+            allForces[step+1] = self.nebObj.compute_force(allPts[step+1])
+            
+        return allPts, allVelocities, allForces
     
-# class Minimum_energy_path_NEB():
+    def fire(self,fireParams,useLocal=False):
+        
+        return None
+    
+
 
 
     
