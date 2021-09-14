@@ -2,7 +2,7 @@ import numpy as np
 from scipy.ndimage import filters, morphology #For minimum finding
 
 #For ND interpolation
-from scipy.interpolate import interpnd
+from scipy.interpolate import interpnd, RectBivariateSpline
 import itertools
 
 import h5py
@@ -135,6 +135,8 @@ def action(path,potential,masses=None):
     if potArr.shape != potShape:
         raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
                          "; required shape is "+str(potShape)+". See action function.")
+    #TODO: if potArr < 0, return an error flag that tells whatever is calling
+    #this to modify the potential
     if np.any(potArr<0):
         print("Path: ")
         print(path)
@@ -251,11 +253,34 @@ def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
         return outVals
     return func_out
 
-class GridInterpWithBoundary:
+def auxiliary_potential(func_in,shift=10**(-4)):
+    def func_out(coords):
+        return func_in(coords) + shift
+    return func_out
+
+class RectBivariateSplineWrapper(RectBivariateSpline):
+    def __init__(self,*args,**kwargs):
+        super(RectBivariateSplineWrapper,self).__init__(*args,**kwargs)
+        self.function = self.func_wrapper()
+        
+    def func_wrapper(self):
+        def func_out(coords):
+            if coords.shape == (2,):
+                coords = coords.reshape((1,2))
+                
+            res = self.__call__(coords[:,0],coords[:,1],grid=False)
+            return res
+        return func_out
+
+class NDInterpWithBoundary:
     """
     Based on scipy.interpolate.RegularGridInterpolator
     """
     def __init__(self, points, values, boundaryHandler="exponential",minVal=0):
+        if len(points) < 3:
+            warnings.warn("Using ND linear interpolator with "+str(len(points))\
+                          +" dimensions. Consider using spline interpolator instead.")
+        
         if boundaryHandler not in ["exponential"]:
             raise ValueError("boundaryHandler '%s' is not defined" % boundaryHandler)
         
@@ -285,7 +310,7 @@ class GridInterpWithBoundary:
         self.grid = tuple([np.asarray(p) for p in points])
         self.values = values
         self.boundaryHandler = boundaryHandler
-        self.minVal = minVal
+        self.minVal = minVal #To be used later, perhaps
 
     def __call__(self, xi):
         """
@@ -666,11 +691,19 @@ class VerletMinimization:
         if self.nPts != self.nebObj.nPts:
             raise ValueError("Obj "+str(self.nebObj)+" and initialPoints have "\
                              +"a different number of points")
+                
+        self.allPts = None
+        self.allVelocities = None
+        self.allForces = None
         
     def velocity_verlet(self,tStep,maxIters,dampingParameter=0):
         """
         Implements Algorithm 6 of https://doi.org/10.1021/acs.jctc.7b00360
         with optional damping force.
+        
+        TODO: that paper has many errors, esp. off-by-one errors. Could lead
+        to issues. Consult http://dx.doi.org/10.1063/1.2841941 instead.
+        TODO: modify to edit self.allPts and etc
 
         Parameters
         ----------
@@ -727,7 +760,145 @@ class VerletMinimization:
             
         return allPts, allVelocities, allForces
     
-    def fire(self,fireParams,useLocal=False):
+    def fire(self,tStep,maxIters,fireParams={},useLocal=False):
+        """
+        Wrapper for fast inertial relaxation engine.
+        FIRE step taken from http://dx.doi.org/10.1103/PhysRevLett.97.170201
+        
+        Velocity update taken from 
+        https://en.wikipedia.org/wiki/Verlet_integration#Velocity_Verlet
+        
+        TODO: consider making FIRE its own class, or allowing for attributes
+        like fireParams and etc
+
+        Parameters
+        ----------
+        tStep : TYPE
+            DESCRIPTION.
+        maxIters : TYPE
+            DESCRIPTION.
+        fireParams : TYPE, optional
+            DESCRIPTION. The default is {}.
+        useLocal : TYPE, optional
+            DESCRIPTION. The default is False.
+
+        Raises
+        ------
+        ValueError
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        
+        defaultFireParams = \
+            {"dtMax":0.1,"nAccel":5,"fInc":1.1,"fAccel":0.99,"fDecel":0.5,"aStart":0.1}
+            
+        for key in fireParams.keys():
+            if key not in defaultFireParams.keys():
+                raise ValueError("Key "+key+" in fireParams not allowed")
+                
+        for key in defaultFireParams.keys():
+            if key not in fireParams.keys():
+                fireParams[key] = defaultFireParams[key]
+                
+        self.allPts = np.zeros((maxIters+2,self.nPts,self.nDims))
+        self.allVelocities = np.zeros((maxIters+1,self.nPts,self.nDims))
+        self.allForces = np.zeros((maxIters+1,self.nPts,self.nDims))
+        
+        self.allPts[0] = self.initialPoints
+        self.allForces[0] = self.nebObj.compute_force(self.allPts[0])
+        
+        if useLocal:
+            stepsSinceReset = np.zeros(self.nPts)
+            tStepArr = np.zeros((maxIters+1,self.nPts))
+            alphaArr = np.zeros((maxIters+1,self.nPts))
+            stepsSinceReset = np.zeros(self.nPts)
+        else:
+            stepsSinceReset = 0
+            tStepArr = np.zeros(maxIters+1)
+            alphaArr = np.zeros(maxIters+1)
+        
+        tStepArr[0] = tStep
+        alphaArr[0] = fireParams["aStart"]
+        
+        for step in range(1,maxIters+1):
+            #TODO: check potential off-by-one indexing on tStep
+            #TODO: move to _local and _global iters (multiplication doesn't work -_-)
+            self.allPts[step] = self.allPts[step-1] + \
+                tStepArr[step-1]*self.allVelocities[step-1] + \
+                0.5*self.allForces[step-1]*tStepArr[step-1]**2
+            self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
+            #Warning to user: velocity here is not final velocity
+            self.allVelocities[step] = \
+                0.5*tStepArr[step-1]*(self.allForces[step]+self.allForces[step-1])
+            
+            if useLocal:
+                tStepArr,alphaArr,stepsSinceReset = \
+                    self._local_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
+                                          fireParams)
+            else:
+                tStepArr,alphaArr,stepsSinceReset = \
+                    self._global_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
+                                           fireParams)
+                        
+        self.allPts[-1] = self.allPts[-2] + tStepArr[-1]*self.allVelocities[-1] + \
+            0.5*self.allForces[-1]*tStepArr[-1]**2
+        
+        return tStepArr, alphaArr, stepsSinceReset
+    
+    def _local_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
+        for ptIter in range(self.nPts):
+            alpha = alphaArr[step-1,ptIter]
+            
+            product = np.dot(self.allVelocities[step,ptIter],self.allForces[step,ptIter])
+            if product > 0:
+                vMag = np.linalg.norm(self.allVelocities[step,ptIter])
+                fHat = self.allForces[step,ptIter]/np.linalg.norm(self.allForces[step,ptIter])
+                self.allVelocities[step,ptIter] = (1-alpha)*self.allVelocities[step,ptIter] + \
+                    alpha*vMag*fHat
+                
+                if stepsSinceReset[ptIter] > fireParams["nAccel"]:
+                    tStepArr[step,ptIter] = \
+                        min(tStepArr[step-1,ptIter]*fireParams["fInc"],fireParams["dtMax"])
+                    alphaArr[step,ptIter] = alpha*fireParams["fAccel"]
+                
+                stepsSinceReset[ptIter] += 1
+            else:
+                tStepArr[step,ptIter] = tStepArr[step-1,ptIter]*fireParams["fDecel"]
+                self.allVelocities[step,ptIter] = np.zeros(self.nDims)
+                alphaArr[step,ptIter] = fireParams["aStart"]
+                stepsSinceReset[ptIter] = 0
+        
+        return tStepArr, alphaArr, stepsSinceReset
+    
+    def _global_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
+        for ptIter in range(self.nPts):
+            alpha = alphaArr[step-1]
+            
+            product = np.dot(self.allVelocities[step,ptIter],self.allForces[step,ptIter])
+            if product > 0:
+                vMag = np.linalg.norm(self.allVelocities[step,ptIter])
+                fHat = self.allForces[step,ptIter]/np.linalg.norm(self.allForces[step,ptIter])
+                self.allVelocities[step,ptIter] = (1-alpha)*self.allVelocities[step,ptIter] \
+                    + alpha*vMag*fHat
+                
+                if stepsSinceReset > fireParams["nAccel"]:
+                    tStepArr[step] = min(tStepArr[step-1]*fireParams["fInc"],fireParams["dtMax"])
+                    alphaArr[step] = alpha*fireParams["fAccel"]
+                
+                stepsSinceReset += 1
+            else:
+                tStepArr[step] = tStepArr[step-1]*fireParams["fDecel"]
+                self.allVelocities[step,ptIter] = np.zeros(self.nDims)
+                alphaArr[step] = fireParams["aStart"]
+                stepsSinceReset = 0
+        
+        return tStepArr, alphaArr, stepsSinceReset
+    
+    def _check_early_stop(self):
         
         return None
     
