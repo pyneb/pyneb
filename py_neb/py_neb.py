@@ -135,14 +135,18 @@ def action(path,potential,masses=None):
     if potArr.shape != potShape:
         raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
                          "; required shape is "+str(potShape)+". See action function.")
-    #TODO: if potArr < 0, return an error flag that tells whatever is calling
-    #this to modify the potential
-    if np.any(potArr<0):
-        print("Path: ")
-        print(path)
-        print("Potential: ")
-        print(potArr)
-        sys.exit("Stopping")
+    
+    for ptIter in range(nPoints):
+        if potArr[ptIter] < 0:
+            potArr[ptIter] = 0.01
+    
+    # if np.any(potArr[1:-2]<0):
+    #     print("Path: ")
+    #     print(path)
+    #     print("Potential: ")
+    #     print(potArr)
+    #     raise ValueError("Encountered energy E < 0; stopping.")
+        
     #Actual calculation
     actOut = 0
     for ptIter in range(1,nPoints):
@@ -828,21 +832,6 @@ class VerletMinimization:
         
         for step in range(1,maxIters+1):
             #TODO: check potential off-by-one indexing on tStep
-            #TODO: move to _local and _global iters (multiplication doesn't work -_-)
-            self.allPts[step] = self.allPts[step-1] + \
-                tStepArr[step-1]*self.allVelocities[step-1] + \
-                0.5*self.allForces[step-1]*tStepArr[step-1]**2
-            self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
-            #Warning to user: velocity here is not final velocity
-            
-            #What the Wikipedia article on velocity Verlet uses
-            self.allVelocities[step] = \
-                0.5*tStepArr[step-1]*(self.allForces[step]+self.allForces[step-1])
-            #What Eric uses
-            # self.allVelocities[step] = tStepArr[step-1]*self.allForces[step]
-            
-            #Doesn't seem to make a difference
-            
             if useLocal:
                 tStepArr,alphaArr,stepsSinceReset = \
                     self._local_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
@@ -851,38 +840,67 @@ class VerletMinimization:
                 tStepArr,alphaArr,stepsSinceReset = \
                     self._global_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
                                            fireParams)
-                        
-        self.allPts[-1] = self.allPts[-2] + tStepArr[-1]*self.allVelocities[-1] + \
-            0.5*self.allForces[-1]*tStepArr[-1]**2
+        
+        if useLocal:
+            tStepFinal = tStepArr[-1].reshape((-1,1))
+            self.allPts[-1] = self.allPts[-2] + tStepFinal*self.allVelocities[-1] + \
+                0.5*self.allForces[-1]*tStepFinal**2
+        else:
+            self.allPts[-1] = self.allPts[-2] + tStepArr[-1]*self.allVelocities[-1] + \
+                0.5*self.allForces[-1]*tStepArr[-1]**2
         
         return tStepArr, alphaArr, stepsSinceReset
     
     def _local_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
+        tStepPrev = tStepArr[step-1].reshape((-1,1)) #For multiplication below
+        
+        self.allPts[step] = self.allPts[step-1] + \
+            tStepPrev*self.allVelocities[step-1] + \
+            0.5*self.allForces[step-1]*tStepPrev**2
+        self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
+        
+        #What the Wikipedia article on velocity Verlet uses
+        self.allVelocities[step] = \
+            0.5*tStepPrev*(self.allForces[step]+self.allForces[step-1])
+        
         for ptIter in range(self.nPts):
             alpha = alphaArr[step-1,ptIter]
             
-            product = np.dot(self.allVelocities[step,ptIter],self.allForces[step,ptIter])
+            product = np.dot(self.allVelocities[step-1,ptIter],self.allForces[step,ptIter])
             if product > 0:
-                vMag = np.linalg.norm(self.allVelocities[step,ptIter])
+                vMag = np.linalg.norm(self.allVelocities[step-1,ptIter])
                 fHat = self.allForces[step,ptIter]/np.linalg.norm(self.allForces[step,ptIter])
-                self.allVelocities[step,ptIter] = (1-alpha)*self.allVelocities[step,ptIter] + \
+                self.allVelocities[step,ptIter] += (1-alpha)*self.allVelocities[step-1,ptIter] + \
                     alpha*vMag*fHat
                 
                 if stepsSinceReset[ptIter] > fireParams["nAccel"]:
                     tStepArr[step,ptIter] = \
                         min(tStepArr[step-1,ptIter]*fireParams["fInc"],fireParams["dtMax"])
                     alphaArr[step,ptIter] = alpha*fireParams["fAlpha"]
+                else:
+                    tStepArr[step,ptIter] = tStepArr[step-1,ptIter]
                 
                 stepsSinceReset[ptIter] += 1
             else:
                 tStepArr[step,ptIter] = tStepArr[step-1,ptIter]*fireParams["fDecel"]
-                self.allVelocities[step,ptIter] = np.zeros(self.nDims)
                 alphaArr[step,ptIter] = fireParams["aStart"]
                 stepsSinceReset[ptIter] = 0
         
         return tStepArr, alphaArr, stepsSinceReset
     
     def _global_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
+        self.allPts[step] = self.allPts[step-1] + \
+            tStepArr[step-1]*self.allVelocities[step-1] + \
+            0.5*self.allForces[step-1]*tStepArr[step-1]**2
+        self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
+        
+        #Doesn't seem to make a difference
+        #What the Wikipedia article on velocity Verlet uses
+        self.allVelocities[step] = \
+            0.5*tStepArr[step-1]*(self.allForces[step]+self.allForces[step-1])
+        #What Eric uses
+        # self.allVelocities[step] = tStepArr[step-1]*self.allForces[step]
+        
         for ptIter in range(self.nPts):
             alpha = alphaArr[step-1]
             
