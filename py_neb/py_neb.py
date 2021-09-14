@@ -770,6 +770,7 @@ class VerletMinimization:
         
         TODO: consider making FIRE its own class, or allowing for attributes
         like fireParams and etc
+        TODO: add maxmove parameter to prevent path exploding
 
         Parameters
         ----------
@@ -794,7 +795,8 @@ class VerletMinimization:
         """
         
         defaultFireParams = \
-            {"dtMax":0.1,"nAccel":5,"fInc":1.1,"fAccel":0.99,"fDecel":0.5,"aStart":0.1}
+            {"dtMax":1.,"dtMin":0.1,"nAccel":10,"fInc":1.1,"fAlpha":0.99,\
+             "fDecel":0.5,"aStart":0.1}
             
         for key in fireParams.keys():
             if key not in defaultFireParams.keys():
@@ -832,8 +834,14 @@ class VerletMinimization:
                 0.5*self.allForces[step-1]*tStepArr[step-1]**2
             self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
             #Warning to user: velocity here is not final velocity
+            
+            #What the Wikipedia article on velocity Verlet uses
             self.allVelocities[step] = \
                 0.5*tStepArr[step-1]*(self.allForces[step]+self.allForces[step-1])
+            #What Eric uses
+            # self.allVelocities[step] = tStepArr[step-1]*self.allForces[step]
+            
+            #Doesn't seem to make a difference
             
             if useLocal:
                 tStepArr,alphaArr,stepsSinceReset = \
@@ -863,7 +871,7 @@ class VerletMinimization:
                 if stepsSinceReset[ptIter] > fireParams["nAccel"]:
                     tStepArr[step,ptIter] = \
                         min(tStepArr[step-1,ptIter]*fireParams["fInc"],fireParams["dtMax"])
-                    alphaArr[step,ptIter] = alpha*fireParams["fAccel"]
+                    alphaArr[step,ptIter] = alpha*fireParams["fAlpha"]
                 
                 stepsSinceReset[ptIter] += 1
             else:
@@ -878,21 +886,21 @@ class VerletMinimization:
         for ptIter in range(self.nPts):
             alpha = alphaArr[step-1]
             
-            product = np.dot(self.allVelocities[step,ptIter],self.allForces[step,ptIter])
+            product = np.dot(self.allVelocities[step-1,ptIter],self.allForces[step,ptIter])
             if product > 0:
-                vMag = np.linalg.norm(self.allVelocities[step,ptIter])
+                vMag = np.linalg.norm(self.allVelocities[step-1,ptIter])
                 fHat = self.allForces[step,ptIter]/np.linalg.norm(self.allForces[step,ptIter])
-                self.allVelocities[step,ptIter] = (1-alpha)*self.allVelocities[step,ptIter] \
-                    + alpha*vMag*fHat
+                vp = (1-alpha)*self.allVelocities[step-1,ptIter] + alpha*vMag*fHat
+                self.allVelocities[step,ptIter] += vp
                 
                 if stepsSinceReset > fireParams["nAccel"]:
                     tStepArr[step] = min(tStepArr[step-1]*fireParams["fInc"],fireParams["dtMax"])
-                    alphaArr[step] = alpha*fireParams["fAccel"]
+                    alphaArr[step] = alpha*fireParams["fAlpha"]
                 
                 stepsSinceReset += 1
             else:
-                tStepArr[step] = tStepArr[step-1]*fireParams["fDecel"]
-                self.allVelocities[step,ptIter] = np.zeros(self.nDims)
+                tStepArr[step] = max(tStepArr[step-1]*fireParams["fDecel"],fireParams["dtMin"])
+                # self.allVelocities[step,ptIter] = np.zeros(self.nDims)
                 alphaArr[step] = fireParams["aStart"]
                 stepsSinceReset = 0
         
