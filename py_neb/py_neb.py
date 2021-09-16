@@ -74,6 +74,8 @@ def find_local_minimum(arr):
 
 def midpoint_grad(func,points,eps=10**(-8)):
     """
+    TODO: allow for arbitrary shaped outputs, for use with inertia tensor
+    
     Midpoint finite difference. Probably best if not used with actual DFT calculations,
         vs a forwards/reverse finite difference
     Assumes func only depends on a single point (vs the action, which depends on
@@ -84,18 +86,17 @@ def midpoint_grad(func,points,eps=10**(-8)):
     nPoints, nDims = points.shape
     
     gradOut = np.zeros((nPoints,nDims))
-    for ptIter in range(nPoints):
-        for dimIter in range(nDims):
-            step = np.zeros(nDims)
-            step[dimIter] = 1
-            
-            forwardStep = points[ptIter] + eps/2*step
-            backwardStep = points[ptIter] - eps/2*step
-            
-            forwardEval = func(forwardStep)
-            backwardEval = func(backwardStep)
-            
-            gradOut[ptIter,dimIter] = (forwardEval - backwardEval)/eps
+    for dimIter in range(nDims):
+        step = np.zeros(nDims)
+        step[dimIter] = 1
+        
+        forwardStep = points + eps/2*step
+        backwardStep = points - eps/2*step
+        
+        forwardEval = func(forwardStep)
+        backwardEval = func(backwardStep)
+        
+        gradOut[:,dimIter] = (forwardEval-backwardEval)/eps
     
     return gradOut
 
@@ -928,7 +929,84 @@ class VerletMinimization:
         
         return None
     
-
+class EulerLagrangeVerification:
+    def __init__(self,path,enegOnPath,eneg_func,massOnPath=None,mass_func=None,\
+                 grad_approx=midpoint_grad):
+        #TODO: major issue here when points aren't evenly spaced along the arc-length
+        #of the path. For instance, a straight line of 3 nodes, on a V = constant
+        #PES, will not pass this if the nodes aren't spaced evenly
+        self.nPts, self.nDims = path.shape
+        self.ds = 1/(self.nPts-1)
+        
+        massShape = (self.nPts,self.nDims,self.nDims)
+        if massOnPath is None:
+            self.massIsIdentity = True
+            massOnPath = np.full(massShape,np.identity(self.nDims))
+        else:
+            self.massIsIdentity = False
+            
+        if enegOnPath.shape != (self.nPts,):
+            raise ValueError("Invalid shape for enegOnPath. Expected "+str((self.nPts,))+\
+                             ", received "+str(enegOnPath.shape))
+        if massOnPath.shape != massShape:
+            raise ValueError("Invalid shape for massOnPath. Expected "+str(massShape)+\
+                             ", received "+str(massOnPath.shape))
+                
+        #Note that these are padded, for simplified indexing
+        self.xDot = np.zeros((self.nPts,self.nDims))
+        self.xDot[1:] = np.array([path[i]-path[i-1] for i in range(1,self.nPts)])/self.ds
+        self.xDotDot = np.zeros((self.nPts,self.nDims))
+        self.xDotDot[1:-1] = \
+            np.array([path[i+1]-2*path[i]+path[i-1] for i in range(1,self.nPts-1)])/self.ds**2
+            
+        self.path = path
+        self.enegOnPath = enegOnPath
+        self.eneg_func = eneg_func
+        self.massOnPath = massOnPath
+        self.mass_func = mass_func
+        self.grad_approx = grad_approx
+    
+    def _compare_lagrangian_id_mass(self):
+        enegGrad = self.grad_approx(self.eneg_func,self.path)
+        
+        lhs = np.zeros((self.nPts,self.nDims))
+        rhs = np.zeros((self.nPts,self.nDims))
+        
+        for ptIter in range(1,self.nPts):
+            lhs[ptIter] = 2*self.enegOnPath[ptIter]*self.xDotDot[ptIter]
+            
+            term1 = enegGrad[ptIter] * np.dot(self.xDot[ptIter],self.xDot[ptIter])
+            term2 = -self.xDot[ptIter] * np.dot(enegGrad[ptIter],self.xDot[ptIter])
+            
+            rhs[ptIter] = term1 + term2
+            
+        diff = rhs - lhs
+        return diff[1:-1] #Removing excess padding
+    
+    def _compare_lagrangian_var_mass(self):
+        enegGrad = self.grad_approx(self.eneg_func,self.path)
+        
+        lhs = np.zeros((self.nPts,self.nDims))
+        rhs = np.zeros((self.nPts,self.nDims))
+        
+        #TODO: fill in eqns here
+            
+        diff = rhs - lhs
+        
+        return diff[1:-1] #Removing excess padding
+    
+    def compare_lagrangian(self):
+        if self.massIsIdentity:
+            elDiff = self._compare_lagrangian_id_mass()
+        else:
+            elDiff = self._compare_lagrangian_var_mass()
+            
+        
+        return None
+    
+    def compare_lagrangian_squared(self):
+        
+        return None
 
 
     
