@@ -5,6 +5,8 @@ from scipy.ndimage import filters, morphology #For minimum finding
 from scipy.interpolate import interpnd, RectBivariateSpline
 import itertools
 
+from scipy.integrate import solve_bvp
+
 import h5py
 import pandas as pd
 import sys
@@ -929,6 +931,56 @@ class VerletMinimization:
         
         return None
     
+class EulerLagrangeSolver:
+    def __init__(self,initialPath,eneg_func,mass_func=None,grad_approx=midpoint_grad):
+        self.initialPath = initialPath
+        self.eneg_func = eneg_func
+        self.mass_func = mass_func
+        self.grad_approx = grad_approx
+        
+        self.nPts, self.nDims = initialPath.shape
+        
+    def _solve_id_inertia(self):
+        def el(t,z):
+            #z is the dependent variable. It is (x1,..., xD, x1',... xD').
+            #For Nt images, t.shape == (Nt,), and z.shape == (2D,Nt).
+            zOut = np.zeros(z.shape)
+            zOut[:self.nDims] = z[self.nDims:]
+            
+            enegs = self.eneg_func(z[:self.nDims].T)
+            enegGrad = self.grad_approx(self.eneg_func,z[:self.nDims].T)
+            
+            nPtsLoc = z.shape[1]
+            for ptIter in range(nPtsLoc):
+                v = z[self.nDims:,ptIter]
+                term1 = 1/(2*enegs[ptIter])*enegGrad[ptIter] * np.dot(v,v)
+                
+                term2 = -1/(2*enegs[ptIter])*v*np.dot(enegGrad[ptIter],v)
+                
+                zOut[self.nDims:,ptIter] = term1 + term2
+            
+            return zOut
+        
+        def bc(z0,z1):
+            leftPtCond = np.array([z0[i] - self.initialPath[0,i] for \
+                                   i in range(self.nDims)])
+            rightPtCond = np.array([z1[i] - self.initialPath[-1,i] for \
+                                    i in range(self.nDims)])
+            return np.concatenate((leftPtCond,rightPtCond))
+        
+        initialGuess = np.vstack((self.initialPath.T,np.zeros(self.initialPath.T.shape)))
+        
+        t = np.linspace(0.,1,self.nPts)
+        sol = solve_bvp(el,bc,t,initialGuess)
+        
+        return sol
+        
+    def solve(self):
+        if self.mass_func is None:
+            sol = self._solve_id_inertia()
+            
+        return sol
+    
 class EulerLagrangeVerification:
     def __init__(self,path,enegOnPath,eneg_func,massOnPath=None,mass_func=None,\
                  grad_approx=midpoint_grad):
@@ -966,7 +1018,7 @@ class EulerLagrangeVerification:
         self.mass_func = mass_func
         self.grad_approx = grad_approx
     
-    def _compare_lagrangian_id_mass(self):
+    def _compare_lagrangian_id_inertia(self):
         enegGrad = self.grad_approx(self.eneg_func,self.path)
         
         lhs = np.zeros((self.nPts,self.nDims))
@@ -981,9 +1033,9 @@ class EulerLagrangeVerification:
             rhs[ptIter] = term1 + term2
             
         diff = rhs - lhs
-        return diff[1:-1] #Removing excess padding
+        return diff[1:-1] #Removing padding
     
-    def _compare_lagrangian_var_mass(self):
+    def _compare_lagrangian_var_inertia(self):
         enegGrad = self.grad_approx(self.eneg_func,self.path)
         
         lhs = np.zeros((self.nPts,self.nDims))
@@ -997,9 +1049,9 @@ class EulerLagrangeVerification:
     
     def compare_lagrangian(self):
         if self.massIsIdentity:
-            elDiff = self._compare_lagrangian_id_mass()
+            elDiff = self._compare_lagrangian_id_inertia()
         else:
-            elDiff = self._compare_lagrangian_var_mass()
+            elDiff = self._compare_lagrangian_var_inertia()
             
         
         return None
