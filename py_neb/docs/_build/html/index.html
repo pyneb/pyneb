@@ -37,8 +37,14 @@
 <div class="toctree-wrapper compound">
 </div>
 <span class="target" id="module-py_neb"></span><dl class="py class">
+<dt class="sig sig-object py" id="py_neb.GridInterpWithBoundary">
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">py_neb.</span></span><span class="sig-name descname"><span class="pre">GridInterpWithBoundary</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">points</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">values</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">boundaryHandler</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'exponential'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">minVal</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#py_neb.GridInterpWithBoundary" title="Permalink to this definition">¶</a></dt>
+<dd><p>Based on scipy.interpolate.RegularGridInterpolator</p>
+</dd></dl>
+
+<dl class="py class">
 <dt class="sig sig-object py" id="py_neb.LeastActionPath">
-<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">py_neb.</span></span><span class="sig-name descname"><span class="pre">LeastActionPath</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">potential</span></em>, <em class="sig-param"><span class="pre">endpointSpringForce</span></em>, <em class="sig-param"><span class="pre">nPts</span></em>, <em class="sig-param"><span class="pre">nDims</span></em>, <em class="sig-param"><span class="pre">mass=None</span></em>, <em class="sig-param"><span class="pre">target_func=&lt;function</span> <span class="pre">action&gt;</span></em>, <em class="sig-param"><span class="pre">target_func_grad=&lt;function</span> <span class="pre">forward_action_grad&gt;</span></em>, <em class="sig-param"><span class="pre">nebParams={}</span></em><span class="sig-paren">)</span><a class="headerlink" href="#py_neb.LeastActionPath" title="Permalink to this definition">¶</a></dt>
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">py_neb.</span></span><span class="sig-name descname"><span class="pre">LeastActionPath</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">potential</span></em>, <em class="sig-param"><span class="pre">nPts</span></em>, <em class="sig-param"><span class="pre">nDims</span></em>, <em class="sig-param"><span class="pre">mass=None</span></em>, <em class="sig-param"><span class="pre">endpointSpringForce=True</span></em>, <em class="sig-param"><span class="pre">endpointHarmonicForce=True</span></em>, <em class="sig-param"><span class="pre">target_func=&lt;function</span> <span class="pre">action&gt;</span></em>, <em class="sig-param"><span class="pre">target_func_grad=&lt;function</span> <span class="pre">forward_action_grad&gt;</span></em>, <em class="sig-param"><span class="pre">nebParams={}</span></em><span class="sig-paren">)</span><a class="headerlink" href="#py_neb.LeastActionPath" title="Permalink to this definition">¶</a></dt>
 <dd><p>class documentation…?</p>
 </dd></dl>
 
@@ -100,11 +106,11 @@ in the algorithm</p>
 
 <dl class="py class">
 <dt class="sig sig-object py" id="id0">
-<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">py_neb.</span></span><span class="sig-name descname"><span class="pre">LeastActionPath</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">potential</span></em>, <em class="sig-param"><span class="pre">endpointSpringForce</span></em>, <em class="sig-param"><span class="pre">nPts</span></em>, <em class="sig-param"><span class="pre">nDims</span></em>, <em class="sig-param"><span class="pre">mass=None</span></em>, <em class="sig-param"><span class="pre">target_func=&lt;function</span> <span class="pre">action&gt;</span></em>, <em class="sig-param"><span class="pre">target_func_grad=&lt;function</span> <span class="pre">forward_action_grad&gt;</span></em>, <em class="sig-param"><span class="pre">nebParams={}</span></em><span class="sig-paren">)</span><a class="headerlink" href="#id0" title="Permalink to this definition">¶</a></dt>
+<em class="property"><span class="pre">class</span> </em><span class="sig-prename descclassname"><span class="pre">py_neb.</span></span><span class="sig-name descname"><span class="pre">LeastActionPath</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">potential</span></em>, <em class="sig-param"><span class="pre">nPts</span></em>, <em class="sig-param"><span class="pre">nDims</span></em>, <em class="sig-param"><span class="pre">mass=None</span></em>, <em class="sig-param"><span class="pre">endpointSpringForce=True</span></em>, <em class="sig-param"><span class="pre">endpointHarmonicForce=True</span></em>, <em class="sig-param"><span class="pre">target_func=&lt;function</span> <span class="pre">action&gt;</span></em>, <em class="sig-param"><span class="pre">target_func_grad=&lt;function</span> <span class="pre">forward_action_grad&gt;</span></em>, <em class="sig-param"><span class="pre">nebParams={}</span></em><span class="sig-paren">)</span><a class="headerlink" href="#id0" title="Permalink to this definition">¶</a></dt>
 <dd><p>class documentation…?</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="py_neb.LeastActionPath.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">potential</span></em>, <em class="sig-param"><span class="pre">endpointSpringForce</span></em>, <em class="sig-param"><span class="pre">nPts</span></em>, <em class="sig-param"><span class="pre">nDims</span></em>, <em class="sig-param"><span class="pre">mass=None</span></em>, <em class="sig-param"><span class="pre">target_func=&lt;function</span> <span class="pre">action&gt;</span></em>, <em class="sig-param"><span class="pre">target_func_grad=&lt;function</span> <span class="pre">forward_action_grad&gt;</span></em>, <em class="sig-param"><span class="pre">nebParams={}</span></em><span class="sig-paren">)</span><a class="headerlink" href="#py_neb.LeastActionPath.__init__" title="Permalink to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">potential</span></em>, <em class="sig-param"><span class="pre">nPts</span></em>, <em class="sig-param"><span class="pre">nDims</span></em>, <em class="sig-param"><span class="pre">mass=None</span></em>, <em class="sig-param"><span class="pre">endpointSpringForce=True</span></em>, <em class="sig-param"><span class="pre">endpointHarmonicForce=True</span></em>, <em class="sig-param"><span class="pre">target_func=&lt;function</span> <span class="pre">action&gt;</span></em>, <em class="sig-param"><span class="pre">target_func_grad=&lt;function</span> <span class="pre">forward_action_grad&gt;</span></em>, <em class="sig-param"><span class="pre">nebParams={}</span></em><span class="sig-paren">)</span><a class="headerlink" href="#py_neb.LeastActionPath.__init__" title="Permalink to this definition">¶</a></dt>
 <dd><p>asdf</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
@@ -186,7 +192,7 @@ The default is {}.</p></li>
   <h3 id="searchlabel">Quick search</h3>
     <div class="searchformwrapper">
     <form class="search" action="search.html" method="get">
-      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="text" name="q" aria-labelledby="searchlabel" />
       <input type="submit" value="Go" />
     </form>
     </div>
@@ -208,7 +214,7 @@ The default is {}.</p></li>
       &copy;2021 PyNEB Team.
       
       |
-      Powered by <a href="http://sphinx-doc.org/">Sphinx 4.1.2</a>
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 4.0.2</a>
       &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
       
       |

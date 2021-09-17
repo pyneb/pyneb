@@ -1,9 +1,9 @@
 import sys
-sys.path.append("..//")
+import os
+sys.path.append(os.path.expanduser("~/Research/ActionMinimization/"))
+
 from py_neb.py_neb import *
 from py_neb import py_neb
-
-import os
 
 import matplotlib.pyplot as plt
 
@@ -15,6 +15,7 @@ import itertools
 #TODO: namespace stuff here
 from scipy.interpolate import interp2d, RBFInterpolator, interpn
 from scipy import interpolate
+import scipy.interpolate
 import sklearn.gaussian_process as gp
 
 class Utilities:
@@ -262,6 +263,9 @@ def interpnd_wrapper(uniqueGridPts,gridValues,tol=10**(-5)):
     endPoints = np.array([[g[0],g[-1]] for g in uniqueGridPts])
     
     def func(coords):
+        if len(coords.shape) == 1:
+            coords = coords.reshape((nCoords,1))
+            
         if coords.shape[0] != nCoords:
             if coords.shape[1] == nCoords:
                 warnings.warn("Transposing coords; coords.shape[0] != nCoords")
@@ -271,10 +275,8 @@ def interpnd_wrapper(uniqueGridPts,gridValues,tol=10**(-5)):
                                  " does not match nCoords "+\
                                  str(nCoords))
         
-        if len(coords.shape) == 1:
-            coords = coords.reshape((nCoords,1))
         nPoints = coords.shape[1]
-        
+
         retVal = np.zeros(nPoints)
         for ptIter in range(nPoints):
             if np.count_nonzero(np.isnan(coords[:,ptIter])) != 0:
@@ -315,6 +317,128 @@ def interpnd_wrapper(uniqueGridPts,gridValues,tol=10**(-5)):
         return retVal
     return func
 
+# class GridInterpWithBoundary:
+#     """
+#     Based on scipy.interpolate.RegularGridInterpolator
+#     """
+#     def __init__(self, points, values, boundaryHandler="exponential",minVal=0):
+#         if boundaryHandler not in ["exponential"]:
+#             raise ValueError("boundaryHandler '%s' is not defined" % boundaryHandler)
+        
+#         if not hasattr(values, 'ndim'):
+#             #In case "values" is not an array
+#             values = np.asarray(values)
+
+#         if len(points) > values.ndim:
+#             raise ValueError("There are %d point arrays, but values has %d "
+#                              "dimensions" % (len(points), values.ndim))
+
+#         if hasattr(values, 'dtype') and hasattr(values, 'astype'):
+#             if not np.issubdtype(values.dtype, np.inexact):
+#                 values = values.astype(float)
+
+#         for i, p in enumerate(points):
+#             if not np.all(np.diff(p) > 0.):
+#                 raise ValueError("The points in dimension %d must be strictly "
+#                                  "ascending" % i)
+#             if not np.asarray(p).ndim == 1:
+#                 raise ValueError("The points in dimension %d must be "
+#                                  "1-dimensional" % i)
+#             if not values.shape[i] == len(p):
+#                 raise ValueError("There are %d points and %d values in "
+#                                  "dimension %d" % (len(p), values.shape[i], i))
+        
+#         self.grid = tuple([np.asarray(p) for p in points])
+#         self.values = values
+#         self.boundaryHandler = boundaryHandler
+#         self.minVal = minVal
+
+#     def __call__(self, xi):
+#         """
+#         Interpolation at coordinates
+#         Parameters
+#         ----------
+#         xi : ndarray of shape (..., ndim)
+#             The coordinates to sample the gridded data at
+#         """
+#         ndim = len(self.grid)
+#         xi = scipy.interpolate.interpnd._ndim_coords_from_arrays(xi, ndim=ndim)
+#         if xi.shape[-1] != len(self.grid):
+#             raise ValueError("The requested sample points xi have dimension "
+#                              "%d, but this RegularGridInterpolator has "
+#                              "dimension %d" % (xi.shape[1], ndim))
+
+#         xi_shape = xi.shape
+#         xi = xi.reshape(-1, xi_shape[-1])
+        
+#         #Iterating over dimensions and checking for out-of-bounds
+#         isInBounds = np.zeros((2,)+xi.T.shape,dtype=bool)
+#         for i, p in enumerate(xi.T):
+#             isInBounds[0,i] = (self.grid[i][0] <= p)
+#             isInBounds[1,i] = (p <= self.grid[i][-1])
+
+#         indices, norm_distances = self._find_indices(xi.T)
+        
+#         resultAssumingInBounds = self._evaluate_linear(indices, norm_distances)
+#         if self.boundaryHandler == "exponential":
+#             result = self._exp_boundary_handler(resultAssumingInBounds,isInBounds,\
+#                                                 norm_distances,indices)
+        
+#         if self.minVal is not None:
+#             for rIter in range(len(result)):
+#                 if result[rIter] < self.minVal:
+#                     result[rIter] = self.minVal
+#         return result
+
+#     def _evaluate_linear(self, indices, norm_distances):
+#         # slice for broadcasting over trailing dimensions in self.values
+#         vslice = (slice(None),) + (None,)*(self.values.ndim - len(indices))
+        
+#         # find relevant values
+#         # each i and i+1 represents a edge
+#         edges = itertools.product(*[[i, i + 1] for i in indices])
+#         values = 0.
+#         for edge_indices in edges:
+#             weight = 1.
+#             for ei, i, yi in zip(edge_indices, indices, norm_distances):
+#                 weight *= np.where(ei == i, 1 - yi, yi)
+#             values += np.asarray(self.values[edge_indices]) * weight[vslice]
+#         return values
+    
+#     def _exp_boundary_handler(self,resultIn,isInBounds,norm_distances,indices):
+#         resultOut = resultIn.copy()
+        
+#         gridValues = self.values[tuple(indices)]
+        
+#         for ptIter in range(len(resultIn)):
+#             if np.count_nonzero(~isInBounds[:,:,ptIter]) > 0:
+#                 dist = 0
+#                 for n in norm_distances:
+#                     dist += n[ptIter]**2
+#                 dist = np.sqrt(dist)
+#                 nearestActualVal = gridValues[ptIter]
+                
+#                 #Yes, I mean to take an additional square root here
+#                 resultOut[ptIter] = nearestActualVal*np.exp(np.sqrt(dist))
+        
+#         return resultOut
+
+#     def _find_indices(self, xi):
+#         # find relevant edges between which xi are situated
+#         indices = []
+#         # compute distance to lower edge in unity units
+#         norm_distances = []
+#         # iterate through dimensions
+#         for x, grid in zip(xi, self.grid):
+#             i = np.searchsorted(grid, x) - 1
+#             i[i < 0] = 0
+#             i[i > grid.size - 2] = grid.size - 2
+#             indices.append(i)
+#             norm_distances.append((x - grid[i]) /
+#                                   (grid[i + 1] - grid[i]))
+            
+#         return indices, norm_distances
+
 def mass_array_func(arrayOfFuncs):
     #Simple wrapper for how I call things; probably changed later. Currently set
     #up such that, if the input coords is an array of size (n1, n2), the output
@@ -342,6 +466,41 @@ def mass_array_func(arrayOfFuncs):
                 
         return outVals
     return func_out
+
+def new_mass_array_func(arrayOfFuncs):
+    #Wrapper. Can abstract this plus other
+    #wrappers to allow for different shapes
+    nCoords = arrayOfFuncs.shape[0]
+    if not arrayOfFuncs.shape == (nCoords,nCoords):
+        raise ValueError("arrayOfFuncs is not square; has shape "+str(arrayOfFuncs.shape))
+        
+    def func_out(coords):
+        if len(coords.shape) == 1:
+            coords = coords.reshape((nCoords,1))
+            
+        if coords.shape[0] != nCoords:
+            if coords.shape[1] == nCoords:
+                warnings.warn("Transposing coords; coords.shape[0] != nCoords")
+                coords = coords.T
+            else:
+                raise ValueError("coords.shape "+str(coords.shape)+\
+                                 " does not match nCoords "+\
+                                 str(nCoords))
+        
+        nPoints = coords.shape[1]
+        
+        outVals = np.zeros((nPoints,nCoords,nCoords))
+        
+        #Mass array is always 2D
+        for iIter in range(nCoords):
+            for jIter in np.arange(iIter,nCoords):
+                fEvals = arrayOfFuncs[iIter,jIter](coords)
+                
+                outVals[:,iIter,jIter] = fEvals
+                outVals[:,jIter,iIter] = fEvals
+                
+        return outVals
+    return func_out
     
 class CustomInterp2d(interp2d):
     #TODO: make it impossible to go outside of the bounds of the grid data used
@@ -350,14 +509,11 @@ class CustomInterp2d(interp2d):
         self.kwargs = kwargs
         super(CustomInterp2d,self).__init__(*args,**kwargs)
         self.potential = self.pot_wrapper()
-        
-    #So that I can pull out a string representation, and kwargs
-    def __str__(self):
-        return "scipy.interpolate.interp2d"
-    
+            
     #Need a wrapper for use in abstracted function calls
     def pot_wrapper(self):
         def potential(coords):
+            coords = coords.T
             #Is a 2d method anyways
             flattenedCoords = [coords[0].flatten(),coords[1].flatten()]
             nCoords = len(coords)
@@ -569,6 +725,29 @@ class FileIO(): #Tried using inheritance here, but I think the static methods
         attrDictOut = {}
         
         h5File = h5py.File(baseDir+fDir+fName,"r")
+        allDataSets = [key for key in Utilities.h5_get_keys(h5File) if isinstance(h5File[key],h5py.Dataset)]
+        for key in allDataSets:
+            datDictOut[key.lstrip("/")] = np.array(h5File[key])
+            
+        #Does NOT pull out sub-attributes
+        for attr in h5File.attrs:
+            attrIn = np.array(h5File.attrs[attr])
+            #Some data is a scalar, and so would otherwise be stored as a zero-dimensional
+            #numpy array. That's just confusing.
+            if attrIn.shape == ():
+                attrIn = attrIn.reshape((1,))
+            attrDictOut[attr.lstrip("/")] = attrIn
+        
+        h5File.close()
+            
+        return datDictOut, attrDictOut
+    
+    @staticmethod
+    def new_read_from_h5(fName):
+        datDictOut = {}
+        attrDictOut = {}
+        
+        h5File = h5py.File(fName,"r")
         allDataSets = [key for key in Utilities.h5_get_keys(h5File) if isinstance(h5File[key],h5py.Dataset)]
         for key in allDataSets:
             datDictOut[key.lstrip("/")] = np.array(h5File[key])
@@ -1315,7 +1494,150 @@ def uranium_pyneb_test():
     return None
 
 def u232_test():
+    fIn = "..//PES/232U.h5"
+    dsets, attrs = FileIO.new_read_from_h5(fIn)
+    
+    coordStrs = ["Q20","Q30"]
+    
+    uniqueCoords = [np.unique(dsets[key]) for key in coordStrs]
+    
+    gridShape = [len(np.unique(dsets[key])) for key in coordStrs]
+    
+    coordMesh = tuple([dsets[key].reshape(gridShape) for key in coordStrs])
+    zz = dsets["PES"].reshape(gridShape)
+    
+    potential = interpnd_wrapper(uniqueCoords,zz)
+    
+    #Finding initial path
+    gsLoc = np.array([attrs["Ground_State"][key] for key in coordStrs]).flatten()
+    eGS = potential(gsLoc)
+    
+    allConts = Utilities.find_approximate_contours(coordMesh,zz)
+    outerContour = allConts[0][1]
+    
+    nPts = 22
+    initPath = np.array((np.linspace(gsLoc[0],300,nPts),np.linspace(gsLoc[1],32,nPts)))
+    
+    f, a = Utilities.standard_pes(*coordMesh,zz)
+    a.contour(*coordMesh,zz,levels=[eGS],colors=["black"])
+    
+    lap = py_neb.LeastActionPath(potential,22,2,\
+                                 nebParams={"k":20,"kappa":10},\
+                                 endpointSpringForce=(False,True),\
+                                 endpointHarmonicForce=(False,True))
+            
+    maxIters = 750
+    tStep = 0.05
+    
+    minObj = MinimizationAlgorithms(lap,initialPoints=initPath)
+    t0 = time.time()
+    allPts, allVelocities, allForces, actions = \
+        minObj.verlet_minimization_v2(maxIters=maxIters,tStep=tStep)
+    t1 = time.time()
+    a.plot(allPts[-1,0],allPts[-1,1],marker=".",label="Slow Interpolator")
+    
+    print("Slow interpolator time: "+str(t1 - t0))
+    print("Slow interpolator action: "+str(actions[-1]))
+    
+    actionFig, actionAx = plt.subplots()
+    actionAx.plot(actions,label="Slow Interpolator")
+    
+    potential = GridInterpWithBoundary(uniqueCoords,zz)
+    potential = Utilities.aux_pot(potential,0,tol=1)
+    
+    
+    lap = py_neb.LeastActionPath(potential,22,2,\
+                                 nebParams={"k":20,"kappa":10},\
+                                 endpointSpringForce=(False,True),\
+                                 endpointHarmonicForce=(False,True))
+        
+    minObj = MinimizationAlgorithms(lap,initialPoints=initPath)
+    t0 = time.time()
+    allPts, allVelocities, allForces, actions = \
+        minObj.verlet_minimization_v2(maxIters=maxIters,tStep=tStep)
+    t1 = time.time()
+    
+    a.plot(allPts[-1,0],allPts[-1,1],marker=".",label="Fast Interpolator")
+    a.legend(loc="upper left")
+    
+    actionAx.plot(actions,label="Fast Interpolator")
+    actionAx.legend()
+    
+    print("Fast interpolator time: "+str(t1 - t0))
+    print("Fast interpolator action: "+str(actions[-1]))
+    
     return None
+
+def u232_with_py_neb():
+    fIn = "..//PES/232U.h5"
+    dsets, attrs = FileIO.new_read_from_h5(fIn)
+    
+    coordStrs = ["Q20","Q30"]
+    
+    uniqueCoords = [np.unique(dsets[key]) for key in coordStrs]
+    
+    gridShape = [len(np.unique(dsets[key])) for key in coordStrs]
+    
+    coordMesh = tuple([dsets[key].reshape(gridShape) for key in coordStrs])
+    zz = dsets["PES"].reshape(gridShape)
+    
+    potential = Utilities.aux_pot(GridInterpWithBoundary(uniqueCoords,zz),\
+                                  0,tol=0.5)
+    
+    #Finding initial path
+    gsLoc = np.array([attrs["Ground_State"][key] for key in coordStrs]).flatten()
+    eGS = potential(gsLoc)
+    
+    nPts = 22
+    initPath = np.array((np.linspace(gsLoc[0],300,nPts),\
+                         np.linspace(gsLoc[1],32,nPts))).T
+    
+    f, a = Utilities.standard_pes(*coordMesh,zz)
+    a.contour(*coordMesh,zz,levels=[eGS],colors=["black"])
+    
+    lap = py_neb.LeastActionPath(potential,22,2,\
+                                  nebParams={"k":20,"kappa":10},\
+                                  endpointSpringForce=(False,True),\
+                                  endpointHarmonicForce=(False,True))
+    
+    maxIters = 750
+    tStep = 0.05
+    
+    minObj = py_neb.VerletMinimization(lap,initPath)
+    
+    allPts, allVelocities, allForces = \
+        minObj.velocity_verlet(tStep,maxIters)
+    a.plot(allPts[-1,:,0],allPts[-1,:,1],marker=".")
+    
+    # print("Slow interpolator time: "+str(t1 - t0))
+    # print("Slow interpolator action: "+str(actions[-1]))
+    
+    # actionFig, actionAx = plt.subplots()
+    # actionAx.plot(actions,label="Slow Interpolator")
+    
+    return None
+
+
+def grid_interp_test():
+    fIn = "..//PES/232U.h5"
+    dsets, attrs = FileIO.new_read_from_h5(fIn)
+    
+    coordStrs = ["Q20","Q30"]
+    
+    uniqueCoords = [np.unique(dsets[key]) for key in coordStrs]
+    gridShape = [len(np.unique(dsets[key])) for key in coordStrs]
+    
+    coordMesh = tuple([dsets[key].reshape(gridShape) for key in coordStrs])
+    zz = dsets["PES"].reshape(gridShape)
+    
+    g = py_neb.GridInterpWithBoundary(uniqueCoords,zz)
+    points = np.array([[0,0],[0.7,0.364],[-1,0]])
+    # print(dsets["Q20"])
+    # print(dsets["Q30"])
+    print(g(points))
+    
+    return None
+
 
 def plutonium_pes_slices():
     dsets, _ = FileIO.read_from_h5("240Pu.h5","/",baseDir=os.getcwd())
@@ -1890,7 +2212,10 @@ if __name__ == "__main__":
     # plutonium_endpoint_test()
     # uranium_test()
     # uranium_pyneb_test()
-    u232_test()
+    # u232_test()
+    u232_with_py_neb()
+    # grid_interp_test()
+    # print("asdf")
     # gp_test()
     # interp_mode_test()
     # lps = LepsPot()

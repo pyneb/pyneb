@@ -2,10 +2,8 @@ import numpy as np
 from scipy.ndimage import filters, morphology #For minimum finding
 
 #For ND interpolation
-from scipy.interpolate import interpnd, RectBivariateSpline
+from scipy.interpolate import interpnd
 import itertools
-
-from scipy.integrate import solve_bvp
 
 import h5py
 import pandas as pd
@@ -76,8 +74,6 @@ def find_local_minimum(arr):
 
 def midpoint_grad(func,points,eps=10**(-8)):
     """
-    TODO: allow for arbitrary shaped outputs, for use with inertia tensor
-    
     Midpoint finite difference. Probably best if not used with actual DFT calculations,
         vs a forwards/reverse finite difference
     Assumes func only depends on a single point (vs the action, which depends on
@@ -88,17 +84,18 @@ def midpoint_grad(func,points,eps=10**(-8)):
     nPoints, nDims = points.shape
     
     gradOut = np.zeros((nPoints,nDims))
-    for dimIter in range(nDims):
-        step = np.zeros(nDims)
-        step[dimIter] = 1
-        
-        forwardStep = points + eps/2*step
-        backwardStep = points - eps/2*step
-        
-        forwardEval = func(forwardStep)
-        backwardEval = func(backwardStep)
-        
-        gradOut[:,dimIter] = (forwardEval-backwardEval)/eps
+    for ptIter in range(nPoints):
+        for dimIter in range(nDims):
+            step = np.zeros(nDims)
+            step[dimIter] = 1
+            
+            forwardStep = points[ptIter] + eps/2*step
+            backwardStep = points[ptIter] - eps/2*step
+            
+            forwardEval = func(forwardStep)
+            backwardEval = func(backwardStep)
+            
+            gradOut[ptIter,dimIter] = (forwardEval - backwardEval)/eps
     
     return gradOut
 
@@ -138,18 +135,12 @@ def action(path,potential,masses=None):
     if potArr.shape != potShape:
         raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
                          "; required shape is "+str(potShape)+". See action function.")
-    
-    for ptIter in range(nPoints):
-        if potArr[ptIter] < 0:
-            potArr[ptIter] = 0.01
-    
-    # if np.any(potArr[1:-2]<0):
-    #     print("Path: ")
-    #     print(path)
-    #     print("Potential: ")
-    #     print(potArr)
-    #     raise ValueError("Encountered energy E < 0; stopping.")
-        
+    if np.any(potArr<0):
+        print("Path: ")
+        print(path)
+        print("Potential: ")
+        print(potArr)
+        sys.exit("Stopping")
     #Actual calculation
     actOut = 0
     for ptIter in range(1,nPoints):
@@ -192,102 +183,43 @@ def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
     
     return gradOfAction, gradOfPes
 
-def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
-    """
-    Formats a collection of functions for use in computing the inertia tensor.
-    Assumes the inertia tensor is symmetric.
-    
-    Parameters
-    ----------
-    dictOfFuncs : dict
-        Contains functions for each component of the inertia tensor
-        
-    uniqueKeys : list
-        Labels the unique coordinates of the inertia tensor, in the order they
-        are used in the inertia. For instance, if one uses (q20, q30) as the 
-        coordinates in this order, one should feed in ['20','30'], and the
-        inertia will be reshaped as
-        
-                    [[M_{20,20}, M_{20,30}]
-                     [M_{30,20}, M_{30,30}]].
-                    
-        Contrast this with feeding in ['30','20'], in which the inertia will
-        be reshaped as
-        
-                    [[M_{30,30}, M_{30,20}]
-                     [M_{20,30}, M_{20,20}]].
 
-    Returns
-    -------
-    func_out : function
-        The inertia tensor. Can be called as func_out(coords).
-
-    """
-    nDims = len(uniqueKeys)
-    pairedKeys = np.array([c1+c2 for c1 in uniqueKeys for c2 in uniqueKeys]).reshape(2*(nDims,))
-    dictKeys = np.zeros(pairedKeys.shape,dtype=object)
-    
-    for (idx, key) in np.ndenumerate(pairedKeys):
-        for dictKey in dictOfFuncs.keys():
-            if key in dictKey:
-                dictKeys[idx] = dictKey
-                
-    nFilledKeys = np.count_nonzero(dictKeys)
-    nExpectedFilledKeys = nDims*(nDims+1)/2
-    if nFilledKeys != nExpectedFilledKeys:
-        raise ValueError("Expected "+str(nExpectedFilledKeys)+" but found "+\
-                         str(nFilledKeys)+" instead. dictKeys = "+str(dictKeys))
-    
+def make_mass_tensor(uniq_coords,mass_grids,mass_keys):
+    print(len(mass_grids))
+    massFuncArr = np.array([GridInterpWithBoundary(uniq_coords,grid)\
+                                for grid in mass_grids],dtype=object).reshape((3,3))
+    nCoords = massFuncArr.shape[0]
+    if not massFuncArr.shape == (nCoords,nCoords):
+        raise ValueError("massFuncArr is not square; has shape "+str(massFuncArr.shape))
     def func_out(coords):
         if len(coords.shape) == 1:
-            coords = coords.reshape((1,nDims))
-        elif len(coords.shape) > 2:
-            raise ValueError("coords.shape = "+str(coords.shape)+\
-                             "; coords.shape must have length <= 2")
-        
-        nPoints = coords.shape[0]
-        outVals = np.zeros((nPoints,)+2*(nDims,))
-        
+            coords = coords.reshape((nCoords,1))
+        if coords.shape[0] != nCoords:
+            if coords.shape[1] == nCoords:
+                warnings.warn("Transposing coords; coords.shape[0] != nCoords")
+                coords = coords.T
+            else:
+                raise ValueError("coords.shape "+str(coords.shape)+\
+                                 " does not match nCoords "+\
+                                 str(nCoords))
+        nPoints = coords.shape[1]
+        outVals = np.zeros((nPoints,nCoords,nCoords))
         #Mass array is always 2D
-        for iIter in range(nDims):
-            for jIter in np.arange(iIter,nDims):
-                key = dictKeys[iIter,jIter]
-                fEvals = dictOfFuncs[key](coords)
-                
+        for iIter in range(nCoords):
+            for jIter in np.arange(iIter,nCoords):
+                fEvals = massFuncArr[iIter,jIter](coords)
                 outVals[:,iIter,jIter] = fEvals
                 outVals[:,jIter,iIter] = fEvals
                 
         return outVals
     return func_out
 
-def auxiliary_potential(func_in,shift=10**(-4)):
-    def func_out(coords):
-        return func_in(coords) + shift
-    return func_out
 
-class RectBivariateSplineWrapper(RectBivariateSpline):
-    def __init__(self,*args,**kwargs):
-        super(RectBivariateSplineWrapper,self).__init__(*args,**kwargs)
-        self.function = self.func_wrapper()
-        
-    def func_wrapper(self):
-        def func_out(coords):
-            if coords.shape == (2,):
-                coords = coords.reshape((1,2))
-                
-            res = self.__call__(coords[:,0],coords[:,1],grid=False)
-            return res
-        return func_out
-
-class NDInterpWithBoundary:
+class GridInterpWithBoundary:
     """
     Based on scipy.interpolate.RegularGridInterpolator
     """
     def __init__(self, points, values, boundaryHandler="exponential",minVal=0):
-        if len(points) < 3:
-            warnings.warn("Using ND linear interpolator with "+str(len(points))\
-                          +" dimensions. Consider using spline interpolator instead.")
-        
         if boundaryHandler not in ["exponential"]:
             raise ValueError("boundaryHandler '%s' is not defined" % boundaryHandler)
         
@@ -317,7 +249,7 @@ class NDInterpWithBoundary:
         self.grid = tuple([np.asarray(p) for p in points])
         self.values = values
         self.boundaryHandler = boundaryHandler
-        self.minVal = minVal #To be used later, perhaps
+        self.minVal = minVal
 
     def __call__(self, xi):
         """
@@ -682,383 +614,17 @@ class LeastActionPath:
             netForce[-1] = springForce[-1]
         
         return netForce
-
-#TODO: maybe rename something like ForceMinimization?   
-#TODO: do we compute the action for all points after optimizing? or let someone else do that? 
+    
 class VerletMinimization:
-    def __init__(self,nebObj,initialPoints):
+    def __init__(self,nebObj):
         #It'll probably do this automatically, but whatever
         if not hasattr(nebObj,"compute_force"):
             raise AttributeError("Object "+str(nebObj)+" has no attribute compute_force")
             
         self.nebObj = nebObj
-        self.initialPoints = initialPoints
-        self.nPts, self.nDims = initialPoints.shape
-        
-        if self.nPts != self.nebObj.nPts:
-            raise ValueError("Obj "+str(self.nebObj)+" and initialPoints have "\
-                             +"a different number of points")
-                
-        self.allPts = None
-        self.allVelocities = None
-        self.allForces = None
-        
-    def velocity_verlet(self,tStep,maxIters,dampingParameter=0):
-        """
-        Implements Algorithm 6 of https://doi.org/10.1021/acs.jctc.7b00360
-        with optional damping force.
-        
-        TODO: that paper has many errors, esp. off-by-one errors. Could lead
-        to issues. Consult http://dx.doi.org/10.1063/1.2841941 instead.
-        TODO: modify to edit self.allPts and etc
+    
+# class Minimum_energy_path_NEB():
 
-        Parameters
-        ----------
-        tStep : TYPE
-            DESCRIPTION.
-        maxIters : TYPE
-            DESCRIPTION.
-        dampingParameter : TYPE, optional
-            DESCRIPTION. The default is 0.
-
-        Returns
-        -------
-        allPts : TYPE
-            DESCRIPTION.
-        allVelocities : TYPE
-            DESCRIPTION.
-        allForces : TYPE
-            DESCRIPTION.
-
-        """
-        #allPts is longer by 1 than the velocities/forces, because the last 
-        #velocity/force computed should be used to update the points one 
-        #last time (else that's computational time that's wasted)
-        allPts = np.zeros((maxIters+2,self.nPts,self.nDims))
-        allVelocities = np.zeros((maxIters+1,self.nPts,self.nDims))
-        allForces = np.zeros((maxIters+1,self.nPts,self.nDims))
-        
-        vProj = np.zeros((self.nPts,self.nDims))
-        
-        allPts[0] = self.initialPoints
-        allForces[0] = self.nebObj.compute_force(self.initialPoints)
-        allVelocities[0] = tStep*allForces[0]
-        allPts[1] = allPts[0] + allVelocities[0]*tStep + 0.5*allForces[0]*tStep**2
-        
-        for step in range(1,maxIters+1):
-            allForces[step] = self.nebObj.compute_force(allPts[step])
-            
-            for ptIter in range(self.nPts):
-                product = np.dot(allVelocities[step-1,ptIter],allForces[step,ptIter])
-                if product > 0:
-                    vProj[ptIter] = \
-                        product*allForces[step,ptIter]/\
-                            np.dot(allForces[step,ptIter],allForces[step,ptIter])
-                else:
-                    vProj[ptIter] = np.zeros(self.nDims)
-                    
-            #Damping term. Algorithm 6 uses allVelocities[step], but that hasn't
-            #been computed yet. Note that this isn't applied to compute allPts[1].
-            accel = allForces[step] - dampingParameter*allVelocities[step-1]                
-            allVelocities[step] = vProj + tStep * accel
-            
-            allPts[step+1] = allPts[step] + allVelocities[step]*tStep + \
-                0.5*accel*tStep**2
-            
-        return allPts, allVelocities, allForces
-    
-    def fire(self,tStep,maxIters,fireParams={},useLocal=False):
-        """
-        Wrapper for fast inertial relaxation engine.
-        FIRE step taken from http://dx.doi.org/10.1103/PhysRevLett.97.170201
-        
-        Velocity update taken from 
-        https://en.wikipedia.org/wiki/Verlet_integration#Velocity_Verlet
-        
-        TODO: consider making FIRE its own class, or allowing for attributes
-        like fireParams and etc
-        TODO: add maxmove parameter to prevent path exploding
-
-        Parameters
-        ----------
-        tStep : TYPE
-            DESCRIPTION.
-        maxIters : TYPE
-            DESCRIPTION.
-        fireParams : TYPE, optional
-            DESCRIPTION. The default is {}.
-        useLocal : TYPE, optional
-            DESCRIPTION. The default is False.
-
-        Raises
-        ------
-        ValueError
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
-
-        """
-        
-        defaultFireParams = \
-            {"dtMax":1.,"dtMin":0.1,"nAccel":10,"fInc":1.1,"fAlpha":0.99,\
-             "fDecel":0.5,"aStart":0.1}
-            
-        for key in fireParams.keys():
-            if key not in defaultFireParams.keys():
-                raise ValueError("Key "+key+" in fireParams not allowed")
-                
-        for key in defaultFireParams.keys():
-            if key not in fireParams.keys():
-                fireParams[key] = defaultFireParams[key]
-                
-        self.allPts = np.zeros((maxIters+2,self.nPts,self.nDims))
-        self.allVelocities = np.zeros((maxIters+1,self.nPts,self.nDims))
-        self.allForces = np.zeros((maxIters+1,self.nPts,self.nDims))
-        
-        self.allPts[0] = self.initialPoints
-        self.allForces[0] = self.nebObj.compute_force(self.allPts[0])
-        
-        if useLocal:
-            stepsSinceReset = np.zeros(self.nPts)
-            tStepArr = np.zeros((maxIters+1,self.nPts))
-            alphaArr = np.zeros((maxIters+1,self.nPts))
-            stepsSinceReset = np.zeros(self.nPts)
-        else:
-            stepsSinceReset = 0
-            tStepArr = np.zeros(maxIters+1)
-            alphaArr = np.zeros(maxIters+1)
-        
-        tStepArr[0] = tStep
-        alphaArr[0] = fireParams["aStart"]
-        
-        for step in range(1,maxIters+1):
-            #TODO: check potential off-by-one indexing on tStep
-            if useLocal:
-                tStepArr,alphaArr,stepsSinceReset = \
-                    self._local_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
-                                          fireParams)
-            else:
-                tStepArr,alphaArr,stepsSinceReset = \
-                    self._global_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
-                                           fireParams)
-        
-        if useLocal:
-            tStepFinal = tStepArr[-1].reshape((-1,1))
-            self.allPts[-1] = self.allPts[-2] + tStepFinal*self.allVelocities[-1] + \
-                0.5*self.allForces[-1]*tStepFinal**2
-        else:
-            self.allPts[-1] = self.allPts[-2] + tStepArr[-1]*self.allVelocities[-1] + \
-                0.5*self.allForces[-1]*tStepArr[-1]**2
-        
-        return tStepArr, alphaArr, stepsSinceReset
-    
-    def _local_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
-        tStepPrev = tStepArr[step-1].reshape((-1,1)) #For multiplication below
-        
-        self.allPts[step] = self.allPts[step-1] + \
-            tStepPrev*self.allVelocities[step-1] + \
-            0.5*self.allForces[step-1]*tStepPrev**2
-        self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
-        
-        #What the Wikipedia article on velocity Verlet uses
-        self.allVelocities[step] = \
-            0.5*tStepPrev*(self.allForces[step]+self.allForces[step-1])
-        
-        for ptIter in range(self.nPts):
-            alpha = alphaArr[step-1,ptIter]
-            
-            product = np.dot(self.allVelocities[step-1,ptIter],self.allForces[step,ptIter])
-            if product > 0:
-                vMag = np.linalg.norm(self.allVelocities[step-1,ptIter])
-                fHat = self.allForces[step,ptIter]/np.linalg.norm(self.allForces[step,ptIter])
-                self.allVelocities[step,ptIter] += (1-alpha)*self.allVelocities[step-1,ptIter] + \
-                    alpha*vMag*fHat
-                
-                if stepsSinceReset[ptIter] > fireParams["nAccel"]:
-                    tStepArr[step,ptIter] = \
-                        min(tStepArr[step-1,ptIter]*fireParams["fInc"],fireParams["dtMax"])
-                    alphaArr[step,ptIter] = alpha*fireParams["fAlpha"]
-                else:
-                    tStepArr[step,ptIter] = tStepArr[step-1,ptIter]
-                
-                stepsSinceReset[ptIter] += 1
-            else:
-                tStepArr[step,ptIter] = tStepArr[step-1,ptIter]*fireParams["fDecel"]
-                alphaArr[step,ptIter] = fireParams["aStart"]
-                stepsSinceReset[ptIter] = 0
-        
-        return tStepArr, alphaArr, stepsSinceReset
-    
-    def _global_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
-        self.allPts[step] = self.allPts[step-1] + \
-            tStepArr[step-1]*self.allVelocities[step-1] + \
-            0.5*self.allForces[step-1]*tStepArr[step-1]**2
-        self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
-        
-        #Doesn't seem to make a difference
-        #What the Wikipedia article on velocity Verlet uses
-        self.allVelocities[step] = \
-            0.5*tStepArr[step-1]*(self.allForces[step]+self.allForces[step-1])
-        #What Eric uses
-        # self.allVelocities[step] = tStepArr[step-1]*self.allForces[step]
-        
-        for ptIter in range(self.nPts):
-            alpha = alphaArr[step-1]
-            
-            product = np.dot(self.allVelocities[step-1,ptIter],self.allForces[step,ptIter])
-            if product > 0:
-                vMag = np.linalg.norm(self.allVelocities[step-1,ptIter])
-                fHat = self.allForces[step,ptIter]/np.linalg.norm(self.allForces[step,ptIter])
-                vp = (1-alpha)*self.allVelocities[step-1,ptIter] + alpha*vMag*fHat
-                self.allVelocities[step,ptIter] += vp
-                
-                if stepsSinceReset > fireParams["nAccel"]:
-                    tStepArr[step] = min(tStepArr[step-1]*fireParams["fInc"],fireParams["dtMax"])
-                    alphaArr[step] = alpha*fireParams["fAlpha"]
-                
-                stepsSinceReset += 1
-            else:
-                tStepArr[step] = max(tStepArr[step-1]*fireParams["fDecel"],fireParams["dtMin"])
-                # self.allVelocities[step,ptIter] = np.zeros(self.nDims)
-                alphaArr[step] = fireParams["aStart"]
-                stepsSinceReset = 0
-        
-        return tStepArr, alphaArr, stepsSinceReset
-    
-    def _check_early_stop(self):
-        
-        return None
-    
-class EulerLagrangeSolver:
-    def __init__(self,initialPath,eneg_func,mass_func=None,grad_approx=midpoint_grad):
-        self.initialPath = initialPath
-        self.eneg_func = eneg_func
-        self.mass_func = mass_func
-        self.grad_approx = grad_approx
-        
-        self.nPts, self.nDims = initialPath.shape
-        
-    def _solve_id_inertia(self):
-        def el(t,z):
-            #z is the dependent variable. It is (x1,..., xD, x1',... xD').
-            #For Nt images, t.shape == (Nt,), and z.shape == (2D,Nt).
-            zOut = np.zeros(z.shape)
-            zOut[:self.nDims] = z[self.nDims:]
-            
-            enegs = self.eneg_func(z[:self.nDims].T)
-            enegGrad = self.grad_approx(self.eneg_func,z[:self.nDims].T)
-            
-            nPtsLoc = z.shape[1]
-            for ptIter in range(nPtsLoc):
-                v = z[self.nDims:,ptIter]
-                term1 = 1/(2*enegs[ptIter])*enegGrad[ptIter] * np.dot(v,v)
-                
-                term2 = -1/(2*enegs[ptIter])*v*np.dot(enegGrad[ptIter],v)
-                
-                zOut[self.nDims:,ptIter] = term1 + term2
-            
-            return zOut
-        
-        def bc(z0,z1):
-            leftPtCond = np.array([z0[i] - self.initialPath[0,i] for \
-                                   i in range(self.nDims)])
-            rightPtCond = np.array([z1[i] - self.initialPath[-1,i] for \
-                                    i in range(self.nDims)])
-            return np.concatenate((leftPtCond,rightPtCond))
-        
-        initialGuess = np.vstack((self.initialPath.T,np.zeros(self.initialPath.T.shape)))
-        
-        t = np.linspace(0.,1,self.nPts)
-        sol = solve_bvp(el,bc,t,initialGuess)
-        
-        return sol
-        
-    def solve(self):
-        if self.mass_func is None:
-            sol = self._solve_id_inertia()
-            
-        return sol
-    
-class EulerLagrangeVerification:
-    def __init__(self,path,enegOnPath,eneg_func,massOnPath=None,mass_func=None,\
-                 grad_approx=midpoint_grad):
-        #TODO: major issue here when points aren't evenly spaced along the arc-length
-        #of the path. For instance, a straight line of 3 nodes, on a V = constant
-        #PES, will not pass this if the nodes aren't spaced evenly
-        self.nPts, self.nDims = path.shape
-        self.ds = 1/(self.nPts-1)
-        
-        massShape = (self.nPts,self.nDims,self.nDims)
-        if massOnPath is None:
-            self.massIsIdentity = True
-            massOnPath = np.full(massShape,np.identity(self.nDims))
-        else:
-            self.massIsIdentity = False
-            
-        if enegOnPath.shape != (self.nPts,):
-            raise ValueError("Invalid shape for enegOnPath. Expected "+str((self.nPts,))+\
-                             ", received "+str(enegOnPath.shape))
-        if massOnPath.shape != massShape:
-            raise ValueError("Invalid shape for massOnPath. Expected "+str(massShape)+\
-                             ", received "+str(massOnPath.shape))
-                
-        #Note that these are padded, for simplified indexing
-        self.xDot = np.zeros((self.nPts,self.nDims))
-        self.xDot[1:] = np.array([path[i]-path[i-1] for i in range(1,self.nPts)])/self.ds
-        self.xDotDot = np.zeros((self.nPts,self.nDims))
-        self.xDotDot[1:-1] = \
-            np.array([path[i+1]-2*path[i]+path[i-1] for i in range(1,self.nPts-1)])/self.ds**2
-            
-        self.path = path
-        self.enegOnPath = enegOnPath
-        self.eneg_func = eneg_func
-        self.massOnPath = massOnPath
-        self.mass_func = mass_func
-        self.grad_approx = grad_approx
-    
-    def _compare_lagrangian_id_inertia(self):
-        enegGrad = self.grad_approx(self.eneg_func,self.path)
-        
-        lhs = np.zeros((self.nPts,self.nDims))
-        rhs = np.zeros((self.nPts,self.nDims))
-        
-        for ptIter in range(1,self.nPts):
-            lhs[ptIter] = 2*self.enegOnPath[ptIter]*self.xDotDot[ptIter]
-            
-            term1 = enegGrad[ptIter] * np.dot(self.xDot[ptIter],self.xDot[ptIter])
-            term2 = -self.xDot[ptIter] * np.dot(enegGrad[ptIter],self.xDot[ptIter])
-            
-            rhs[ptIter] = term1 + term2
-            
-        diff = rhs - lhs
-        return diff[1:-1] #Removing padding
-    
-    def _compare_lagrangian_var_inertia(self):
-        enegGrad = self.grad_approx(self.eneg_func,self.path)
-        
-        lhs = np.zeros((self.nPts,self.nDims))
-        rhs = np.zeros((self.nPts,self.nDims))
-        
-        #TODO: fill in eqns here
-            
-        diff = rhs - lhs
-        
-        return diff[1:-1] #Removing excess padding
-    
-    def compare_lagrangian(self):
-        if self.massIsIdentity:
-            elDiff = self._compare_lagrangian_id_inertia()
-        else:
-            elDiff = self._compare_lagrangian_var_inertia()
-            
-        
-        return None
-    
-    def compare_lagrangian_squared(self):
-        
-        return None
 
 
     
