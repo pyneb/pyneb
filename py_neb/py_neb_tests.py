@@ -1,11 +1,8 @@
-#Bad practice? Idk. Fixes import issues when I modify my path in other files, though
-try:
-    from py_neb.py_neb import *
-except ModuleNotFoundError:
-    from py_neb import *
-
+import sys
+sys.path.append("./py_neb/")
+    
+from py_neb import *
 import unittest
-
 
 """
 Use module unittest (see https://docs.python.org/3/library/unittest.html#module-unittest)
