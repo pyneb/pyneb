@@ -84,12 +84,7 @@ def main(nuc):
     dsets, attrs = read_from_h5(pesDir+"/"+nuc+".h5")
     
     possibleCoordStrs = ["Q20","Q30","pairing"]
-    
-    suffixes = ["20","30","pair"]
-    possibleMassStrs = ["B"+v1+v2 for v1 in suffixes for v2 in suffixes]
-    
     coordDict = {key:dsets[key] for key in possibleCoordStrs if key in dsets.keys()}
-    massDict = {key:dsets[key] for key in possibleMassStrs if key in dsets.keys()}
     
     gridShape = [len(np.unique(d)) for d in coordDict.values()]
     cmeshTuple = tuple([c.reshape(gridShape) for c in coordDict.values()])
@@ -99,7 +94,7 @@ def main(nuc):
     
     if len(coordDict.keys()) == 2:
         fig, ax = standard_pes(*cmeshTuple,zz)
-        allConts = ax.contour(*cmeshTuple,zz,levels=[0],colors=["black"])
+        ax.contour(*cmeshTuple,zz,levels=[0],colors=["black"])
         
         #TODO: include automatic handling of different coordinates
         ax.set(xlabel=r"$Q_{20}$ (b)",ylabel=r"$Q_{30}$ (b${}^{3/2}$)")
@@ -118,30 +113,6 @@ def main(nuc):
             
         ax.legend(loc="upper left")
         fig.savefig(os.getcwd()+"/"+nuc+"/"+nuc+".pdf")
-        
-        for (mIter,key) in enumerate(massDict.keys()):
-            massFig, massAx = plt.subplots()
-            cf = massAx.contourf(*cmeshTuple,massDict[key].reshape(gridShape))
-            plt.colorbar(cf,ax=massAx)
-            for c in allConts.allsegs[0]:
-                massAx.plot(c[:,0],c[:,1],color="black")
-            massAx.set(xlabel=r"$Q_{20}$ (b)",ylabel=r"$Q_{30}$ (b${}^{3/2}$)")
-            
-            for pathKey in paths.keys():
-                if paths[pathKey].shape[0] > 50:
-                    ls = None
-                else:
-                    ls = "."
-                massAx.plot(paths[pathKey][:,0],paths[pathKey][:,1],marker=ls,label=pathKey)
-                
-            massAx.set(title=nuc+" "+key)
-            if len(paths.keys()) > 6:
-                massFig.savefig(os.getcwd()+"/"+nuc+"/"+nuc+"_"+key+"_no_legend.pdf")
-                print("Warning: making legend with "+str(len(paths.keys()))+" keys")
-                
-            massAx.legend(loc="upper left")
-            massFig.savefig(os.getcwd()+"/"+nuc+"/"+nuc+"_"+key+".pdf")
-        
     else:
         sys.exit("Err: requested PES with "+str(len(coordDict.keys()))+\
                  " coordinates; code only set up to handle 2 coordinates")

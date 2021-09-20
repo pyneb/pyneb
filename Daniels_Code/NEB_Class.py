@@ -1536,8 +1536,8 @@ def u232_test():
     t1 = time.time()
     a.plot(allPts[-1,0],allPts[-1,1],marker=".",label="Slow Interpolator")
     
-    print("Slow interpolator time: "+str(t1 - t0))
-    print("Slow interpolator action: "+str(actions[-1]))
+    print("Fast Interpolator time: "+str(t1 - t0))
+    print("Fast Interpolator action: "+str(actions[-1]))
     
     actionFig, actionAx = plt.subplots()
     actionAx.plot(actions,label="Slow Interpolator")
@@ -1563,60 +1563,10 @@ def u232_test():
     actionAx.plot(actions,label="Fast Interpolator")
     actionAx.legend()
     
-    print("Fast interpolator time: "+str(t1 - t0))
-    print("Fast interpolator action: "+str(actions[-1]))
+    print("Fast Interpolator time: "+str(t1 - t0))
+    print("Fast Interpolator action: "+str(actions[-1]))
     
     return None
-
-def u232_with_py_neb():
-    fIn = "..//PES/232U.h5"
-    dsets, attrs = FileIO.new_read_from_h5(fIn)
-    
-    coordStrs = ["Q20","Q30"]
-    
-    uniqueCoords = [np.unique(dsets[key]) for key in coordStrs]
-    
-    gridShape = [len(np.unique(dsets[key])) for key in coordStrs]
-    
-    coordMesh = tuple([dsets[key].reshape(gridShape) for key in coordStrs])
-    zz = dsets["PES"].reshape(gridShape)
-    
-    potential = Utilities.aux_pot(GridInterpWithBoundary(uniqueCoords,zz),\
-                                  0,tol=0.5)
-    
-    #Finding initial path
-    gsLoc = np.array([attrs["Ground_State"][key] for key in coordStrs]).flatten()
-    eGS = potential(gsLoc)
-    
-    nPts = 22
-    initPath = np.array((np.linspace(gsLoc[0],300,nPts),\
-                         np.linspace(gsLoc[1],32,nPts))).T
-    
-    f, a = Utilities.standard_pes(*coordMesh,zz)
-    a.contour(*coordMesh,zz,levels=[eGS],colors=["black"])
-    
-    lap = py_neb.LeastActionPath(potential,22,2,\
-                                  nebParams={"k":20,"kappa":10},\
-                                  endpointSpringForce=(False,True),\
-                                  endpointHarmonicForce=(False,True))
-    
-    maxIters = 750
-    tStep = 0.05
-    
-    minObj = py_neb.VerletMinimization(lap,initPath)
-    
-    allPts, allVelocities, allForces = \
-        minObj.velocity_verlet(tStep,maxIters)
-    a.plot(allPts[-1,:,0],allPts[-1,:,1],marker=".")
-    
-    # print("Slow interpolator time: "+str(t1 - t0))
-    # print("Slow interpolator action: "+str(actions[-1]))
-    
-    # actionFig, actionAx = plt.subplots()
-    # actionAx.plot(actions,label="Slow Interpolator")
-    
-    return None
-
 
 def grid_interp_test():
     fIn = "..//PES/232U.h5"
@@ -2212,8 +2162,7 @@ if __name__ == "__main__":
     # plutonium_endpoint_test()
     # uranium_test()
     # uranium_pyneb_test()
-    # u232_test()
-    u232_with_py_neb()
+    u232_test()
     # grid_interp_test()
     # print("asdf")
     # gp_test()
