@@ -11,7 +11,56 @@ import warnings
 #sys.path.insert(0, '../../py_neb')
 import py_neb_temp
 
-
+def extract_gs_inds(allMinInds,coordMeshTuple,zz,pesPerc=0.5):
+        #Uses existing indices, in case there's some additional filtering I need to
+        #do after calling "find_local_minimum"
+        if not isinstance(pesPerc,np.ndarray):
+            pesPerc = np.array(len(coordMeshTuple)*[pesPerc])
+            
+        nPts = zz.shape
+        maxInd = np.array(nPts)*pesPerc
+        
+        allowedIndsOfIndices = np.ones(len(allMinInds[0]),dtype=bool)
+        for cIter in range(len(coordMeshTuple)):
+            allowedIndsOfIndices = np.logical_and(allowedIndsOfIndices,allMinInds[cIter]<maxInd[cIter])
+            
+        allowedMinInds = tuple([inds[allowedIndsOfIndices] for inds in allMinInds])
+        actualMinIndOfInds = np.argmin(zz[allowedMinInds])
+        
+        gsInds = tuple([inds[actualMinIndOfInds] for inds in allowedMinInds])
+        
+        return gsInds
+def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
+        nDims = len(coordMeshTuple)
+        
+        fig, ax = plt.subplots()
+        
+        if nDims == 1:
+            sys.exit("Err: weird edge case I haven't handled. Why are you looking at D=1?")
+        elif nDims == 2:
+            allContours = np.zeros(1,dtype=object)
+            if show:
+                cf = ax.contourf(*coordMeshTuple,zz,cmap="Spectral_r")
+                plt.colorbar(cf,ax=ax)
+            #Select allsegs[0] b/c I'm only finding one level; ccp.allsegs is a
+                #list of lists, whose first index is over the levels requested
+            allContours[0] = ax.contour(*coordMeshTuple,zz,levels=[eneg]).allsegs[0]
+        else:
+            allContours = np.zeros(zz.shape[2:],dtype=object)
+            possibleInds = np.indices(zz.shape[2:]).reshape((nDims-2,-1)).T
+            for ind in possibleInds:
+                meshInds = 2*(slice(None),) + tuple(ind)
+                localMesh = (coordMeshTuple[0][meshInds],coordMeshTuple[1][meshInds])
+                # print(localMesh)
+                allContours[tuple(ind)] = \
+                    ax.contour(*localMesh,zz[meshInds],levels=[eneg]).allsegs[0]
+            if show:
+                plt.show(fig)
+                
+        if not show:
+            plt.close(fig)
+        
+        return allContours  
 class PES():
     '''
     Class imports hdf5 and starts PES instance. functions contained in this class 
@@ -136,53 +185,33 @@ class PES():
 
 
 
-def extract_gs_inds(allMinInds,coordMeshTuple,zz,pesPerc=0.5):
-        #Uses existing indices, in case there's some additional filtering I need to
-        #do after calling "find_local_minimum"
-        if not isinstance(pesPerc,np.ndarray):
-            pesPerc = np.array(len(coordMeshTuple)*[pesPerc])
-            
-        nPts = zz.shape
-        maxInd = np.array(nPts)*pesPerc
+
+class init_NEB_path:
+    def __init__(self,R0,RN,NImgs):
+        self.R0 = R0
+        self.RN = RN
+        self.NImgs = NImgs
+        if isinstance(R0,np.ndarray)==False:
+            R0 = np.array(R0)
+        if isinstance(RN,np.ndarray)==False:
+            RN = np.array(RN)
+        if len(R0.shape) != 1 or len(R0.shape) != 1 :
+            raise ValueError('R0 or RN are not 1-d row vectors')
         
-        allowedIndsOfIndices = np.ones(len(allMinInds[0]),dtype=bool)
-        for cIter in range(len(coordMeshTuple)):
-            allowedIndsOfIndices = np.logical_and(allowedIndsOfIndices,allMinInds[cIter]<maxInd[cIter])
-            
-        allowedMinInds = tuple([inds[allowedIndsOfIndices] for inds in allMinInds])
-        actualMinIndOfInds = np.argmin(zz[allowedMinInds])
+    def linear_path(self):
+            ## returns the initial positions of every point on the chain.
+            path = np.zeros((self.NImgs,len(self.R0)))
+            for i in range(len(self.R0)):
+                xi = np.linspace(self.R0[i],self.RN[i],self.NImgs)
+                path[:,i] = xi
+            return(path)
         
-        gsInds = tuple([inds[actualMinIndOfInds] for inds in allowedMinInds])
-        
-        return gsInds
-def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
-        nDims = len(coordMeshTuple)
-        
-        fig, ax = plt.subplots()
-        
-        if nDims == 1:
-            sys.exit("Err: weird edge case I haven't handled. Why are you looking at D=1?")
-        elif nDims == 2:
-            allContours = np.zeros(1,dtype=object)
-            if show:
-                cf = ax.contourf(*coordMeshTuple,zz,cmap="Spectral_r")
-                plt.colorbar(cf,ax=ax)
-            #Select allsegs[0] b/c I'm only finding one level; ccp.allsegs is a
-                #list of lists, whose first index is over the levels requested
-            allContours[0] = ax.contour(*coordMeshTuple,zz,levels=[eneg]).allsegs[0]
-        else:
-            allContours = np.zeros(zz.shape[2:],dtype=object)
-            possibleInds = np.indices(zz.shape[2:]).reshape((nDims-2,-1)).T
-            for ind in possibleInds:
-                meshInds = 2*(slice(None),) + tuple(ind)
-                localMesh = (coordMeshTuple[0][meshInds],coordMeshTuple[1][meshInds])
-                # print(localMesh)
-                allContours[tuple(ind)] = \
-                    ax.contour(*localMesh,zz[meshInds],levels=[eneg]).allsegs[0]
-            if show:
-                plt.show(fig)
-                
-        if not show:
-            plt.close(fig)
-        
-        return allContours   
+class PES_plot:
+    def __int__(self):
+        return
+    def make_single(self):
+        return
+    def make_tile_plot(self):
+        return
+    
+    
