@@ -95,7 +95,7 @@ def main(nuc):
     
     if len(coordDict.keys()) == 2:
         fig, ax = standard_pes(*cmeshTuple,zz)
-        ax.contour(*cmeshTuple,zz,levels=[0],colors=["black"])
+        allConts = ax.contour(*cmeshTuple,zz,levels=[0],colors=["black"])
         
         #TODO: include automatic handling of different coordinates
         ax.set(xlabel=r"$Q_{20}$ (b)",ylabel=r"$Q_{30}$ (b${}^{3/2}$)")
