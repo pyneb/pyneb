@@ -1,6 +1,8 @@
 import sys
 import os
-sys.path.append(os.path.expanduser("~/Research/ActionMinimization/"))
+dirToCheck = os.path.expanduser("~/Research/ActionMinimization/")
+if dirToCheck not in sys.path:
+    sys.path.append(dirToCheck)
 
 from py_neb.py_neb import *
 from py_neb import py_neb
@@ -317,7 +319,7 @@ def interpnd_wrapper(uniqueGridPts,gridValues,tol=10**(-5)):
         return retVal
     return func
 
-# class GridInterpWithBoundary:
+# class NDInterpWithBoundary:
 #     """
 #     Based on scipy.interpolate.RegularGridInterpolator
 #     """
@@ -1542,7 +1544,7 @@ def u232_test():
     actionFig, actionAx = plt.subplots()
     actionAx.plot(actions,label="Slow Interpolator")
     
-    potential = GridInterpWithBoundary(uniqueCoords,zz)
+    potential = NDInterpWithBoundary(uniqueCoords,zz)
     potential = Utilities.aux_pot(potential,0,tol=1)
     
     
@@ -1581,7 +1583,7 @@ def u232_with_py_neb():
     coordMesh = tuple([dsets[key].reshape(gridShape) for key in coordStrs])
     zz = dsets["PES"].reshape(gridShape)
 
-    potential = Utilities.aux_pot(GridInterpWithBoundary(uniqueCoords,zz),\
+    potential = Utilities.aux_pot(NDInterpWithBoundary(uniqueCoords,zz),\
                                   0,tol=0.5)
 
     #Finding initial path
@@ -1629,7 +1631,7 @@ def grid_interp_test():
     coordMesh = tuple([dsets[key].reshape(gridShape) for key in coordStrs])
     zz = dsets["PES"].reshape(gridShape)
     
-    g = py_neb.GridInterpWithBoundary(uniqueCoords,zz)
+    g = py_neb.NDInterpWithBoundary(uniqueCoords,zz)
     points = np.array([[0,0],[0.7,0.364],[-1,0]])
     # print(dsets["Q20"])
     # print(dsets["Q30"])
@@ -2211,7 +2213,8 @@ if __name__ == "__main__":
     # plutonium_endpoint_test()
     # uranium_test()
     # uranium_pyneb_test()
-    u232_test()
+    # u232_test()
+    u232_with_py_neb()
     # grid_interp_test()
     # print("asdf")
     # gp_test()
