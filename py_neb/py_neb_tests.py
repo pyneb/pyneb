@@ -549,7 +549,206 @@ class LeastActionPath_compute_force(unittest.TestCase):
         
         
         return None
+class MinimumEnergyPath_compute_tangents_(unittest.TestCase):
+     def test_first_branch(self):
+        def pot(coordsArr):
+            return np.ones(3)
+        
+        nPts = 4
+        nDims = 2
+        
+        mep = MinimumEnergyPath(pot,nPts,nDims)
+        
+        points = np.stack(2*(np.arange(4),)).T
+        enegs = np.arange(4)
+        
+        tangents = mep._compute_tangents(points,enegs)
+        
+        correctTangents = np.zeros((nPts,nDims))
+        correctTangents[1:3] = np.sqrt(2)/2
+        
+        #Use assert_allclose rather than assert_array_equal because of some quirk
+        #in the calculation, which gives a difference of almost machine precision
+        #(~10^(-16)) from the analytic correct answer, \sqrt{2}/2
+        self.assertIsNone(np.testing.assert_allclose(tangents,correctTangents))
+        
+        return None
+     def test_second_branch(self):
+        def pot(coordsArr):
+            return np.ones(3)
+        
+        nPts = 4
+        nDims = 2
+        
+        mep = MinimumEnergyPath(pot,nPts,nDims)
+        
+        points = np.stack(2*(np.arange(4),)).T
+        enegs = np.arange(3,-1,-1)
+        
+        tangents = mep._compute_tangents(points,enegs)
+        
+        correctTangents = np.zeros((nPts,nDims))
+        correctTangents[1:3] = np.sqrt(2)/2
+        
+        #Use assert_allclose rather than assert_array_equal because of some quirk
+        #in the calculation, which gives a difference of almost machine precision
+        #(~10^(-16)) from the analytic correct answer, \sqrt{2}/2
+        self.assertIsNone(np.testing.assert_allclose(tangents,correctTangents))
+        
+        return None
+class MinimumEnergyPath_spring_force_(unittest.TestCase):
+    def test_no_endpoint_force(self):
+        def pot(coordsArr):
+            return np.ones(3)
+        
+        endpointSpringForce = False
+        nPts = 3
+        nDims = 2
+        
+        points = np.stack(2*(np.array([0,1,3]),)).T
+        
+        mep = MinimumEnergyPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce)
+        tangents = np.zeros((nPts,nDims))
+        tangents[1] = np.sqrt(2)/2
+        
+        springForce = mep._spring_force(points,tangents)
+        
+        correctSpringForce = np.zeros((nPts,nDims))
+        correctSpringForce[1] = 1
+        
+        self.assertIsNone(np.testing.assert_allclose(springForce,correctSpringForce))
+        
+        return None
     
+    def test_all_endpoint_force(self):
+        def pot(coordsArr):
+            return np.ones(3)
+        
+        endpointSpringForce = True
+        nPts = 3
+        nDims = 2
+        
+        points = np.stack(2*(np.array([0,1,3]),)).T
+        
+        mep = MinimumEnergyPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce)
+        tangents = np.zeros((nPts,nDims))
+        tangents[1] = np.sqrt(2)/2
+        
+        springForce = mep._spring_force(points,tangents)
+        
+        correctSpringForce = np.array([[1,1],[1,1],[-2,-2]])
+        
+        self.assertIsNone(np.testing.assert_allclose(springForce,correctSpringForce))
+        
+        return None
+class MinimumEnergyPath_compute_force(unittest.TestCase):
+    def test_correct_points_Aux(self):
+        def real_pot(coordsArr):
+            return coordsArr[:,0]**2 + coordsArr[:,1]**2
+        def auxFunc(coordsArr):
+            return coordsArr[:,0]**3 + coordsArr[:,1]**3
+        nPts = 3
+        nDims = 2
+        
+        points = np.stack(2*(np.array([0,1,3],dtype=float),)).T
+        # use default target func and target func grad.
+        mep = MinimumEnergyPath(real_pot,nPts,nDims,auxFunc = auxFunc,nebParams={"k":1,"kappa":2})
+        print('testing aux')
+        netForce = mep.compute_force(points)
+        #Computed by hand. the force turned out the same as no aux. Not expected.
+        correctNetForce = np.array([[1,1],[1,1],[-25.455844,-25.455844]])
+        
+        self.assertIsNone(np.testing.assert_allclose(netForce,correctNetForce))
+        
+        return None
+    def test_correct_points_noAux(self):
+        def real_pot(coordsArr):
+            return coordsArr[:,0]**2 + coordsArr[:,1]**2
+        nPts = 3
+        nDims = 2
+        
+        points = np.stack(2*(np.array([0,1,3],dtype=float),)).T
+        
+        mep = MinimumEnergyPath(real_pot,nPts,nDims,nebParams={"k":1,"kappa":2})
+        
+        netForce = mep.compute_force(points)
+        
+        #Computed by hand
+        correctNetForce = np.array([[1,1],[1,1],[-25.455844,-25.455844]])
+        
+        self.assertIsNone(np.testing.assert_allclose(netForce,correctNetForce))
+        
+        return None
+    
+class potential_test(unittest.TestCase):
+    def test_potential_function (self):
+        path = np.arange(4).reshape((2,2))
+        def potential(path):
+            return path[:,0]**2 + path[:,1]**2
+        def auxFunc(path):
+            return path[:,0]**3 + path[:,1]**3
+        
+        eneg, aux_eneg = potential_target_func(path,potential,auxFunc=auxFunc)
+        
+        correctEneg = np.array([1,13])
+        correctAux = np.array([1,35])
+        
+        self.assertIsNone(np.testing.assert_array_equal(eneg,correctEneg))
+        self.assertIsNone(np.testing.assert_array_equal(aux_eneg,correctAux))
+        
+        return None
+    def test_wrong_potential_shape(self):
+        path = np.arange(10).reshape((5,2))
+        potential = np.arange(30)**2
+        auxFunc = np.arange(30)**3
+        with self.assertRaises(TypeError):
+            potential(path,potential,auxFunc)
+        return None
+    
+class potential_grad(unittest.TestCase):
+    def test_correct_outputs(self):
+        path = np.array([[0,0],[1,1],[2,2]],dtype=float)
+        
+        def potential(path):
+            return path[:,0]**2 + path[:,1]**2
+        
+        def auxFunc(path):
+            return path[:,0]**3 + path[:,1]**3
+        
+        potentialOnPath = potential(path)
+        
+        gradOfPES, gradOfAux = potential_central_grad(path,potential,auxFunc)
+        #Computed by hand
+        correctGradOfPes = np.stack(np.array([[0,0],[2,2],[4,4]],dtype=float))
+        correctGradOfAux = np.stack(np.array([[0,0],[3,3],[12,12]],dtype=float))
+        #Heuristic absolute tolerance of 10**(-8) makes it pass the test. Makes
+        #sense that gradient isn't more precise, as finite-difference step is
+        #eps = 10**(-8)
+        self.assertIsNone(np.testing.assert_allclose(gradOfPES,correctGradOfPes,\
+                                                     atol=10**(-8)))
+        self.assertIsNone(np.testing.assert_allclose(gradOfAux,correctGradOfAux,\
+                                                     atol=10**(-8)))
+        return None
+    def test_correct_outputs_no_aux(self):
+        path = np.array([[0,0],[1,1],[2,2]],dtype=float)
+        
+        def potential(path):
+            return path[:,0]**2 + path[:,1]**2
+        
+        potentialOnPath = potential(path)
+        
+        gradOfPES, gradOfAux = potential_central_grad(path,potential,auxFunc=None)
+        #Computed by hand/Mathematica
+        correctGradOfPes = np.array([[0,0],[2,2],[4,4]],dtype=float)
+        correctGradOfAux = None
+        
+        #Heuristic absolute tolerance of 10**(-8) makes it pass the test. Makes
+        #sense that gradient isn't more precise, as finite-difference step is
+        #eps = 10**(-8)
+        self.assertIsNone(np.testing.assert_allclose(gradOfPES,correctGradOfPes,\
+                                                     atol=10**(-8)))
+        self.assertIsNone(gradOfAux)
+        return None
 class VerletMinimization_velocity_verlet(unittest.TestCase):
     def test_single_step(self):
         def pot(coords):

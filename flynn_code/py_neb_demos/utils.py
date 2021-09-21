@@ -10,7 +10,15 @@ import sys
 import warnings
 #sys.path.insert(0, '../../py_neb')
 import py_neb_temp
-
+def make_metadata(meta_dict):
+    ## should include plot title, method, date created, creator, action value, wall time
+    ## model description {k: 10, kappa: 20, nPts: 22, nIterations: 750, optimization: velocity_verlet, endpointForce: on}
+    keys = meta_dict.keys()
+    title = meta_dict['title']
+    with open(title+'.description', 'w+') as f:
+        for key in keys:
+            f.write(str(key)+': '+str(meta_dict[key])+'\n')
+    return(None)
 def extract_gs_inds(allMinInds,coordMeshTuple,zz,pesPerc=0.5):
         #Uses existing indices, in case there's some additional filtering I need to
         #do after calling "find_local_minimum"
@@ -181,10 +189,6 @@ class PES():
             l_bndy[i] = min(uniq_coords[key])
             u_bndy[i] = max(uniq_coords[key])
         return(l_bndy,u_bndy)
-
-
-
-
 
 class init_NEB_path:
     def __init__(self,R0,RN,NImgs):
