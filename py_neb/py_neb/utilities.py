@@ -60,6 +60,83 @@ def action(path,potential,masses=None):
         actOut += np.sqrt(2*potArr[ptIter]*dist)
     
     return actOut, potArr, massArr
+def action_sqr(path,potential,masses=None):
+    '''
+    Parameters
+    ----------
+    path : ndarray
+        np.ndarray of shape (Nimgs,nDim) containing postions of all images.
+    potential : object or ndarray
+        Allowed potential:
+        -Array of values; set potential to a numpy array of shape (nPoints,)
+        -A function; set masses to a function
+    masses : object or ndarray, Optional
+        Allowed masses:
+        -Constant mass; set masses = None
+        -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
+        -A function; set masses to a function
+
+    Raises
+    ------
+    ValueError
+        DESCRIPTION.
+
+    Returns
+    -------
+    actOut : float
+        
+    potArr : ndarray
+        ndarray of shape (Nimgs,1) containing the PES values for each image in path
+    massArr : ndarray
+        ndarray of shape (Nimgs,nDim,nDim) containing the mass tensors for each image in path.
+
+    '''
+    """    
+    Computes action as
+        $ S = \sum_{i=1}^{nPoints} \ E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b $
+    """
+    nPoints, nDims = path.shape
+    
+    if masses is None:
+        massArr = np.full((nPoints,nDims,nDims),np.identity(nDims))
+    elif not isinstance(masses,np.ndarray):
+        massArr = masses(path)
+    else:
+        massArr = masses
+        
+    massDim = (nPoints, nDims, nDims)
+    if massArr.shape != massDim:
+        raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
+                         "; required shape is "+str(massDim)+". See action function.")
+    
+    if not isinstance(potential,np.ndarray):
+        potArr = potential(path)
+    else:
+        potArr = potential
+    
+    potShape = (nPoints,)
+    if potArr.shape != potShape:
+        raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
+                         "; required shape is "+str(potShape)+". See action function.")
+    
+    for ptIter in range(nPoints):
+        if potArr[ptIter] < 0:
+            potArr[ptIter] = 0.01
+    
+    # if np.any(potArr[1:-2]<0):
+    #     print("Path: ")
+    #     print(path)
+    #     print("Potential: ")
+    #     print(potArr)
+    #     raise ValueError("Encountered energy E < 0; stopping.")
+        
+    #Actual calculation
+    actOut = 0
+    for ptIter in range(1,nPoints):
+        coordDiff = path[ptIter] - path[ptIter - 1]
+        dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
+        actOut += potArr[ptIter]*dist
+    return actOut, potArr, massArr
 
 def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
     nDims = len(coordMeshTuple)
