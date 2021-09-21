@@ -1,7 +1,10 @@
 from py_neb import *
+# import py_neb
+# import os
+# print(os.getcwd())
 import unittest
-
 import numpy as np
+import warnings
 # print(np)
 
 """
@@ -650,7 +653,7 @@ class MinimumEnergyPath_compute_force(unittest.TestCase):
         points = np.stack(2*(np.array([0,1,3],dtype=float),)).T
         # use default target func and target func grad.
         mep = MinimumEnergyPath(real_pot,nPts,nDims,auxFunc = auxFunc,nebParams={"k":1,"kappa":2})
-        print('testing aux')
+        
         netForce = mep.compute_force(points)
         #Computed by hand. the force turned out the same as no aux. Not expected.
         correctNetForce = np.array([[1,1],[1,1],[-25.455844,-25.455844]])
@@ -909,12 +912,12 @@ class EulerLagrangeSolver_solve(unittest.TestCase):
         self.assertIsNone(np.testing.assert_array_equal(sol.sol(tDense),actualSol))
         return None
 
-class Dijkstra_find_gs_contours_(unittest.TestCase):
-    def test_2d(self):
+class Dijkstra_find_allowed_endpoints_(unittest.TestCase):
+    def test_2d_all_points(self):
         #Don't need anything more complicated than a function taking in a meshgrid
         def dummy_func(meshGrid):
             x, y = meshGrid
-            return x**3*(1-10*np.exp(-((x-2)**2+y**2))) + 106.113
+            return x*(1-2*np.exp(-((x-2)**2+y**2)/0.2)) + 1.9
                 
         x = np.arange(-5,5.1,0.1)
         y = np.arange(-2,2.1,0.1)
@@ -922,20 +925,23 @@ class Dijkstra_find_gs_contours_(unittest.TestCase):
         coordMeshTuple = np.meshgrid(x,y)
         zz = dummy_func(coordMeshTuple)
         
-        fix, ax = plt.subplots()
-        ax.contourf(*coordMeshTuple,zz)
-        minInds = find_local_minimum(zz)
-        ax.plot(*[c[minInds] for c in coordMeshTuple],marker="x",color="red")
-        
-        
-        initialPoint = np.array([2.5,0.])
+        initialPoint = np.array([2.,0.])
         
         dijkstra = Dijkstra(initialPoint,coordMeshTuple,zz)
-        allContours = dijkstra._find_gs_contours()
-        for c in allContours:
-            ax.plot(c[0][:,0],c[0][:,1],color="black")
+        allowedEndpoints = dijkstra._find_allowed_endpoints(returnAllPoints=True)
         
+        lineEndpoints = np.array([[-1.9,i] for i in y])
+        #Validated by looking at contours (from contourf) and how they round
+        #to the grid
+        otherEndpoints = np.array([[2.,0.],[2.,0.1],[2.1,0.]])
+        correctEndpoints = np.concatenate((lineEndpoints,otherEndpoints))
         
+        self.assertIsNone(np.testing.assert_allclose(allowedEndpoints,correctEndpoints,atol=10**(-13)))
+        
+        #Left in because I kept deleting it and re-adding it
+        # fig, ax = plt.subplots()
+        # ax.contourf(*coordMeshTuple,zz)
+        # ax.scatter(allowedEndpoints[:,0],allowedEndpoints[:,1],marker="x",color="red")
         return None
 
 if __name__ == "__main__":

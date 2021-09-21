@@ -1407,7 +1407,7 @@ class Dijkstra:
     with my code.
     """
     def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,\
-                 target_func=action):
+                 target_func=action,allowedEndpoints=None):
         self.initialPoint = initialPoint
         self.coordMeshTuple = coordMeshTuple
         self.uniqueCoords = [np.unique(c) for c in self.coordMeshTuple]
@@ -1427,6 +1427,61 @@ class Dijkstra:
                 raise ValueError("inertArr.shape is "+str(inertArr.shape)+\
                                  "; required shape is "+inertArrRequiredShape)
         self.inertArr = inertArr
+        
+        if allowedEndpoints is None:
+            self.allowedEndpoints = self._find_allowed_endpoints()
+        else:
+            self.allowedEndpoints = allowedEndpoints
+        if self.allowedEndpoints.shape[1] != self.nDims:
+            raise ValueError("self.allowedEndpoints.shape == "+\
+                             str(self.allowedEndpoints.shape)+"; dimension 1 must be "\
+                             +str(self.nDims))
+    
+    def _find_allowed_endpoints(self,returnAllPoints=False):
+        if returnAllPoints:
+            warnings.warn("Dijkstra._find_allowed_endpoints is finding all "\
+                          +"contours; this may include starting point")
+        
+        allContours = find_approximate_contours(self.coordMeshTuple,self.potArr)
+        
+        allowedEndpoints = np.zeros((0,self.nDims))
+        
+        for contOnLevel in allContours:
+            gridContOnLevel = []
+            for cont in contOnLevel:
+                gridInds = []
+                #Deals with points that are in the array. Ought to be vectorizable,
+                #but I expect we're dealing with small-ish numbers right now.
+                #TODO: consider making into a separate function (may be useful
+                #elsewhere?)
+                for dimIter in range(self.nDims):
+                    indsToAppend = np.zeros(cont.shape[0],dtype=int)
+                    for (ptIter,pt) in enumerate(cont[:,dimIter]):
+                        #Nonsense with floating-point precision makes me use
+                        #np.isclose rather than a == b
+                        tentativeInd = np.argwhere(np.isclose(self.uniqueCoords[dimIter],pt))
+                        if tentativeInd.shape == (0,1): #Nothing found
+                            indsToAppend[ptIter] = \
+                                np.searchsorted(self.uniqueCoords[dimIter],pt)
+                        else: #Is on grid
+                            indsToAppend[ptIter] = tentativeInd
+                    gridInds.append(indsToAppend)
+                
+                #Don't really know why this has to be transposed, but it does
+                contOnGrid = np.array([c.T[tuple(gridInds)] for c in self.coordMeshTuple]).T
+                gridContOnLevel.append(contOnGrid)
+            
+            if returnAllPoints:
+                for c in gridContOnLevel:
+                    allowedEndpoints = np.concatenate((allowedEndpoints,c),axis=0)
+            else:
+                lenOfContours = np.array([c.shape[0] for c in gridContOnLevel])
+                outerIndex = np.argmax(lenOfContours)
+                allowedEndpoints = \
+                    np.concatenate((allowedEndpoints,gridContOnLevel[outerIndex]),axis=0)
+            
+        allowedEndpoints = np.unique(allowedEndpoints,axis=0)
+        return allowedEndpoints
     
     def _dijkstra(self,maskedGrid,inertiaTensor,start,vMin="auto"):
         """
@@ -1494,25 +1549,6 @@ class Dijkstra:
             cc = np.unravel_index(mMask.argmin(), m.shape)
             
         return m, neighborVisitDict
-    
-    def _find_gs_contours(self):
-        allContours = find_approximate_contours(self.coordMeshTuple,self.potArr)
-        
-        gridContours = []
-        for contOnLevel in allContours:
-            gridContOnLevel = []
-            for cont in contOnLevel:
-                gridInds = []
-                for dimIter in range(self.nDims):
-                    gridInds.append(np.searchsorted(self.uniqueCoords[dimIter],cont[:,dimIter]))
-                
-                #Don't really know why this has to be transposed, but it does
-                contOnGrid = np.array([c.T[tuple(gridInds)] for c in self.coordMeshTuple]).T
-                gridContOnLevel.append(contOnGrid)
-                
-            gridContours.append(gridContOnLevel)
-        
-        return gridContours
     
     def _shortest_path(self,start,end,neighborVisitDict):
         """
