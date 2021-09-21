@@ -1,3 +1,5 @@
+#Appears to be common/best practice to import required packages in every file
+#they are used in
 import numpy as np
 from scipy.ndimage import filters, morphology #For minimum finding
 
@@ -8,9 +10,10 @@ import itertools
 from scipy.integrate import solve_bvp
 
 import h5py
-import pandas as pd
 import sys
 import warnings
+
+from utilities import *
 
 """
 CONVENTIONS:
@@ -102,62 +105,62 @@ def midpoint_grad(func,points,eps=10**(-8)):
     
     return gradOut
 
-def action(path,potential,masses=None):
-    """
-    Allowed masses:
-        -Constant mass; set masses = None
-        -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
-        -A function; set masses to a function
-    Allowed potential:
-        -Array of values; set potential to a numpy array of shape (nPoints,)
-        -A function; set masses to a function
+# def action(path,potential,masses=None):
+#     """
+#     Allowed masses:
+#         -Constant mass; set masses = None
+#         -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
+#         -A function; set masses to a function
+#     Allowed potential:
+#         -Array of values; set potential to a numpy array of shape (nPoints,)
+#         -A function; set masses to a function
         
-    Computes action as
-        $ S = \sum_{i=1}^{nPoints} \sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
-    """
-    nPoints, nDims = path.shape
+#     Computes action as
+#         $ S = \sum_{i=1}^{nPoints} \sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
+#     """
+#     nPoints, nDims = path.shape
     
-    if masses is None:
-        massArr = np.full((nPoints,nDims,nDims),np.identity(nDims))
-    elif not isinstance(masses,np.ndarray):
-        massArr = masses(path)
-    else:
-        massArr = masses
+#     if masses is None:
+#         massArr = np.full((nPoints,nDims,nDims),np.identity(nDims))
+#     elif not isinstance(masses,np.ndarray):
+#         massArr = masses(path)
+#     else:
+#         massArr = masses
         
-    massDim = (nPoints, nDims, nDims)
-    if massArr.shape != massDim:
-        raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
-                         "; required shape is "+str(massDim)+". See action function.")
+#     massDim = (nPoints, nDims, nDims)
+#     if massArr.shape != massDim:
+#         raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
+#                          "; required shape is "+str(massDim)+". See action function.")
     
-    if not isinstance(potential,np.ndarray):
-        potArr = potential(path)
-    else:
-        potArr = potential
+#     if not isinstance(potential,np.ndarray):
+#         potArr = potential(path)
+#     else:
+#         potArr = potential
     
-    potShape = (nPoints,)
-    if potArr.shape != potShape:
-        raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
-                         "; required shape is "+str(potShape)+". See action function.")
+#     potShape = (nPoints,)
+#     if potArr.shape != potShape:
+#         raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
+#                          "; required shape is "+str(potShape)+". See action function.")
     
-    for ptIter in range(nPoints):
-        if potArr[ptIter] < 0:
-            potArr[ptIter] = 0.01
+#     for ptIter in range(nPoints):
+#         if potArr[ptIter] < 0:
+#             potArr[ptIter] = 0.01
     
-    # if np.any(potArr[1:-2]<0):
-    #     print("Path: ")
-    #     print(path)
-    #     print("Potential: ")
-    #     print(potArr)
-    #     raise ValueError("Encountered energy E < 0; stopping.")
+#     # if np.any(potArr[1:-2]<0):
+#     #     print("Path: ")
+#     #     print(path)
+#     #     print("Potential: ")
+#     #     print(potArr)
+#     #     raise ValueError("Encountered energy E < 0; stopping.")
         
-    #Actual calculation
-    actOut = 0
-    for ptIter in range(1,nPoints):
-        coordDiff = path[ptIter] - path[ptIter - 1]
-        dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
-        actOut += np.sqrt(2*potArr[ptIter]*dist)
+#     #Actual calculation
+#     actOut = 0
+#     for ptIter in range(1,nPoints):
+#         coordDiff = path[ptIter] - path[ptIter - 1]
+#         dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
+#         actOut += np.sqrt(2*potArr[ptIter]*dist)
     
-    return actOut, potArr, massArr
+#     return actOut, potArr, massArr
 
 def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
                         target_func):

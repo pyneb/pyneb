@@ -4,6 +4,9 @@ sys.path.append("./py_neb/")
 from py_neb import *
 import unittest
 
+# import numpy as np
+# print(np)
+
 """
 Use module unittest (see https://docs.python.org/3/library/unittest.html#module-unittest)
     for unit tests. It's much simpler.
