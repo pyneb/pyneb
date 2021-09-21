@@ -1,11 +1,8 @@
-#Bad practice? Idk. Fixes import issues when I modify my path in other files, though
-try:
-    from py_neb.py_neb import *
-except ModuleNotFoundError:
-    from py_neb import *
-
+from py_neb import *
 import unittest
 
+# import numpy as np
+# print(np)
 
 """
 Use module unittest (see https://docs.python.org/3/library/unittest.html#module-unittest)

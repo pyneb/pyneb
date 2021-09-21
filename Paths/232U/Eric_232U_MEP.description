@@ -1,0 +1,11 @@
+title: Eric_232U_MEP
+Created_by: Eric
+Created_on: Sep-21-2021
+method: NEB-MEP
+method_description: {'k': 2.0, 'kappa': 20.0, 'NImages': 42, 'Iterations': 1000, 'dt': 0.02, 'optimization': 'QM Verlet', 'HarmonicForceEnds': (False, True), 'SpringForceEnds': (False, True)}
+masses: None
+E_gs: 0.0
+action: 905.1303599976009
+run_time: 32.679744720458984
+initial_start_point: [25.  0.]
+initial_end_point: (295, 30)
