@@ -1,3 +1,5 @@
+#Appears to be common/best practice to import required packages in every file
+#they are used in
 import numpy as np
 from scipy.ndimage import filters, morphology #For minimum finding
 
@@ -8,9 +10,10 @@ import itertools
 from scipy.integrate import solve_bvp
 
 import h5py
-import pandas as pd
 import sys
 import warnings
+
+from utilities import *
 
 """
 CONVENTIONS:
@@ -102,62 +105,62 @@ def midpoint_grad(func,points,eps=10**(-8)):
     
     return gradOut
 
-def action(path,potential,masses=None):
-    """
-    Allowed masses:
-        -Constant mass; set masses = None
-        -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
-        -A function; set masses to a function
-    Allowed potential:
-        -Array of values; set potential to a numpy array of shape (nPoints,)
-        -A function; set masses to a function
+# def action(path,potential,masses=None):
+#     """
+#     Allowed masses:
+#         -Constant mass; set masses = None
+#         -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
+#         -A function; set masses to a function
+#     Allowed potential:
+#         -Array of values; set potential to a numpy array of shape (nPoints,)
+#         -A function; set masses to a function
         
-    Computes action as
-        $ S = \sum_{i=1}^{nPoints} \sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
-    """
-    nPoints, nDims = path.shape
+#     Computes action as
+#         $ S = \sum_{i=1}^{nPoints} \sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
+#     """
+#     nPoints, nDims = path.shape
     
-    if masses is None:
-        massArr = np.full((nPoints,nDims,nDims),np.identity(nDims))
-    elif not isinstance(masses,np.ndarray):
-        massArr = masses(path)
-    else:
-        massArr = masses
+#     if masses is None:
+#         massArr = np.full((nPoints,nDims,nDims),np.identity(nDims))
+#     elif not isinstance(masses,np.ndarray):
+#         massArr = masses(path)
+#     else:
+#         massArr = masses
         
-    massDim = (nPoints, nDims, nDims)
-    if massArr.shape != massDim:
-        raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
-                         "; required shape is "+str(massDim)+". See action function.")
+#     massDim = (nPoints, nDims, nDims)
+#     if massArr.shape != massDim:
+#         raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
+#                          "; required shape is "+str(massDim)+". See action function.")
     
-    if not isinstance(potential,np.ndarray):
-        potArr = potential(path)
-    else:
-        potArr = potential
+#     if not isinstance(potential,np.ndarray):
+#         potArr = potential(path)
+#     else:
+#         potArr = potential
     
-    potShape = (nPoints,)
-    if potArr.shape != potShape:
-        raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
-                         "; required shape is "+str(potShape)+". See action function.")
+#     potShape = (nPoints,)
+#     if potArr.shape != potShape:
+#         raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
+#                          "; required shape is "+str(potShape)+". See action function.")
     
-    for ptIter in range(nPoints):
-        if potArr[ptIter] < 0:
-            potArr[ptIter] = 0.01
+#     for ptIter in range(nPoints):
+#         if potArr[ptIter] < 0:
+#             potArr[ptIter] = 0.01
     
-    # if np.any(potArr[1:-2]<0):
-    #     print("Path: ")
-    #     print(path)
-    #     print("Potential: ")
-    #     print(potArr)
-    #     raise ValueError("Encountered energy E < 0; stopping.")
+#     # if np.any(potArr[1:-2]<0):
+#     #     print("Path: ")
+#     #     print(path)
+#     #     print("Potential: ")
+#     #     print(potArr)
+#     #     raise ValueError("Encountered energy E < 0; stopping.")
         
-    #Actual calculation
-    actOut = 0
-    for ptIter in range(1,nPoints):
-        coordDiff = path[ptIter] - path[ptIter - 1]
-        dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
-        actOut += np.sqrt(2*potArr[ptIter]*dist)
+#     #Actual calculation
+#     actOut = 0
+#     for ptIter in range(1,nPoints):
+#         coordDiff = path[ptIter] - path[ptIter - 1]
+#         dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
+#         actOut += np.sqrt(2*potArr[ptIter]*dist)
     
-    return actOut, potArr, massArr
+#     return actOut, potArr, massArr
 
 def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
                         target_func):
@@ -1059,6 +1062,350 @@ class EulerLagrangeVerification:
     def compare_lagrangian_squared(self):
         
         return None
+    
+class Dijkstra:
+    """
+    Original Dijkstra implemented by Leo Neufcourt. Modified so that I can use it 
+    with my code.
+    """
+    def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,\
+                 target_func=action):
+        self.initialPoint = initialPoint
+        self.coordMeshTuple = coordMeshTuple
+        self.target_func = target_func
+        
+        self.nDims = len(coordMeshTuple)
+        
+        if potArr.shape != self.coordMeshTuple[0].shape:
+            raise ValueError("potArr.shape is "+str(potArr.shape)+\
+                             "; required shape is "+coordMeshTuple[0].shape)     
+        self.potArr = potArr
+        
+        if inertArr is not None:
+            inertArrRequiredShape = self.coordMeshTuple[0].shape + 2*(self.nDims,)
+            if inertArr.shape != inertArrRequiredShape:
+                raise ValueError("inertArr.shape is "+str(inertArr.shape)+\
+                                 "; required shape is "+inertArrRequiredShape)
+        self.inertArr = inertArr
+    
+    def _dijkstra(self,maskedGrid,inertiaTensor,start,vMin="auto"):
+        """
+        For every point in the PES (?), determines the neighbor that has the
+            lowest energy cost to visit.
+        Doesn't return a path, or require an endpoint. Since we check every
+            point on the outer turning line, it is computationally efficient
+            to save the neighbor dictionary that's output below, and reuse it
+            for every endpoint that's checked
+        TODO: extend method to more than 2D
+        TODO: rewrite stuff like the start to be a keyword argument
+        """
+        if vMin == "auto":
+            vMin = 0
+            
+        #Points on the grid that are less than 0 are set
+            #to eps. In principle these points can be visited at no cost. This is
+            #avoided by not letting the same point be visited twice, and by starting
+            #near the ground state (I think). In principle, eGS = 0, but we can't
+            #clip at eGS if eGS < 0, else the path will benefit from traversing
+            #the E < E_GS region
+        V = maskedGrid.copy()
+        visitMask = V.mask.copy()
+        m = np.ones_like(V) * np.inf
+        connectivity = [(i, j) for i in [-1, 0, 1] for j in [-1, 0, 1] if \
+                        (not (i == j == 0))]
+        """
+        connectivity is used to select points as follows:
+            *    x    *
+            x    o    x
+            *    x    *
+            the "*" points are those with connectivity values (\pm 1, \pm 1),
+            the "x" points are those with one value of 0, and
+            "o" is the starting point. All except for "o" are considered to be
+            neighbors. 
+        """
+        cc = start #current coordinate (indices)
+        
+        m[cc] = 0
+        neighborVisitDict = {}
+        for _ in range(4 * V.size): #TODO: find out why we use 4 * V.size
+            neighbors = [tuple(e) for e in np.asarray(cc) - connectivity 
+                          if e[0] >= 0 and e[1] >= 0 and e[0] < V.shape[0] and \
+                              e[1] < V.shape[1]] #See diagram above
+            neighbors = [e for e in neighbors if not visitMask[e]]
+            
+            #Distance for each neighbor
+            tentativeDistance = []
+            ptList = np.zeros((2,2))
+            ptList[0,:] = tuple([cMesh[cc] for cMesh in self.coordMeshTuple])
+            for e in neighbors:
+                ptList[1,:] = tuple([cMesh[e] for cMesh in self.coordMeshTuple])
+                act = self._action(ptList,V[e],inertiaTensor)
+                tentativeDistance.append(act)
+            tentativeDistance = np.asarray(tentativeDistance)
+            
+            #Not clear exactly what this bit of code does
+            for (neIter, e) in enumerate(neighbors):
+                d = tentativeDistance[neIter] + m[cc]
+                if d < m[e]:
+                    m[e] = d
+                    neighborVisitDict[e] = cc
+            visitMask[cc] = True
+            mMask = np.ma.masked_array(m, visitMask)
+            cc = np.unravel_index(mMask.argmin(), m.shape)
+            
+        return m, neighborVisitDict
+    
+    def _find_gs_contours(self,pesGrid,zRange=(-5,30)):
+        """
+        Perhaps isn't completely general. For N deformation parameters 
+            (e.g. (q20,q30,q40)), I think the ground state "contours" will be
+            (N-1)D, and so contourf() fails.
+        """
+        levels = np.arange(zRange[0],zRange[1],0.25,dtype=float)
+        if 0 not in levels:
+            sys.exit("Err: vertical range in find_gs_contours() does not include\
+                         ground state")
+        
+        fig, ax = plt.subplots()
+        ax.contourf(pesGrid.clip(zRange[0],zRange[1]),levels=levels,\
+                    cmap="Spectral") #Colormap for debugging purposes only
+        
+        return ax.contour(pesGrid,levels=[0])
+    
+    def _shortest_path(self,start,end,neighborVisitDict):
+        """
+        Gives the overall path between two points, given the optimal paths
+            between any two points(?)
+        """
+        path = []
+        step = end
+        while True:
+            path.append(step)
+            if step == start: break
+            step = neighborVisitDict[step]
+        path.reverse()
+        return np.asarray(path)
+        
+    def _get_path(self,start,gsCont,maskedGrid,inertiaTensor,neighborVisitDict):
+        epsilon = 0.000001
+        
+        minLoss = 10000
+        pathOpt = None
+        endOpt = None
+        
+        #Outer turning line should be the longest segment (except in possible
+            #weird cases)
+        turningOps = [len(gsCont.allsegs[0][iter]) for iter in \
+                      range(len(gsCont.allsegs[0]))]
+        turningIter = turningOps.index(max(turningOps))
+        turningLine = gsCont.allsegs[0][turningIter]
+        
+        for point in turningLine:
+            #Have to round the endpoint to an actual grid point on the
+                #mesh, rather than the output from ax.contourf(). Also, for
+                #some reason (having to do with np.meshgrid()), the shape of
+                #all grids is (q30,q20), so these tuples must be adjusted as
+                #such as well
+            endPoint = tuple(np.round(point).astype(int))
+            endPoint = (endPoint[1],endPoint[0])
+            path = self._shortest_path(start,endPoint,neighborVisitDict)
+    
+            p1 = tuple(path[0])
+            loss = 0
+            for p2 in path[1:]:
+                p2 = tuple(p2)
+                nCoords = len(self.coordMeshTuple)
+                ptList = np.zeros((2,nCoords))
+                ptList[0,:] = tuple([cMesh[p1] for cMesh in self.coordMeshTuple])
+                ptList[1,:] = tuple([cMesh[p2] for cMesh in self.coordMeshTuple])
+                loss += self._action(ptList,maskedGrid[p2],inertiaTensor) #Must be masked array here
+                p1 = p2
+            if loss < minLoss - epsilon:
+                pathOpt = path
+                endOpt = endPoint
+                minLoss = loss
+        return endOpt, pathOpt, minLoss
+    
+    def _filter_segments(self,contourObj):
+        """
+        Takes a pyplot contourf object, with only the level at E = 0, and returns
+        the indices for the given mesh that describe the contour.
+
+        Parameters
+        ----------
+        contourObj : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        contourLengths = [len(ccp) for ccp in contourObj.allsegs[0]]
+        outerTurningIndex = np.argmax(contourLengths)
+        
+        outerContour = contourObj.allsegs[0][outerTurningIndex]
+        roundedContour = np.round(outerContour) #Round to int b/c returns indices, not grid points
+        
+        return outerContour, roundedContour
+    
+    def otp_wrapper(self,pesVals,inertiaVals,reshapeOrder="F",debug=False):
+        """
+        Inherently assumes a constant moment of inertia.
+
+        Parameters
+        ----------
+        pesVals : TYPE
+            DESCRIPTION.
+        inertiaVals : TYPE, optional
+            DESCRIPTION. The default is None.
+        reshapeOrder : TYPE, optional
+            Updated 14/05/2021
+            WARNING: super funky. Needs to be "F" for NN outputs, but I don't know
+            how that treats things for cleaning purposes
+            
+            Not immediately clear how arrays are reshaped in NN output, but I
+            suspect they're flattened according to the "C" convention. So, the
+            default reshaping order follows this. The raw data obeys the "F"
+            convention, and is passed as such. The default is "C".
+        
+        Returns
+        -------
+        otpDict : TYPE
+            DESCRIPTION.
+        fpathDict : TYPE
+            DESCRIPTION.
+        outerContourDict : TYPE
+            Note that this contains the (smoothed) indices, not the actual grid
+            points.
+        
+        """
+        if isinstance(pesVals,dict):
+            pesArrDict = pesVals
+        elif isinstance(pesVals,np.ndarray):
+            pesArrDict = Outer_Turning_Point.pes_arr_to_dict(pesVals)
+        else:
+            sys.exit("Err: otp_wrapper received pesVals as unknown datatype "+type(pesVals))
+        
+        if isinstance(inertiaVals,dict):
+            inertiaDict = inertiaVals
+        elif isinstance(inertiaVals,np.ndarray):
+            inertiaDict = Outer_Turning_Point.inertia_arr_to_dict(inertiaVals)
+        else:
+            sys.exit("Err: otp_wrapper received pesVals as datatype "+type(inertiaVals))
+            
+        otpDict = {}
+        fpathDict = {}
+        outerContourDict = {}
+        roundedOCDict = {}
+        
+        eps = 0.01
+        
+        for nuc in pesArrDict.keys():
+            #WARNING: untested when cleaning data. Is super weird, b/c of coordMeshTuple.
+                #Basically, np.meshgrid returns an array whose shape is inverted:
+                #if you feed in np.meshgrid(x,y), where len(x) == 11 and len(y) == 7,
+                #what you get out is a tuple of arrays of shape (7,11), which is backwards
+                #from what we want. Is fixed in NN_Plot_Class by specifying that the reshaped
+                #size is (11,7), then taking a transpose. Is equivalent to reshaping
+                #with order "F"
+            pesGrid = pesArrDict[nuc].reshape(self.coordMeshTuple[0].shape,\
+                                              order=reshapeOrder)
+            
+            #Common debugging location (at least ~twice so far)
+            if debug:
+                fig, ax = plt.subplots()
+                ax.contourf(self.coordMeshTuple[0],self.coordMeshTuple[1],pesGrid)
+                sys.exit("Breaking here")
+                
+            allLocalMinInds = ML_Helper_Functions.find_local_minimum(pesGrid)
+            
+            try:
+                gsInds, _, _ = \
+                    ML_Helper_Functions.min_inds_to_defvals(pesGrid,self.coordMeshTuple,\
+                                                            allLocalMinInds,returnInds=True)
+                
+                #The weight in the action is the sqrt of the energy
+                weightedGrid = np.sqrt(np.ma.masked_array(pesGrid.copy().clip(0)+eps,mask=False))
+                m, neighborVisitDict = self._dijkstra(weightedGrid,inertiaDict[nuc],\
+                                                      gsInds)
+                    
+                gsContour = self._find_gs_contours(pesGrid)
+                endInds, pathInds, minLoss = self._get_path(gsInds,gsContour,weightedGrid,\
+                                                            inertiaDict[nuc],neighborVisitDict)
+                otpDict[nuc] = tuple([cMesh[endInds] for cMesh in self.coordMeshTuple])
+                fpathDict[nuc] = np.array([[cMesh[tuple(pathInd)] for cMesh in self.coordMeshTuple]\
+                                           for pathInd in pathInds])
+                
+                outerContourDict[nuc], roundedOCDict[nuc] = \
+                    self._filter_segments(gsContour)
+            except ValueError:
+                #For e.g. dev jobs, in which the NN PES isn't even close to realistic.
+                #There, no ground state is found. This is caught with a ValueError.
+                #I'd still like things to proceed, and hence I fill everything with dummy data
+                print("Warning: ground state not found for "+nuc)
+                otpDict[nuc] = [-1] * len(self.coordMeshTuple)
+                fpathDict[nuc] = [[-1] * len(self.coordMeshTuple)]
+                outerContourDict[nuc] = [[-1] * len(self.coordMeshTuple)]
+                roundedOCDict[nuc] = [[-1] * len(self.coordMeshTuple)]
+            plt.close("all")
+        return otpDict, fpathDict, outerContourDict, roundedOCDict
+    
+    @staticmethod
+    def reorder_points_dict(dictIn,outOrder=(1,0)):
+        """
+        Wrapper for swapping the order dictionaries like the fission path dictionary. 
+        Done here b/c I don't remember where (if ever) my code depends on having the
+        dictionaries stored in the wrong order
+
+        Parameters
+        ----------
+        dictIn : TYPE
+            DESCRIPTION.
+        outOrder : TYPE, optional
+            DESCRIPTION. The default is (1,0).
+
+        Returns
+        -------
+        dictOut : TYPE
+            DESCRIPTION.
+
+        """
+        dictOut = {}
+        for key in dictIn.keys():
+            dictOut[key] = dictIn[key][:,outOrder]
+            
+        return dictOut
+    
+    @staticmethod
+    def rescale_outline_dict(dictIn,rescaleValues):
+        """
+        Wrapper for rescaling e.g. the outer turning line, that is currently
+        output as indices, to the actual grid points. Don't rescale in the OTP
+        functions, b/c that messes with the path finding and I can't be bothered
+        to figure out why. Something to do with the available points that can be
+        visited being indices for the array, not points on a deformation mesh (so
+        maybe I don't want to change it there, anyways).
+
+        Parameters
+        ----------
+        dictIn : TYPE
+            DESCRIPTION.
+        rescaleOrder : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        dictOut = {}
+        for key in dictIn.keys():
+            dictOut[key] = dictIn[key] * rescaleValues
+        
+        return dictOut
+    
+        
 
 
     
