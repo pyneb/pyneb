@@ -162,6 +162,62 @@ def midpoint_grad(func,points,eps=10**(-8)):
     
 #     return actOut, potArr, massArr
 
+def action_sqr(path,potential,masses=None):
+    """
+    Allowed masses:
+        -Constant mass; set masses = None
+        -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
+        -A function; set masses to a function
+    Allowed potential:
+        -Array of values; set potential to a numpy array of shape (nPoints,)
+        -A function; set masses to a function
+        
+    Computes action as
+        $ S = \sum_{i=1}^{nPoints} \sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
+    """
+    nPoints, nDims = path.shape
+    
+    if masses is None:
+        massArr = np.full((nPoints,nDims,nDims),np.identity(nDims))
+    elif not isinstance(masses,np.ndarray):
+        massArr = masses(path)
+    else:
+        massArr = masses
+        
+    massDim = (nPoints, nDims, nDims)
+    if massArr.shape != massDim:
+        raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
+                         "; required shape is "+str(massDim)+". See action function.")
+    
+    if not isinstance(potential,np.ndarray):
+        potArr = potential(path)
+    else:
+        potArr = potential
+    
+    potShape = (nPoints,)
+    if potArr.shape != potShape:
+        raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
+                         "; required shape is "+str(potShape)+". See action function.")
+    
+    for ptIter in range(nPoints):
+        if potArr[ptIter] < 0:
+            potArr[ptIter] = 0.01
+    
+    # if np.any(potArr[1:-2]<0):
+    #     print("Path: ")
+    #     print(path)
+    #     print("Potential: ")
+    #     print(potArr)
+    #     raise ValueError("Encountered energy E < 0; stopping.")
+        
+    #Actual calculation
+    actOut = 0
+    for ptIter in range(1,nPoints):
+        coordDiff = path[ptIter] - path[ptIter - 1]
+        dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
+        actOut += potArr[ptIter]*dist
+    return actOut, potArr, massArr
+
 def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
                         target_func):
     """
@@ -267,7 +323,84 @@ def auxiliary_potential(func_in,shift=10**(-4)):
     def func_out(coords):
         return func_in(coords) + shift
     return func_out
+def potential_target_func(points, potential, auxFunc=None):
+    '''
+    
 
+    Parameters
+    ----------
+    points : TYPE
+        DESCRIPTION.
+    potential : TYPE
+        DESCRIPTION.
+    auxFunc : TYPE, optional
+        DESCRIPTION. The default is None.
+
+    Raises
+    ------
+    ValueError
+        DESCRIPTION.
+
+    Returns
+    -------
+    energies : TYPE
+        DESCRIPTION.
+    auxEnergies : TYPE
+        DESCRIPTION.
+
+    '''
+    ## essentially a wrapper function for the potential
+    ### expected points to be a (nPts,nDim) matrix.
+    ### potential should be a function capable of returning (nPts,nDim) matrix
+    nPoints, nDim = points.shape
+    if not isinstance(potential,np.ndarray):
+        potArr = potential(points)
+    else:
+        potArr = potential
+    potShape = (nPoints,)
+    if potArr.shape != potShape:
+        raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
+                         "; required shape is "+str(potShape)+". See potential function.")    
+    if auxFunc is None:
+        auxEnergies = None
+    else:
+        auxEnergies = auxFunc(points)
+    energies  = potential(points)    
+    return energies, auxEnergies
+
+def potential_central_grad(points,potential,auxFunc=None):
+    '''
+    
+
+    Parameters
+    ----------
+    points : TYPE
+        DESCRIPTION.
+    potential : TYPE
+        DESCRIPTION.
+    auxFunc : TYPE, optional
+        DESCRIPTION. The default is None.
+
+    Returns
+    -------
+    gradPES : TYPE
+        DESCRIPTION.
+    gradAux : TYPE
+        DESCRIPTION.
+
+    '''
+    h = 10**(-8)
+    ## check if it is a scalar is done inside midpoint_grad
+    gradPES = midpoint_grad(potential,points,eps=h)
+    if auxFunc is None:
+        gradAux = None
+    else: 
+        gradAux = midpoint_grad(auxFunc,points,eps=h)
+    return gradPES, gradAux
+def flood():
+    return
+
+    
 class RectBivariateSplineWrapper(RectBivariateSpline):
     def __init__(self,*args,**kwargs):
         super(RectBivariateSplineWrapper,self).__init__(*args,**kwargs)
@@ -685,7 +818,212 @@ class LeastActionPath:
             netForce[-1] = springForce[-1]
         
         return netForce
+class MinimumEnergyPath:
+    def __init__(self,potential,nPts,nDims,endpointSpringForce=True,\
+                 endpointHarmonicForce=True,auxFunc = None,target_func=potential_target_func,\
+                 target_func_grad=potential_central_grad,nebParams={}):
+        """
+        Parameters
+        ----------
+        potential : Function
+            To be called as potential(path). This is the PES function. 
+            Is passed to "target_func".
+        endpointSpringForce : Bool or tuple of bools
+            If a single bool, behavior is applied to both endpoints. If is a tuple
+            of bools, the first stands for the index 0 on the path; the second stands
+            for the index -1 on the path. TODO: possibly allow for a complicated
+            function that returns a bool?
+        nPts : Int
+            Number of points on the band, including endpoints.
+        nDims : Int
+            Number of dimensions of the collective coordinates. For instance,
+            when working with (Q20,Q30), nDims = 2.
+        
+        target_func : Function, optional
+            The function to take the gradient of. Should take as arguments
+            (path, potential, AuxFunc). AuxFunc is used to add an optional potential to
+            modify the existing potential surface. This function should return 
+            (potentialAtPath,AuxFuncAtPath). If no Aux function is needed, 
+            input None for the argument and AuxFuncAtPath will be None. The default 
+            is the PES potential (ie it just evaluates the potential).
+        target_func_grad : Function, optional
+            Approximate derivative of the target function evaluated at every point.
+            Should take as arguments points,potential,auxFunc)
+            where target_func is a potential target function . Should return 
+            (gradOfPes, gradOfAux). If auxFunc is None, gradOfAux returns None
+        nebParams : Dict, optional
+            Keyword arguments for the nudged elastic band (NEB) method. Controls
+            the spring force and the harmonic oscillator potential. Default
+            parameters are controlled by a dictionary in the __init__ method.
+            The default is {}.
 
+        Returns
+        -------
+        None.
+
+        """
+        defaultNebParams = {"k":10,"kappa":20,"constraintEneg":0}
+        for key in defaultNebParams.keys():
+            if key not in nebParams:
+                nebParams[key] = defaultNebParams[key]
+        
+        for key in nebParams.keys():
+            setattr(self,key,nebParams[key])
+            
+        if isinstance(endpointSpringForce,bool):
+            endpointSpringForce = 2*(endpointSpringForce,)
+        if not isinstance(endpointSpringForce,tuple):
+            raise ValueError("Unknown value "+str(endpointSpringForce)+\
+                             " for endpointSpringForce")
+                
+        if isinstance(endpointHarmonicForce,bool):
+            endpointHarmonicForce = 2*(endpointHarmonicForce,)
+        if not isinstance(endpointHarmonicForce,tuple):
+            raise ValueError("Unknown value "+str(endpointHarmonicForce)+\
+                             " for endpointSpringForce")
+        
+        self.potential = potential
+        self.auxFunc = auxFunc
+        self.endpointSpringForce = endpointSpringForce
+        self.endpointHarmonicForce = endpointHarmonicForce
+        self.nPts = nPts
+        self.nDims = nDims
+        self.target_func = target_func
+        self.target_func_grad = target_func_grad
+    
+    def _compute_tangents(self,points,energies):
+        """
+        Here for testing sphinx autodoc
+        
+        Parameters
+        ----------
+        points : TYPE
+            DESCRIPTION.
+        energies : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        tangents : TYPE
+            DESCRIPTION.
+
+        """
+        tangents = np.zeros((self.nPts,self.nDims))
+        
+        #Range selected to exclude endpoints. Tangents on the endpoints do not
+        #appear in the formulas.
+        for ptIter in range(1,self.nPts-1):
+            tp = points[ptIter+1] - points[ptIter]
+            tm = points[ptIter] - points[ptIter-1]
+            dVMax = np.max(np.absolute([energies[ptIter+1]-energies[ptIter],\
+                                        energies[ptIter-1]-energies[ptIter]]))
+            dVMin = np.min(np.absolute([energies[ptIter+1]-energies[ptIter],\
+                                        energies[ptIter-1]-energies[ptIter]]))
+                
+            if (energies[ptIter+1] > energies[ptIter]) and \
+                (energies[ptIter] > energies[ptIter-1]):
+                tangents[ptIter] = tp
+            elif (energies[ptIter+1] < energies[ptIter]) and \
+                (energies[ptIter] < energies[ptIter-1]):
+                tangents[ptIter] = tm
+            elif energies[ptIter+1] > energies[ptIter-1]:
+                tangents[ptIter] = tp*dVMax + tm*dVMin
+            else:
+                tangents[ptIter] = tp*dVMin + tm*dVMax
+                
+            #Normalizing vectors, without throwing errors about zero tangent vector
+            if not np.array_equal(tangents[ptIter],np.zeros(self.nDims)):
+                tangents[ptIter] = tangents[ptIter]/np.linalg.norm(tangents[ptIter])
+        
+        return tangents
+    
+    def _spring_force(self,points,tangents):
+        """
+        Spring force taken from https://doi.org/10.1063/1.5007180 eqns 20-22
+
+        Parameters
+        ----------
+        points : TYPE
+            DESCRIPTION.
+        tangents : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        springForce : TYPE
+            DESCRIPTION.
+
+        """
+        springForce = np.zeros((self.nPts,self.nDims))
+        for i in range(1,self.nPts-1):
+            forwardDist = np.linalg.norm(points[i+1] - points[i])
+            backwardsDist = np.linalg.norm(points[i] - points[i-1])
+            springForce[i] = self.k*(forwardDist - backwardsDist)*tangents[i]
+            
+        if self.endpointSpringForce[0]:
+            springForce[0] = self.k*(points[1] - points[0])
+        
+        if self.endpointSpringForce[1]:
+            springForce[-1] = self.k*(points[self.nPts-2] - points[self.nPts-1])
+        
+        return springForce
+    
+    def compute_force(self,points):
+        expectedShape = (self.nPts,self.nDims)
+        if points.shape != expectedShape:
+            if (points.T).shape == expectedShape:
+                warnings.warn("Transposing points; (points.T).shape == expectedShape")
+                points = points.T
+            else:
+                sys.exit("Err: points "+str(points)+\
+                         " does not match expected shape in MinimumEnergyPath")
+        PESEnergies, auxEnergies = self.target_func(points,self.potential,self.auxFunc)
+        tangents = self._compute_tangents(points,PESEnergies)
+        gradOfPES, gradOfAux = \
+            self.target_func_grad(points,self.potential,self.auxFunc)
+        trueForce = -gradOfPES
+        if gradOfAux is not None:
+            negAuxGrad = -gradOfAux
+            gradForce = trueForce + negAuxGrad
+        else:
+            gradForce = trueForce
+        projection = np.array([np.dot(gradForce[i],tangents[i]) \
+                               for i in range(self.nPts)])
+        parallelForce = np.array([projection[i]*tangents[i] for i in range(self.nPts)])
+        perpForce =  gradForce - parallelForce
+        springForce = self._spring_force(points,tangents)
+        #Computing optimal tunneling path force
+        netForce = np.zeros(points.shape)
+        
+        for i in range(1,self.nPts-1):
+            netForce[i] = perpForce[i] + springForce[i]
+        #Avoids throwing divide-by-zero errors, but also deals with points with
+            #gradient within the finite-difference error from 0. Simplest example
+            #is V(x,y) = x^2+y^2, at the origin. There, the gradient is the finite
+            #difference value fdTol, in both directions, and so normalizing the
+            #force artificially creates a force that should not be present
+        if not np.allclose(gradForce[0],np.zeros(self.nDims),atol=fdTol):
+            normForce = gradForce[0]/np.linalg.norm(gradForce[0])
+        else:
+            normForce = np.zeros(self.nDims)
+        
+        if self.endpointHarmonicForce[0]:
+            netForce[0] = springForce[0] - (np.dot(springForce[0],normForce)-\
+                                            self.kappa*(PESEnergies[0]-self.constraintEneg))*normForce
+        else:
+            netForce[0] = springForce[0]
+        
+        if not np.allclose(gradForce[-1],np.zeros(self.nDims),atol=fdTol):
+            normForce = gradForce[-1]/np.linalg.norm(gradForce[-1])
+        else:
+            normForce = np.zeros(self.nDims)
+        if self.endpointHarmonicForce[1]:
+            netForce[-1] = springForce[-1] - (np.dot(springForce[-1],normForce)-\
+                                              self.kappa*(PESEnergies[-1]-self.constraintEneg))*normForce
+        else:
+            netForce[-1] = springForce[-1]
+        return netForce
+    
 #TODO: maybe rename something like ForceMinimization?   
 #TODO: do we compute the action for all points after optimizing? or let someone else do that? 
 class VerletMinimization:
@@ -1357,5 +1695,3 @@ class Dijkstra:
     
         
 
-
-    
