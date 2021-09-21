@@ -92,6 +92,3 @@ def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
         plt.close(fig)
     
     return allContours
-
-def dummy_func():
-    return None

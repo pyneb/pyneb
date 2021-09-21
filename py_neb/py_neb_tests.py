@@ -1,6 +1,3 @@
-import sys
-sys.path.append("./py_neb/")
-    
 from py_neb import *
 import unittest
 
