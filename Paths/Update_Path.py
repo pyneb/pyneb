@@ -84,6 +84,10 @@ def main(nuc):
     dsets, attrs = read_from_h5(pesDir+"/"+nuc+".h5")
     
     possibleCoordStrs = ["Q20","Q30","pairing"]
+    
+    suffixes = ["20","30","pair"]
+    possibleMassStrs = ["B"+v1+v2 for v1 in suffixes for v2 in suffixes]
+    
     coordDict = {key:dsets[key] for key in possibleCoordStrs if key in dsets.keys()}
     massDict = {key:dsets[key] for key in possibleMassStrs if key in dsets.keys()}
     
