@@ -1072,6 +1072,8 @@ class Dijkstra:
                  target_func=action):
         self.initialPoint = initialPoint
         self.coordMeshTuple = coordMeshTuple
+        self.uniqueCoords = [np.unique(c) for c in self.coordMeshTuple]
+        
         self.target_func = target_func
         
         self.nDims = len(coordMeshTuple)
@@ -1155,22 +1157,24 @@ class Dijkstra:
             
         return m, neighborVisitDict
     
-    def _find_gs_contours(self,pesGrid,zRange=(-5,30)):
-        """
-        Perhaps isn't completely general. For N deformation parameters 
-            (e.g. (q20,q30,q40)), I think the ground state "contours" will be
-            (N-1)D, and so contourf() fails.
-        """
-        levels = np.arange(zRange[0],zRange[1],0.25,dtype=float)
-        if 0 not in levels:
-            sys.exit("Err: vertical range in find_gs_contours() does not include\
-                         ground state")
+    def _find_gs_contours(self):
+        allContours = find_approximate_contours(self.coordMeshTuple,self.potArr)
         
-        fig, ax = plt.subplots()
-        ax.contourf(pesGrid.clip(zRange[0],zRange[1]),levels=levels,\
-                    cmap="Spectral") #Colormap for debugging purposes only
+        gridContours = []
+        for contOnLevel in allContours:
+            gridContOnLevel = []
+            for cont in contOnLevel:
+                gridInds = []
+                for dimIter in range(self.nDims):
+                    gridInds.append(np.searchsorted(self.uniqueCoords[dimIter],cont[:,dimIter]))
+                
+                #Don't really know why this has to be transposed, but it does
+                contOnGrid = np.array([c.T[tuple(gridInds)] for c in self.coordMeshTuple]).T
+                gridContOnLevel.append(contOnGrid)
+                
+            gridContours.append(gridContOnLevel)
         
-        return ax.contour(pesGrid,levels=[0])
+        return gridContours
     
     def _shortest_path(self,start,end,neighborVisitDict):
         """
@@ -1350,60 +1354,6 @@ class Dijkstra:
                 roundedOCDict[nuc] = [[-1] * len(self.coordMeshTuple)]
             plt.close("all")
         return otpDict, fpathDict, outerContourDict, roundedOCDict
-    
-    @staticmethod
-    def reorder_points_dict(dictIn,outOrder=(1,0)):
-        """
-        Wrapper for swapping the order dictionaries like the fission path dictionary. 
-        Done here b/c I don't remember where (if ever) my code depends on having the
-        dictionaries stored in the wrong order
-
-        Parameters
-        ----------
-        dictIn : TYPE
-            DESCRIPTION.
-        outOrder : TYPE, optional
-            DESCRIPTION. The default is (1,0).
-
-        Returns
-        -------
-        dictOut : TYPE
-            DESCRIPTION.
-
-        """
-        dictOut = {}
-        for key in dictIn.keys():
-            dictOut[key] = dictIn[key][:,outOrder]
-            
-        return dictOut
-    
-    @staticmethod
-    def rescale_outline_dict(dictIn,rescaleValues):
-        """
-        Wrapper for rescaling e.g. the outer turning line, that is currently
-        output as indices, to the actual grid points. Don't rescale in the OTP
-        functions, b/c that messes with the path finding and I can't be bothered
-        to figure out why. Something to do with the available points that can be
-        visited being indices for the array, not points on a deformation mesh (so
-        maybe I don't want to change it there, anyways).
-
-        Parameters
-        ----------
-        dictIn : TYPE
-            DESCRIPTION.
-        rescaleOrder : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
-
-        """
-        dictOut = {}
-        for key in dictIn.keys():
-            dictOut[key] = dictIn[key] * rescaleValues
-        
-        return dictOut
     
         
 

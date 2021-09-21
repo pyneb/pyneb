@@ -1,7 +1,7 @@
 from py_neb import *
 import unittest
 
-# import numpy as np
+import numpy as np
 # print(np)
 
 """
@@ -708,6 +708,35 @@ class EulerLagrangeSolver_solve(unittest.TestCase):
         actualSol = np.vstack((lineVals,lineVals,3*np.ones((2,30))))
         
         self.assertIsNone(np.testing.assert_array_equal(sol.sol(tDense),actualSol))
+        return None
+
+class Dijkstra_find_gs_contours_(unittest.TestCase):
+    def test_2d(self):
+        #Don't need anything more complicated than a function taking in a meshgrid
+        def dummy_func(meshGrid):
+            x, y = meshGrid
+            return x**3*(1-10*np.exp(-((x-2)**2+y**2))) + 106.113
+                
+        x = np.arange(-5,5.1,0.1)
+        y = np.arange(-2,2.1,0.1)
+        
+        coordMeshTuple = np.meshgrid(x,y)
+        zz = dummy_func(coordMeshTuple)
+        
+        fix, ax = plt.subplots()
+        ax.contourf(*coordMeshTuple,zz)
+        minInds = find_local_minimum(zz)
+        ax.plot(*[c[minInds] for c in coordMeshTuple],marker="x",color="red")
+        
+        
+        initialPoint = np.array([2.5,0.])
+        
+        dijkstra = Dijkstra(initialPoint,coordMeshTuple,zz)
+        allContours = dijkstra._find_gs_contours()
+        for c in allContours:
+            ax.plot(c[0][:,0],c[0][:,1],color="black")
+        
+        
         return None
 
 if __name__ == "__main__":
