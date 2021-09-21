@@ -85,6 +85,7 @@ def main(nuc):
     
     possibleCoordStrs = ["Q20","Q30","pairing"]
     coordDict = {key:dsets[key] for key in possibleCoordStrs if key in dsets.keys()}
+    massDict = {key:dsets[key] for key in possibleMassStrs if key in dsets.keys()}
     
     gridShape = [len(np.unique(d)) for d in coordDict.values()]
     cmeshTuple = tuple([c.reshape(gridShape) for c in coordDict.values()])
