@@ -6,7 +6,7 @@ name: Unit Tests
 on:
   push:
     paths:
-    - 'py_neb/**'
+      - 'py_neb/**'
     branches: [ main ]
   pull_request:
     branches: [ main ]
