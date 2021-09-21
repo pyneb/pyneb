@@ -1,6 +1,8 @@
 #Appears to be common/best practice to import required packages in every file
 #they are used in
 import numpy as np
+import sys
+import matplotlib.pyplot as plt
 
 def action(path,potential,masses=None):
     """
