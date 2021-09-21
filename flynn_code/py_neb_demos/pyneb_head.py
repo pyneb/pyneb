@@ -26,7 +26,6 @@ mass_keys = mass_grids.keys()
 ### IMPORTANT: LIST THE INDICIES OF THE MASS TENSOR TO USE.
 mass_tensor_indicies = ['20','30']
 
-# TODO: add section to handle PES shifts.
 
 #Define potential function
 # note this interpolator only interpolates points or arrays of points, no grids.
@@ -68,6 +67,7 @@ init_path = init_path_constructor.linear_path()
 neb_params ={'k':k,'kappa':kappa,'constraintEneg':E_const}
 method_dict = {'k':k,'kappa':kappa,'NImages': NImgs,'Iterations':NIterations,'dt':dt,'optimization':'QM Verlet','HarmonicForceEnds': endPointFix, \
                    'SpringForceEnds': springForceFix}
+#### Compute LAP
 '''
 # LAP function you want to minimize
 target_func_LAP = py_neb.action 
@@ -99,6 +99,7 @@ min_action_LAP = np.around(min(action_array_LAP),2)
 title = 'Eric_'+nucleus+'_LAP'
 '''
 
+#### Compute MEP
 # MEP function you want to minimize
 target_func_MEP = py_neb.potential_target_func
 # MEP specialized function that takes the gradient of target function
