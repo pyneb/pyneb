@@ -162,7 +162,6 @@ def midpoint_grad(func,points,eps=10**(-8)):
     
 #     return actOut, potArr, massArr
 
-
 def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
                         target_func):
     """

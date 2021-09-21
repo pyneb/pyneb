@@ -61,17 +61,39 @@ def action(path,potential,masses=None):
     
     return actOut, potArr, massArr
 def action_sqr(path,potential,masses=None):
-    """
-    Allowed masses:
+    '''
+    Parameters
+    ----------
+    path : ndarray
+        np.ndarray of shape (Nimgs,nDim) containing postions of all images.
+    potential : object or ndarray
+        Allowed potential:
+        -Array of values; set potential to a numpy array of shape (nPoints,)
+        -A function; set masses to a function
+    masses : object or ndarray, Optional
+        Allowed masses:
         -Constant mass; set masses = None
         -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
         -A function; set masses to a function
-    Allowed potential:
-        -Array of values; set potential to a numpy array of shape (nPoints,)
-        -A function; set masses to a function
+
+    Raises
+    ------
+    ValueError
+        DESCRIPTION.
+
+    Returns
+    -------
+    actOut : float
         
+    potArr : ndarray
+        ndarray of shape (Nimgs,1) containing the PES values for each image in path
+    massArr : ndarray
+        ndarray of shape (Nimgs,nDim,nDim) containing the mass tensors for each image in path.
+
+    '''
+    """    
     Computes action as
-        $ S = \sum_{i=1}^{nPoints} \sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
+        $ S = \sum_{i=1}^{nPoints} \ E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b $
     """
     nPoints, nDims = path.shape
     
