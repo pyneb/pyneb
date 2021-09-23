@@ -267,6 +267,7 @@ def auxiliary_potential(func_in,shift=10**(-4)):
     def func_out(coords):
         return func_in(coords) + shift
     return func_out
+
 def potential_target_func(points, potential, auxFunc=None):
     '''
     
@@ -1351,7 +1352,41 @@ class Dijkstra:
     with my code.
     """
     def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,\
-                 target_func=action,allowedEndpoints=None):
+                 target_func=action,allowedEndpoints=None,trimVals=[10**(-4),None]):
+        """
+        Some indexing is done to deal with the default shape of np.meshgrid.
+        For D dimensions, the output is of shape (N2,N1,N3,...,ND), while the
+        way indices are generated expects a shape of (N1,...,ND). So, I swap
+        the first two indices by hand. See https://numpy.org/doc/stable/reference/generated/numpy.meshgrid.html
+        #TODO: error handling (try getting an index)(?)
+
+        Parameters
+        ----------
+        initialPoint : TYPE
+            DESCRIPTION.
+        coordMeshTuple : TYPE
+            DESCRIPTION.
+        potArr : TYPE
+            DESCRIPTION.
+        inertArr : TYPE, optional
+            DESCRIPTION. The default is None.
+        target_func : TYPE, optional
+            DESCRIPTION. The default is action.
+        allowedEndpoints : TYPE, optional
+            DESCRIPTION. The default is None.
+        trimVals : TYPE, optional
+            DESCRIPTION. The default is [10**(-4),None].
+
+        Raises
+        ------
+        ValueError
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
         self.initialPoint = initialPoint
         self.coordMeshTuple = coordMeshTuple
         self.uniqueCoords = [np.unique(c) for c in self.coordMeshTuple]
@@ -1366,22 +1401,64 @@ class Dijkstra:
         self.potArr = potArr
         
         if inertArr is not None:
-            inertArrRequiredShape = self.coordMeshTuple[0].shape + 2*(self.nDims,)
+            inertArrRequiredShape = self.potArr.shape + 2*(self.nDims,)
             if inertArr.shape != inertArrRequiredShape:
                 raise ValueError("inertArr.shape is "+str(inertArr.shape)+\
                                  "; required shape is "+inertArrRequiredShape)
-        self.inertArr = inertArr
+            self.inertArr = inertArr
+        else:
+            #Simplifies things in self._construct_path_dict if I set this to the 
+            #identity here
+            self.inertArr = np.full(self.potArr.shape+2*(self.nDims,),np.identity(self.nDims))
         
         if allowedEndpoints is None:
-            self.allowedEndpoints = self._find_allowed_endpoints()
+            self.allowedEndpoints, self.endpointIndices \
+                = self._find_allowed_endpoints()
         else:
             self.allowedEndpoints = allowedEndpoints
+            raise ValueError("Need to find indices from allowedEndpoints; not implemented yet")
         if self.allowedEndpoints.shape[1] != self.nDims:
             raise ValueError("self.allowedEndpoints.shape == "+\
                              str(self.allowedEndpoints.shape)+"; dimension 1 must be "\
                              +str(self.nDims))
+        if self.endpointIndices.shape[1] != self.nDims:
+            raise ValueError("self.endpointIndices.shape == "+\
+                             str(self.endpointIndices.shape)+"; dimension 1 must be "\
+                             +str(self.nDims))        
+        self.endpointIndices = [tuple(row) for row in self.endpointIndices]
+        
+        #Clip the potential to the min/max. Done after finding possible endpoints.
+        if trimVals != [None,None]:
+            self.potArr = self.potArr.clip(trimVals[0],trimVals[1])
+        
+        #Getting indices for self.initialPoint
+        self.initialInds = np.zeros(self.nDims,dtype=int)
+        for dimIter in range(self.nDims):
+            #More nuisances with floating-point precision. Should maybe find
+            #source of the issue, but this works for the basic test case.
+            self.initialInds[dimIter] = \
+                np.argwhere(np.isclose(self.uniqueCoords[dimIter],self.initialPoint[dimIter]))
+        
+        #Index swapping like mentioned above. Now, self.initialInds[0] <= Ny,
+        #and self.initialInds[1] <= Nx
+        self.initialInds[[1,0]] = self.initialInds[[0,1]]
+        self.initialInds = tuple(self.initialInds)
     
     def _find_allowed_endpoints(self,returnAllPoints=False):
+        """
+        TODO: allow for different potArr than self.potArr, perhaps
+
+        Parameters
+        ----------
+        returnAllPoints : TYPE, optional
+            DESCRIPTION. The default is False.
+
+        Returns
+        -------
+        allowedEndpoints : TYPE
+            DESCRIPTION.
+
+        """
         if returnAllPoints:
             warnings.warn("Dijkstra._find_allowed_endpoints is finding all "\
                           +"contours; this may include starting point")
@@ -1389,9 +1466,11 @@ class Dijkstra:
         allContours = find_approximate_contours(self.coordMeshTuple,self.potArr)
         
         allowedEndpoints = np.zeros((0,self.nDims))
+        allowedIndices = np.zeros((0,self.nDims),dtype=int)
         
         for contOnLevel in allContours:
             gridContOnLevel = []
+            gridIndsOnLevel = []
             for cont in contOnLevel:
                 gridInds = []
                 #Deals with points that are in the array. Ought to be vectorizable,
@@ -1414,18 +1493,112 @@ class Dijkstra:
                 #Don't really know why this has to be transposed, but it does
                 contOnGrid = np.array([c.T[tuple(gridInds)] for c in self.coordMeshTuple]).T
                 gridContOnLevel.append(contOnGrid)
+                gridIndsOnLevel.append(np.array(gridInds).T)
             
             if returnAllPoints:
-                for c in gridContOnLevel:
+                for (cIter,c) in enumerate(gridContOnLevel):
                     allowedEndpoints = np.concatenate((allowedEndpoints,c),axis=0)
+                    allowedIndices = np.concatenate((allowedIndices,gridIndsOnLevel[cIter]),axis=0)
             else:
                 lenOfContours = np.array([c.shape[0] for c in gridContOnLevel])
                 outerIndex = np.argmax(lenOfContours)
                 allowedEndpoints = \
                     np.concatenate((allowedEndpoints,gridContOnLevel[outerIndex]),axis=0)
+                allowedIndices = \
+                    np.concatenate((allowedIndices,gridIndsOnLevel[outerIndex]),axis=0)
             
         allowedEndpoints = np.unique(allowedEndpoints,axis=0)
-        return allowedEndpoints
+        allowedIndices = np.unique(allowedIndices,axis=0)
+        
+        return allowedEndpoints, allowedIndices
+    
+    def _construct_path_dict(self):
+        """
+        Uses Dijkstra's algorithm to determine the previous node visited
+        for every node in the PES. See e.g. 
+        https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm
+
+        TODO: allow for non-grid PES, like if we trimmed off high-energy regions
+        Maybe fill to a grid, and set those guys to infinite energy so they're
+        never selected?
+        
+        Returns
+        -------
+        None.
+
+        """
+        if self.potArr.size >= 10000:
+            warnings.warn("Number of nodes is "+str(self.potArr.size)+\
+                          "; recommended maximum method to finish is 10,000.")
+        
+        #Use a masked array to both track the distance and the visited values
+        tentativeDistance = \
+            np.ma.masked_array(np.inf*np.ones(self.potArr.shape),np.zeros(self.potArr.shape))
+        
+        #For current indices, to get to a neighbor, subtract one tuple from
+        #relativeNeighborInds
+        relativeNeighborInds = list(itertools.product([-1,0,1],repeat=self.nDims))
+        relativeNeighborInds.remove(self.nDims*(0,))
+        
+        currentInds = self.initialInds
+        tentativeDistance[currentInds] = 0
+        
+        neighborsVisitDict = {}
+        endpointIndsList = self.endpointIndices.copy() #May need indices later
+        
+        #Index swapping like mentioned in self.__init__
+        maxInds = np.array([len(c) for c in self.uniqueCoords])
+        maxInds[[1,0]] = maxInds[[0,1]]
+        
+        #Ends when all endpoints have been reached
+        while endpointIndsList:
+            neighborInds = np.array(currentInds) - relativeNeighborInds
+            
+            #Removing indices that take us off-grid. See e.g.
+            #https://stackoverflow.com/a/20528566
+            isNegativeBool = [neighborInds[:,i] < 0 for i in range(self.nDims)]
+            neighborInds = \
+                neighborInds[np.logical_not(np.logical_or.reduce(isNegativeBool))]
+            isTooBigBool = [neighborInds[:,i] >= maxInds[i] for i in range(self.nDims)]
+            neighborInds = \
+                neighborInds[np.logical_not(np.logical_or.reduce(isTooBigBool))]
+            
+            #For feeding into self.target_func
+            coords = np.zeros((2,self.nDims))
+            coords[0] = np.array([c[currentInds] for c in self.coordMeshTuple])
+            
+            enegs = np.zeros(2)
+            enegs[0] = self.potArr[currentInds]
+            
+            masses = np.zeros((2,)+2*(self.nDims,))
+            masses[0] = self.inertArr[currentInds]
+            
+            for (neighIter, neighbor) in enumerate(neighborInds):
+                n = tuple(neighbor)
+                coords[1] = [c[n] for c in self.coordMeshTuple]
+                enegs[1] = self.potArr[n]
+                masses[1] = self.inertArr[n]
+                
+                #self.target_func returns the action (distance), plus energies and masses
+                distThroughCurrent = tentativeDistance[currentInds] + \
+                    self.target_func(coords,enegs,masses)[0]
+                if distThroughCurrent < tentativeDistance[n]:
+                    tentativeDistance[n] = distThroughCurrent
+                    neighborsVisitDict[n] = currentInds
+            
+            tentativeDistance.mask[currentInds] = True
+            
+            #For checking when we want to stop
+            try:
+                endpointIndsList.remove(currentInds)
+            except:
+                pass
+            
+            currentInds = np.unravel_index(np.argmin(tentativeDistance),\
+                                           tentativeDistance.shape)
+            # nIters += 1
+        # print(nIters)
+        return tentativeDistance, neighborsVisitDict, endpointIndsList
     
     def _dijkstra(self,maskedGrid,inertiaTensor,start,vMin="auto"):
         """

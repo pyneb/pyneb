@@ -927,8 +927,14 @@ class Dijkstra_find_allowed_endpoints_(unittest.TestCase):
         
         initialPoint = np.array([2.,0.])
         
-        dijkstra = Dijkstra(initialPoint,coordMeshTuple,zz)
-        allowedEndpoints = dijkstra._find_allowed_endpoints(returnAllPoints=True)
+        #Note on the test: Dijkstra.__init__ will trim the PES automatically
+        #unless told otherwise. While it will return the correct allowed endpoints
+        #(i.e. dijkstra.allowedEndpoints will be correct) regardless, the PES
+        #will be modified, and so computing allowed endpoints *after* initializing
+        #dijkstra will give a different result. As validation here, Dijkstra is
+        #told to *not* trim the PES
+        dijkstra = Dijkstra(initialPoint,coordMeshTuple,zz,trimVals=2*[None])
+        allowedEndpoints, endpointIndices = dijkstra._find_allowed_endpoints(returnAllPoints=True)
         
         lineEndpoints = np.array([[-1.9,i] for i in y])
         #Validated by looking at contours (from contourf) and how they round
@@ -936,12 +942,41 @@ class Dijkstra_find_allowed_endpoints_(unittest.TestCase):
         otherEndpoints = np.array([[2.,0.],[2.,0.1],[2.1,0.]])
         correctEndpoints = np.concatenate((lineEndpoints,otherEndpoints))
         
+        lineIndices = np.array([[31,i] for i in range(len(y))],dtype=int)
+        otherIndices = np.array([[70,20],[70,21],[71,20]],dtype=int)
+        correctIndices = np.concatenate((lineIndices,otherIndices))
+        
         self.assertIsNone(np.testing.assert_allclose(allowedEndpoints,correctEndpoints,atol=10**(-13)))
+        self.assertIsNone(np.testing.assert_array_equal(endpointIndices,correctIndices))
         
         #Left in because I kept deleting it and re-adding it
         # fig, ax = plt.subplots()
-        # ax.contourf(*coordMeshTuple,zz)
+        # ax.contourf(*coordMeshTuple,dijkstra.potArr)
         # ax.scatter(allowedEndpoints[:,0],allowedEndpoints[:,1],marker="x",color="red")
+        return None
+    
+class Dijkstra_construct_path_dict(unittest.TestCase):
+    def test_2d_gauss_with_poly(self):
+        #Don't need anything more complicated than a function taking in a meshgrid
+        def dummy_func(meshGrid):
+            x, y = meshGrid
+            return x*(1-2*np.exp(-((x-2)**2+y**2)/0.2)) + 1.9
+                
+        x = np.arange(-5,5.1,0.1)
+        y = np.arange(-2,2.1,0.01)
+        
+        coordMeshTuple = np.meshgrid(x,y)
+        zz = dummy_func(coordMeshTuple)
+        
+        initialPoint = np.array([2.,0.])
+        
+        dijkstra = Dijkstra(initialPoint,coordMeshTuple,zz)
+        tentativeDistance, neighborsVisitDict, \
+            endpointIndsList = dijkstra._construct_path_dict()
+        print(zz.size)
+        # fig, ax = plt.subplots()
+        # ax.contourf(*coordMeshTuple,tentativeDistance.data)
+        
         return None
 
 if __name__ == "__main__":
