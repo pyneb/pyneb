@@ -1424,7 +1424,8 @@ class Dijkstra:
         if self.endpointIndices.shape[1] != self.nDims:
             raise ValueError("self.endpointIndices.shape == "+\
                              str(self.endpointIndices.shape)+"; dimension 1 must be "\
-                             +str(self.nDims))        
+                             +str(self.nDims))
+        self.endpointIndices[:,[1,0]] = self.endpointIndices[:,[0,1]]
         self.endpointIndices = [tuple(row) for row in self.endpointIndices]
         
         #Clip the potential to the min/max. Done after finding possible endpoints.
@@ -1527,9 +1528,11 @@ class Dijkstra:
         None.
 
         """
-        if self.potArr.size >= 10000:
+        suggestedMaxSize = 50000
+        if self.potArr.size >= suggestedMaxSize:
             warnings.warn("Number of nodes is "+str(self.potArr.size)+\
-                          "; recommended maximum method to finish is 10,000.")
+                          "; recommended maximum method to finish is "\
+                          +str(suggestedMaxSize))
         
         #Use a masked array to both track the distance and the visited values
         tentativeDistance = \
@@ -1550,7 +1553,9 @@ class Dijkstra:
         maxInds = np.array([len(c) for c in self.uniqueCoords])
         maxInds[[1,0]] = maxInds[[0,1]]
         
-        #Ends when all endpoints have been reached
+        #Ends when all endpoints have been reached, or it has iterated over every
+        #node. Latter should not be possible; is a check in case something goes wrong.
+        nIters = 0
         while endpointIndsList:
             neighborInds = np.array(currentInds) - relativeNeighborInds
             
@@ -1596,8 +1601,10 @@ class Dijkstra:
             
             currentInds = np.unravel_index(np.argmin(tentativeDistance),\
                                            tentativeDistance.shape)
-            # nIters += 1
-        # print(nIters)
+            nIters += 1
+            # if nIters >= self.potArr.size:
+            #     break
+        print(nIters)
         return tentativeDistance, neighborsVisitDict, endpointIndsList
     
     def _dijkstra(self,maskedGrid,inertiaTensor,start,vMin="auto"):

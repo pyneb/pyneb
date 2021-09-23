@@ -962,20 +962,23 @@ class Dijkstra_construct_path_dict(unittest.TestCase):
             x, y = meshGrid
             return x*(1-2*np.exp(-((x-2)**2+y**2)/0.2)) + 1.9
                 
-        x = np.arange(-5,5.1,0.1)
-        y = np.arange(-2,2.1,0.01)
+        x = np.arange(-5,2.5,0.05)
+        y = np.arange(-1,1.5,0.005)
         
         coordMeshTuple = np.meshgrid(x,y)
         zz = dummy_func(coordMeshTuple)
-        
+        print(zz.size)
         initialPoint = np.array([2.,0.])
         
         dijkstra = Dijkstra(initialPoint,coordMeshTuple,zz)
+        
         tentativeDistance, neighborsVisitDict, \
             endpointIndsList = dijkstra._construct_path_dict()
-        print(zz.size)
-        # fig, ax = plt.subplots()
-        # ax.contourf(*coordMeshTuple,tentativeDistance.data)
+        
+        print(tentativeDistance)
+        
+        fig, ax = plt.subplots()
+        ax.contourf(*coordMeshTuple,tentativeDistance.data)
         
         return None
 
