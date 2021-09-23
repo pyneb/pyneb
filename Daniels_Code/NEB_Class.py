@@ -1,11 +1,12 @@
 import sys
 import os
-dirToCheck = os.path.expanduser("~/Research/ActionMinimization/")
+
+dirToCheck = os.path.expanduser("~/Research/ActionMinimization/py_neb")
 if dirToCheck not in sys.path:
     sys.path.append(dirToCheck)
 
-from py_neb.py_neb import *
-from py_neb import py_neb
+import py_neb
+from py_neb import *
 
 import matplotlib.pyplot as plt
 
@@ -1584,38 +1585,55 @@ def u232_with_py_neb():
     zz = dsets["PES"].reshape(gridShape)
 
     potential = Utilities.aux_pot(NDInterpWithBoundary(uniqueCoords,zz),\
-                                  0,tol=0.5)
+                                  0,tol=0.1)
 
     #Finding initial path
     gsLoc = np.array([attrs["Ground_State"][key] for key in coordStrs]).flatten()
     eGS = potential(gsLoc)
 
-    nPts = 22
-    initPath = np.array((np.linspace(gsLoc[0],300,nPts),\
-                         np.linspace(gsLoc[1],32,nPts))).T
-
+    nPts = 32
+    initPath = np.array((np.linspace(gsLoc[0],295,nPts),\
+                         np.linspace(gsLoc[1],30,nPts))).T
+    
     f, a = Utilities.standard_pes(*coordMesh,zz)
     a.contour(*coordMesh,zz,levels=[eGS],colors=["black"])
 
-    lap = py_neb.LeastActionPath(potential,22,2,\
-                                  nebParams={"k":20,"kappa":10},\
-                                  endpointSpringForce=(False,True),\
-                                  endpointHarmonicForce=(False,True))
+    lap = py_neb.LeastActionPath(potential,nPts,2,\
+                                 nebParams={"k":1,"kappa":1},\
+                                 endpointSpringForce=(False,True),\
+                                 endpointHarmonicForce=(False,True))
 
-    maxIters = 750
-    tStep = 0.05
+    maxIters = 100
+    tStep = 0.15
 
     minObj = py_neb.VerletMinimization(lap,initPath)
 
     allPts, allVelocities, allForces = \
         minObj.velocity_verlet(tStep,maxIters)
     a.plot(allPts[-1,:,0],allPts[-1,:,1],marker=".")
+    
+    minObj2 = py_neb.VerletMinimization(lap,initPath)
 
+    minObj2.fire(tStep,maxIters)
+    a.plot(minObj2.allPts[-1,:,0],minObj2.allPts[-1,:,1],marker=".")
+
+    minObj3 = py_neb.VerletMinimization(lap,initPath)
+
+    minObj3.fire(tStep,maxIters,useLocal=True)
+    a.plot(minObj3.allPts[-1,:,0],minObj3.allPts[-1,:,1],marker=".")
     # print("Slow interpolator time: "+str(t1 - t0))
     # print("Slow interpolator action: "+str(actions[-1]))
 
-    # actionFig, actionAx = plt.subplots()
-    # actionAx.plot(actions,label="Slow Interpolator")
+    actions = np.array([action(pt,potential)[0] for pt in allPts])
+    fireActions = np.array([action(pt,potential)[0] for pt in minObj2.allPts])
+    locFireActions = np.array([action(pt,potential)[0] for pt in minObj3.allPts])
+
+    actionFig, actionAx = plt.subplots()
+    actionAx.plot(actions,label="Velocity Verlet")
+    actionAx.plot(fireActions,label="Global FIRE")
+    actionAx.plot(locFireActions,label="Local FIRE")
+    
+    actionAx.legend()
 
     return None
    
