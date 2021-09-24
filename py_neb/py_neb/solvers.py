@@ -1171,7 +1171,8 @@ class VerletMinimization:
                 
                 stepsSinceReset[ptIter] += 1
             else:
-                tStepArr[step,ptIter] = tStepArr[step-1,ptIter]*fireParams["fDecel"]
+                tStepArr[step,ptIter] = \
+                    max(tStepArr[step-1,ptIter]*fireParams["fDecel"],fireParams["dtMin"])
                 alphaArr[step,ptIter] = fireParams["aStart"]
                 stepsSinceReset[ptIter] = 0
         
