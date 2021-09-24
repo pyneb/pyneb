@@ -162,6 +162,40 @@ def midpoint_grad(func,points,eps=10**(-8)):
     
 #     return actOut, potArr, massArr
 
+def discrete_sqr_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
+                        target_func):
+    """
+    
+    Performs discretized action gradient, needs numerical PES still
+ 
+    """
+    eps = fdTol#10**(-8)
+    
+    gradOfPes = np.zeros(path.shape)
+    gradOfAction = np.zeros(path.shape)
+    
+    nPts, nDims = path.shape
+    
+    actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
+
+    # build gradOfAction and gradOfPes (constant mass)
+    gradOfPes = midpoint_grad(potential,path,eps=eps)
+    for ptIter in range(1,nPts-1):
+
+        dnorm=np.linalg.norm(path[ptIter] - path[ptIter-1])
+        dnormP1=np.linalg.norm(path[ptIter+1] - path[ptIter])
+        dhat = (path[ptIter] - path[ptIter-1])/dnorm
+        dhatP1 = (path[ptIter+1] - path[ptIter])/dnormP1
+
+        mu=massOnPath[ptIter,0,0]#/hbarc**2
+
+        gradOfAction[ptIter] = 0.5*(\
+            (mu*potentialOnPath[ptIter] + mu*potentialOnPath[ptIter-1])*dhat-\
+            (mu*potentialOnPath[ptIter] + mu*potentialOnPath[ptIter+1])*dhatP1+\
+            mu*gradOfPes[ptIter]*(dnorm+dnormP1))
+    
+    return gradOfAction, gradOfPes
+
 def discrete_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
                         target_func):
     """
@@ -192,7 +226,6 @@ def discrete_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
             (np.sqrt(2*mu*potentialOnPath[ptIter]) + np.sqrt(2*mu*potentialOnPath[ptIter-1]))*dhat-\
             (np.sqrt(2*mu*potentialOnPath[ptIter]) + np.sqrt(2*mu*potentialOnPath[ptIter+1]))*dhatP1+\
             mu*gradOfPes[ptIter]*(dnorm+dnormP1) / np.sqrt(2*mu*potentialOnPath[ptIter]))
-
     
     return gradOfAction, gradOfPes
 
