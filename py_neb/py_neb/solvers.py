@@ -1124,7 +1124,7 @@ class VerletMinimization:
         """
         
         defaultFireParams = \
-            {"dtMax":1.,"dtMin":0.1,"nAccel":10,"fInc":1.1,"fAlpha":0.99,\
+            {"dtMax":10.,"dtMin":0.001,"nAccel":10,"fInc":1.1,"fAlpha":0.99,\
              "fDecel":0.5,"aStart":0.1}
             
         for key in fireParams.keys():
