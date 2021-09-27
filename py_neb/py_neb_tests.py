@@ -339,216 +339,216 @@ class GridInterpWithBoundaries_call_(unittest.TestCase):
         self.assertIsNone(np.testing.assert_allclose(values,correctVals))
         return None
 
-class LeastActionPath_compute_tangents_(unittest.TestCase):
-    def test_first_branch(self):
-        def pot(coordsArr):
-            return np.ones(3)
+# class LeastActionPath_compute_tangents_(unittest.TestCase):
+#     def test_first_branch(self):
+#         def pot(coordsArr):
+#             return np.ones(3)
         
-        nPts = 4
-        nDims = 2
+#         nPts = 4
+#         nDims = 2
         
-        lap = LeastActionPath(pot,nPts,nDims)
+#         lap = LeastActionPath(pot,nPts,nDims)
         
-        points = np.stack(2*(np.arange(4),)).T
-        enegs = np.arange(4)
+#         points = np.stack(2*(np.arange(4),)).T
+#         enegs = np.arange(4)
         
-        tangents = lap._compute_tangents(points,enegs)
+#         tangents = lap._compute_tangents(points,enegs)
         
-        correctTangents = np.zeros((nPts,nDims))
-        correctTangents[1:3] = np.sqrt(2)/2
+#         correctTangents = np.zeros((nPts,nDims))
+#         correctTangents[1:3] = np.sqrt(2)/2
         
-        #Use assert_allclose rather than assert_array_equal because of some quirk
-        #in the calculation, which gives a difference of almost machine precision
-        #(~10^(-16)) from the analytic correct answer, \sqrt{2}/2
-        self.assertIsNone(np.testing.assert_allclose(tangents,correctTangents))
+#         #Use assert_allclose rather than assert_array_equal because of some quirk
+#         #in the calculation, which gives a difference of almost machine precision
+#         #(~10^(-16)) from the analytic correct answer, \sqrt{2}/2
+#         self.assertIsNone(np.testing.assert_allclose(tangents,correctTangents))
         
-        return None
+#         return None
     
-    def test_second_branch(self):
-        def pot(coordsArr):
-            return np.ones(3)
+#     def test_second_branch(self):
+#         def pot(coordsArr):
+#             return np.ones(3)
         
-        nPts = 4
-        nDims = 2
+#         nPts = 4
+#         nDims = 2
         
-        lap = LeastActionPath(pot,nPts,nDims)
+#         lap = LeastActionPath(pot,nPts,nDims)
         
-        points = np.stack(2*(np.arange(4),)).T
-        enegs = np.arange(3,-1,-1)
+#         points = np.stack(2*(np.arange(4),)).T
+#         enegs = np.arange(3,-1,-1)
         
-        tangents = lap._compute_tangents(points,enegs)
+#         tangents = lap._compute_tangents(points,enegs)
         
-        correctTangents = np.zeros((nPts,nDims))
-        correctTangents[1:3] = np.sqrt(2)/2
+#         correctTangents = np.zeros((nPts,nDims))
+#         correctTangents[1:3] = np.sqrt(2)/2
         
-        #Use assert_allclose rather than assert_array_equal because of some quirk
-        #in the calculation, which gives a difference of almost machine precision
-        #(~10^(-16)) from the analytic correct answer, \sqrt{2}/2
-        self.assertIsNone(np.testing.assert_allclose(tangents,correctTangents))
+#         #Use assert_allclose rather than assert_array_equal because of some quirk
+#         #in the calculation, which gives a difference of almost machine precision
+#         #(~10^(-16)) from the analytic correct answer, \sqrt{2}/2
+#         self.assertIsNone(np.testing.assert_allclose(tangents,correctTangents))
         
-        return None
+#         return None
     
-    def test_third_branch(self):
-        def pot(coordsArr):
-            return np.ones(3)
+#     def test_third_branch(self):
+#         def pot(coordsArr):
+#             return np.ones(3)
         
-        nPts = 3
-        nDims = 2
+#         nPts = 3
+#         nDims = 2
         
-        lap = LeastActionPath(pot,nPts,nDims)
+#         lap = LeastActionPath(pot,nPts,nDims)
         
-        points = np.stack(2*(np.arange(3),)).T
-        enegs = np.array([-1,-5,1])
+#         points = np.stack(2*(np.arange(3),)).T
+#         enegs = np.array([-1,-5,1])
         
-        tangents = lap._compute_tangents(points,enegs)
+#         tangents = lap._compute_tangents(points,enegs)
         
-        correctTangents = np.zeros((nPts,nDims))
-        correctTangents[1] = np.sqrt(2)/2
+#         correctTangents = np.zeros((nPts,nDims))
+#         correctTangents[1] = np.sqrt(2)/2
         
-        #Use assert_allclose rather than assert_array_equal because of some quirk
-        #in the calculation, which gives a difference of almost machine precision
-        #(~10^(-16)) from the analytic correct answer, \sqrt{2}/2
-        self.assertIsNone(np.testing.assert_allclose(tangents,correctTangents))
+#         #Use assert_allclose rather than assert_array_equal because of some quirk
+#         #in the calculation, which gives a difference of almost machine precision
+#         #(~10^(-16)) from the analytic correct answer, \sqrt{2}/2
+#         self.assertIsNone(np.testing.assert_allclose(tangents,correctTangents))
         
-        return None
+#         return None
     
-    def test_last_branch(self):
-        def pot(coordsArr):
-            return np.ones(3)
+#     def test_last_branch(self):
+#         def pot(coordsArr):
+#             return np.ones(3)
         
-        nPts = 3
-        nDims = 2
+#         nPts = 3
+#         nDims = 2
         
-        lap = LeastActionPath(pot,nPts,nDims)
+#         lap = LeastActionPath(pot,nPts,nDims)
         
-        points = np.stack(2*(np.arange(3),)).T
-        #Maybe not obvious that this takes the last branch. Checked it by
-        #putting a print statement under the last branch.
-        enegs = np.array([-1,-5,-1])
+#         points = np.stack(2*(np.arange(3),)).T
+#         #Maybe not obvious that this takes the last branch. Checked it by
+#         #putting a print statement under the last branch.
+#         enegs = np.array([-1,-5,-1])
         
-        tangents = lap._compute_tangents(points,enegs)
+#         tangents = lap._compute_tangents(points,enegs)
         
-        correctTangents = np.zeros((nPts,nDims))
-        correctTangents[1] = np.sqrt(2)/2
+#         correctTangents = np.zeros((nPts,nDims))
+#         correctTangents[1] = np.sqrt(2)/2
         
-        #Use assert_allclose rather than assert_array_equal because of some quirk
-        #in the calculation, which gives a difference of almost machine precision
-        #(~10^(-16)) from the analytic correct answer, \sqrt{2}/2
-        self.assertIsNone(np.testing.assert_allclose(tangents,correctTangents))
+#         #Use assert_allclose rather than assert_array_equal because of some quirk
+#         #in the calculation, which gives a difference of almost machine precision
+#         #(~10^(-16)) from the analytic correct answer, \sqrt{2}/2
+#         self.assertIsNone(np.testing.assert_allclose(tangents,correctTangents))
         
-        return None
+#         return None
 
-class LeastActionPath_spring_force_(unittest.TestCase):
-    def test_no_endpoint_force(self):
-        def pot(coordsArr):
-            return np.ones(3)
+# class LeastActionPath_spring_force_(unittest.TestCase):
+#     def test_no_endpoint_force(self):
+#         def pot(coordsArr):
+#             return np.ones(3)
         
-        endpointSpringForce = False
-        nPts = 3
-        nDims = 2
+#         endpointSpringForce = False
+#         nPts = 3
+#         nDims = 2
         
-        points = np.stack(2*(np.array([0,1,3]),)).T
+#         points = np.stack(2*(np.array([0,1,3]),)).T
         
-        lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce)
-        tangents = np.zeros((nPts,nDims))
-        tangents[1] = np.sqrt(2)/2
+#         lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce)
+#         tangents = np.zeros((nPts,nDims))
+#         tangents[1] = np.sqrt(2)/2
         
-        springForce = lap._spring_force(points,tangents)
+#         springForce = lap._spring_force(points,tangents)
         
-        correctSpringForce = np.zeros((nPts,nDims))
-        correctSpringForce[1] = 1
+#         correctSpringForce = np.zeros((nPts,nDims))
+#         correctSpringForce[1] = 1
         
-        self.assertIsNone(np.testing.assert_allclose(springForce,correctSpringForce))
+#         self.assertIsNone(np.testing.assert_allclose(springForce,correctSpringForce))
         
-        return None
+#         return None
     
-    def test_all_endpoint_force(self):
-        def pot(coordsArr):
-            return np.ones(3)
+#     def test_all_endpoint_force(self):
+#         def pot(coordsArr):
+#             return np.ones(3)
         
-        endpointSpringForce = True
-        nPts = 3
-        nDims = 2
+#         endpointSpringForce = True
+#         nPts = 3
+#         nDims = 2
         
-        points = np.stack(2*(np.array([0,1,3]),)).T
+#         points = np.stack(2*(np.array([0,1,3]),)).T
         
-        lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce)
-        tangents = np.zeros((nPts,nDims))
-        tangents[1] = np.sqrt(2)/2
+#         lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce)
+#         tangents = np.zeros((nPts,nDims))
+#         tangents[1] = np.sqrt(2)/2
         
-        springForce = lap._spring_force(points,tangents)
+#         springForce = lap._spring_force(points,tangents)
         
-        correctSpringForce = np.array([[1,1],[1,1],[-2,-2]])
+#         correctSpringForce = np.array([[1,1],[1,1],[-2,-2]])
         
-        self.assertIsNone(np.testing.assert_allclose(springForce,correctSpringForce))
+#         self.assertIsNone(np.testing.assert_allclose(springForce,correctSpringForce))
         
-        return None
+#         return None
     
-    def test_left_endpoint_force(self):
-        def pot(coordsArr):
-            return np.ones(3)
+#     def test_left_endpoint_force(self):
+#         def pot(coordsArr):
+#             return np.ones(3)
         
-        endpointSpringForce = (True,False)
-        nPts = 3
-        nDims = 2
+#         endpointSpringForce = (True,False)
+#         nPts = 3
+#         nDims = 2
         
-        points = np.stack(2*(np.array([0,1,3]),)).T
+#         points = np.stack(2*(np.array([0,1,3]),)).T
         
-        lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce)
-        tangents = np.zeros((nPts,nDims))
-        tangents[1] = np.sqrt(2)/2
+#         lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce)
+#         tangents = np.zeros((nPts,nDims))
+#         tangents[1] = np.sqrt(2)/2
         
-        springForce = lap._spring_force(points,tangents)
+#         springForce = lap._spring_force(points,tangents)
         
-        correctSpringForce = np.array([[1,1],[1,1],[0,0]])
+#         correctSpringForce = np.array([[1,1],[1,1],[0,0]])
         
-        self.assertIsNone(np.testing.assert_allclose(springForce,correctSpringForce))
+#         self.assertIsNone(np.testing.assert_allclose(springForce,correctSpringForce))
         
-        return None
+#         return None
     
-    def test_right_endpoint_force(self):
-        def pot(coordsArr):
-            return np.ones(3)
+#     def test_right_endpoint_force(self):
+#         def pot(coordsArr):
+#             return np.ones(3)
         
-        endpointSpringForce = (False,True)
-        nPts = 3
-        nDims = 2
+#         endpointSpringForce = (False,True)
+#         nPts = 3
+#         nDims = 2
         
-        points = np.stack(2*(np.array([0,1,3]),)).T
+#         points = np.stack(2*(np.array([0,1,3]),)).T
         
-        lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce)
-        tangents = np.zeros((nPts,nDims))
-        tangents[1] = np.sqrt(2)/2
+#         lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce)
+#         tangents = np.zeros((nPts,nDims))
+#         tangents[1] = np.sqrt(2)/2
         
-        springForce = lap._spring_force(points,tangents)
+#         springForce = lap._spring_force(points,tangents)
         
-        correctSpringForce = np.array([[0,0],[1,1],[-2,-2]])
+#         correctSpringForce = np.array([[0,0],[1,1],[-2,-2]])
         
-        self.assertIsNone(np.testing.assert_allclose(springForce,correctSpringForce))
+#         self.assertIsNone(np.testing.assert_allclose(springForce,correctSpringForce))
         
-        return None
+#         return None
     
-class LeastActionPath_compute_force(unittest.TestCase):
-    def test_correct_points(self):
-        def pot(coordsArr):
-            return coordsArr[:,0]**2 + coordsArr[:,1]**2
+# class LeastActionPath_compute_force(unittest.TestCase):
+#     def test_correct_points(self):
+#         def pot(coordsArr):
+#             return coordsArr[:,0]**2 + coordsArr[:,1]**2
         
-        nPts = 3
-        nDims = 2
+#         nPts = 3
+#         nDims = 2
         
-        points = np.stack(2*(np.array([0,1,3],dtype=float),)).T
+#         points = np.stack(2*(np.array([0,1,3],dtype=float),)).T
         
-        lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1,"kappa":2})
+#         lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1,"kappa":2})
         
-        netForce = lap.compute_force(points)
+#         netForce = lap.compute_force(points)
         
-        #Computed with Mathematica
-        correctNetForce = np.array([[1,1],[1,1],[-25.455844,-25.455844]])
+#         #Computed with Mathematica
+#         correctNetForce = np.array([[1,1],[1,1],[-25.455844,-25.455844]])
         
-        self.assertIsNone(np.testing.assert_allclose(netForce,correctNetForce))
+#         self.assertIsNone(np.testing.assert_allclose(netForce,correctNetForce))
         
         
-        return None
+#         return None
 class MinimumEnergyPath_compute_tangents_(unittest.TestCase):
      def test_first_branch(self):
         def pot(coordsArr):
@@ -955,32 +955,32 @@ class Dijkstra_find_allowed_endpoints_(unittest.TestCase):
         # ax.scatter(allowedEndpoints[:,0],allowedEndpoints[:,1],marker="x",color="red")
         return None
     
-class Dijkstra_construct_path_dict(unittest.TestCase):
-    def test_2d_gauss_with_poly(self):
-        #Don't need anything more complicated than a function taking in a meshgrid
-        def dummy_func(meshGrid):
-            x, y = meshGrid
-            return x*(1-2*np.exp(-((x-2)**2+y**2)/0.2)) + 1.9
+# class Dijkstra_construct_path_dict(unittest.TestCase):
+#     def test_2d_gauss_with_poly(self):
+#         #Don't need anything more complicated than a function taking in a meshgrid
+#         def dummy_func(meshGrid):
+#             x, y = meshGrid
+#             return x*(1-2*np.exp(-((x-2)**2+y**2)/0.2)) + 1.9
                 
-        x = np.arange(-5,2.5,0.05)
-        y = np.arange(-1,1.5,0.005)
+#         x = np.arange(-5,2.5,0.5)
+#         y = np.arange(-1,1.5,0.5)
         
-        coordMeshTuple = np.meshgrid(x,y)
-        zz = dummy_func(coordMeshTuple)
-        print(zz.size)
-        initialPoint = np.array([2.,0.])
+#         coordMeshTuple = np.meshgrid(x,y)
+#         zz = dummy_func(coordMeshTuple)
+#         print(zz.size)
+#         initialPoint = np.array([2.,0.])
         
-        dijkstra = Dijkstra(initialPoint,coordMeshTuple,zz)
+#         dijkstra = Dijkstra(initialPoint,coordMeshTuple,zz)
         
-        tentativeDistance, neighborsVisitDict, \
-            endpointIndsList = dijkstra._construct_path_dict()
+#         tentativeDistance, neighborsVisitDict, \
+#             endpointIndsList = dijkstra._construct_path_dict()
         
-        print(tentativeDistance)
+#         print(tentativeDistance)
         
-        fig, ax = plt.subplots()
-        ax.contourf(*coordMeshTuple,tentativeDistance.data)
+#         fig, ax = plt.subplots()
+#         ax.contourf(*coordMeshTuple,tentativeDistance.data)
         
-        return None
+#         return None
 
 if __name__ == "__main__":
     #Suppresses warnings that I know are present
