@@ -209,9 +209,74 @@ def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
     
     return allContours
 
+def round_points_to_grid(coordMeshTuple,ptsArr):
+    """
+    
+
+    Parameters
+    ----------
+    coordMeshTuple : TYPE
+        DESCRIPTION.
+    ptsArr : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    None.
+
+    """
+    nDims = len(coordMeshTuple)
+    if nDims < 2: #TODO: probably useless, but could be nice for completion
+        raise TypeError("Expected nDims >= 2; recieved "+str(nDims))
+        
+    uniqueCoords = [np.unique(c) for c in coordMeshTuple]
+    
+    if ptsArr.shape == (nDims,):
+        ptsArr = ptsArr.reshape((1,nDims))
+    else:
+        if ptsArr.shape[1] != nDims:
+            raise ValueError("ptsArr.shape = "+str(ptsArr.shape)+\
+                             "; second dimension should be nDims, "+str(nDims))
+        
+    nPts = ptsArr.shape[0]
+    
+    indsOut = np.zeros((nPts,nDims),dtype=int)
+    
+    #In case some points are on the grid, which np.searchsorted doesn't seem to
+    #handle the way I'd like
+    for dimIter in range(nDims):
+        for (ptIter, pt) in enumerate(ptsArr[:,dimIter]):
+            #Nonsense with floating-point precision makes me use
+            #np.isclose rather than a == b
+            tentativeInd = np.argwhere(np.isclose(uniqueCoords[dimIter],pt))
+            if tentativeInd.shape == (0,1): #Nothing found on grid
+                indsOut[ptIter,dimIter] = \
+                    np.searchsorted(uniqueCoords[dimIter],pt) - 1
+            else: #Is on grid
+                indsOut[ptIter,dimIter] = tentativeInd
+    
+    #I subtract 1 in some cases
+    indsOut[indsOut<0] = 0
+    
+    gridValsOut = np.zeros((nPts,nDims))
+    for ptIter in range(nPts):
+        inds = indsOut[ptIter]
+        # Some indexing is done to deal with the default shape of np.meshgrid.
+        # For D dimensions, the output is of shape (N2,N1,N3,...,ND), while the
+        # way indices are generated expects a shape of (N1,...,ND). So, I swap
+        # the first two indices by hand. See https://numpy.org/doc/stable/reference/generated/numpy.meshgrid.html
+        inds[[0,1]] = inds[[1,0]]
+        inds = tuple(inds)
+        gridValsOut[ptIter] = np.array([c[inds] for c in coordMeshTuple])
+        
+    #Expect columns of returned indices to be in order (N1,N2,N3,...,ND)
+    indsOut[:,[0,1]] = indsOut[:,[1,0]]
+    
+    return indsOut, gridValsOut
+
 def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False):
     """
-    TODO: allow for different potArr than self.potArr, perhaps
+    
 
     Parameters
     ----------
@@ -240,26 +305,11 @@ def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False):
         gridContOnLevel = []
         gridIndsOnLevel = []
         for cont in contOnLevel:
-            gridInds = []
-            #Deals with points that are in the array. Ought to be vectorizable,
-            #but I expect we're dealing with small-ish numbers right now.
-            for dimIter in range(nDims):
-                indsToAppend = np.zeros(cont.shape[0],dtype=int)
-                for (ptIter,pt) in enumerate(cont[:,dimIter]):
-                    #Nonsense with floating-point precision makes me use
-                    #np.isclose rather than a == b
-                    tentativeInd = np.argwhere(np.isclose(uniqueCoords[dimIter],pt))
-                    if tentativeInd.shape == (0,1): #Nothing found
-                        indsToAppend[ptIter] = \
-                            np.searchsorted(uniqueCoords[dimIter],pt)
-                    else: #Is on grid
-                        indsToAppend[ptIter] = tentativeInd
-                gridInds.append(indsToAppend)
+            locGridInds, locGridVals = \
+                round_points_to_grid(coordMeshTuple,cont)
             
-            #Don't really know why this has to be transposed, but it does
-            contOnGrid = np.array([c.T[tuple(gridInds)] for c in coordMeshTuple]).T
-            gridContOnLevel.append(contOnGrid)
-            gridIndsOnLevel.append(np.array(gridInds).T)
+            gridIndsOnLevel.append(locGridInds)
+            gridContOnLevel.append(locGridVals)
         
         if returnAllPoints:
             for (cIter,c) in enumerate(gridContOnLevel):

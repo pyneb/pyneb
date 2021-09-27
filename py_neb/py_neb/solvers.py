@@ -1384,3 +1384,11 @@ class Dijkstra:
                 break
         
         return tentativeDistance, neighborsVisitDict, endpointIndsList
+    
+    def compute_paths(self,neighborsVisitDict):
+        allPaths = []
+        for endptInds in self.endpointIndices:
+            path = []
+            step = endptInds
+        
+        return None
