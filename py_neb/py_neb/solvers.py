@@ -1259,7 +1259,7 @@ class Dijkstra:
         
         if allowedEndpoints is None:
             self.allowedEndpoints, self.endpointIndices \
-                = self._find_allowed_endpoints()
+                = find_endpoints_on_grid(self.coordMeshTuple,self.potArr)
         else:
             self.allowedEndpoints = allowedEndpoints
             raise ValueError("Need to find indices from allowedEndpoints; not implemented yet")
@@ -1290,74 +1290,6 @@ class Dijkstra:
         #and self.initialInds[1] <= Nx
         self.initialInds[[1,0]] = self.initialInds[[0,1]]
         self.initialInds = tuple(self.initialInds)
-    
-    def _find_allowed_endpoints(self,returnAllPoints=False):
-        """
-        TODO: allow for different potArr than self.potArr, perhaps
-
-        Parameters
-        ----------
-        returnAllPoints : TYPE, optional
-            DESCRIPTION. The default is False.
-
-        Returns
-        -------
-        allowedEndpoints : TYPE
-            DESCRIPTION.
-
-        """
-        if returnAllPoints:
-            warnings.warn("Dijkstra._find_allowed_endpoints is finding all "\
-                          +"contours; this may include starting point")
-        
-        allContours = find_approximate_contours(self.coordMeshTuple,self.potArr)
-        
-        allowedEndpoints = np.zeros((0,self.nDims))
-        allowedIndices = np.zeros((0,self.nDims),dtype=int)
-        
-        for contOnLevel in allContours:
-            gridContOnLevel = []
-            gridIndsOnLevel = []
-            for cont in contOnLevel:
-                gridInds = []
-                #Deals with points that are in the array. Ought to be vectorizable,
-                #but I expect we're dealing with small-ish numbers right now.
-                #TODO: consider making into a separate function (may be useful
-                #elsewhere?)
-                for dimIter in range(self.nDims):
-                    indsToAppend = np.zeros(cont.shape[0],dtype=int)
-                    for (ptIter,pt) in enumerate(cont[:,dimIter]):
-                        #Nonsense with floating-point precision makes me use
-                        #np.isclose rather than a == b
-                        tentativeInd = np.argwhere(np.isclose(self.uniqueCoords[dimIter],pt))
-                        if tentativeInd.shape == (0,1): #Nothing found
-                            indsToAppend[ptIter] = \
-                                np.searchsorted(self.uniqueCoords[dimIter],pt)
-                        else: #Is on grid
-                            indsToAppend[ptIter] = tentativeInd
-                    gridInds.append(indsToAppend)
-                
-                #Don't really know why this has to be transposed, but it does
-                contOnGrid = np.array([c.T[tuple(gridInds)] for c in self.coordMeshTuple]).T
-                gridContOnLevel.append(contOnGrid)
-                gridIndsOnLevel.append(np.array(gridInds).T)
-            
-            if returnAllPoints:
-                for (cIter,c) in enumerate(gridContOnLevel):
-                    allowedEndpoints = np.concatenate((allowedEndpoints,c),axis=0)
-                    allowedIndices = np.concatenate((allowedIndices,gridIndsOnLevel[cIter]),axis=0)
-            else:
-                lenOfContours = np.array([c.shape[0] for c in gridContOnLevel])
-                outerIndex = np.argmax(lenOfContours)
-                allowedEndpoints = \
-                    np.concatenate((allowedEndpoints,gridContOnLevel[outerIndex]),axis=0)
-                allowedIndices = \
-                    np.concatenate((allowedIndices,gridIndsOnLevel[outerIndex]),axis=0)
-            
-        allowedEndpoints = np.unique(allowedEndpoints,axis=0)
-        allowedIndices = np.unique(allowedIndices,axis=0)
-        
-        return allowedEndpoints, allowedIndices
     
     def _construct_path_dict(self):
         """
