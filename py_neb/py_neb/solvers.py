@@ -4,7 +4,7 @@ import numpy as np
 from scipy.ndimage import filters, morphology #For minimum finding
 
 #For ND interpolation
-from scipy.interpolate import interpnd, RectBivariateSpline
+# from scipy.interpolate import interpnd, RectBivariateSpline
 import itertools
 
 from scipy.integrate import solve_bvp
@@ -24,86 +24,69 @@ CONVENTIONS:
         assume the first index iterates over the points
 """
 
-"""
-Other functions we want:
-    -Class for least action path and minimum energy path
-    -Method(s) for finding starting points for a D-dimensional grid.
-        -Would want this to be robust. Ideally, it would select the outer turning
-            (D-1)-dimensional hypersurface. Simple idea is just to select *any* point
-            with the same energy as the ground state, and see what happens. This brings
-            up another point: is there a way to show we're at the outer turning line,
-            without looking at the surface?
-"""
-
-"""
-TODO:
-    -Unclear how we want to handle errors (currently just using sys.exit)
-
-"""
-
 global fdTol
 fdTol = 10**(-8)
 
-def find_local_minimum(arr):
-    """
-    Returns the indices corresponding to the local minimum values. Taken 
-    directly from https://stackoverflow.com/a/3986876
+# def find_local_minimum(arr):
+#     """
+#     Returns the indices corresponding to the local minimum values. Taken 
+#     directly from https://stackoverflow.com/a/3986876
     
-    Parameters
-    ----------
-    arr : Numpy array
-        A D-dimensional array.
+#     Parameters
+#     ----------
+#     arr : Numpy array
+#         A D-dimensional array.
 
-    Returns
-    -------
-    minIndsOut : Tuple of numpy arrays
-        D arrays of length k, for k minima found
+#     Returns
+#     -------
+#     minIndsOut : Tuple of numpy arrays
+#         D arrays of length k, for k minima found
 
-    """
-    neighborhood = morphology.generate_binary_structure(len(arr.shape),1)
-    local_min = (filters.minimum_filter(arr, footprint=neighborhood,\
-                                        mode="nearest")==arr)
+#     """
+#     neighborhood = morphology.generate_binary_structure(len(arr.shape),1)
+#     local_min = (filters.minimum_filter(arr, footprint=neighborhood,\
+#                                         mode="nearest")==arr)
     
-    background = (arr==0)
-    #Not sure this is necessary - it doesn't seem to do much on the test
-        #data I defined.
-    eroded_background = morphology.binary_erosion(background,\
-                                                  structure=neighborhood,\
-                                                  border_value=1)
+#     background = (arr==0)
+#     #Not sure this is necessary - it doesn't seem to do much on the test
+#         #data I defined.
+#     eroded_background = morphology.binary_erosion(background,\
+#                                                   structure=neighborhood,\
+#                                                   border_value=1)
         
-    detected_minima = local_min ^ eroded_background
-    allMinInds = np.vstack(local_min.nonzero())
-    minIndsOut = tuple([allMinInds[coordIter,:] for \
-                        coordIter in range(allMinInds.shape[0])])
-    return minIndsOut
+#     detected_minima = local_min ^ eroded_background
+#     allMinInds = np.vstack(local_min.nonzero())
+#     minIndsOut = tuple([allMinInds[coordIter,:] for \
+#                         coordIter in range(allMinInds.shape[0])])
+#     return minIndsOut
 
-def midpoint_grad(func,points,eps=10**(-8)):
-    """
-    TODO: allow for arbitrary shaped outputs, for use with inertia tensor
+# def midpoint_grad(func,points,eps=10**(-8)):
+#     """
+#     TODO: allow for arbitrary shaped outputs, for use with inertia tensor
     
-    Midpoint finite difference. Probably best if not used with actual DFT calculations,
-        vs a forwards/reverse finite difference
-    Assumes func only depends on a single point (vs the action, which depends on
-         all of the points)
-    """
-    if len(points.shape) == 1:
-        points = points.reshape((1,-1))
-    nPoints, nDims = points.shape
+#     Midpoint finite difference. Probably best if not used with actual DFT calculations,
+#         vs a forwards/reverse finite difference
+#     Assumes func only depends on a single point (vs the action, which depends on
+#          all of the points)
+#     """
+#     if len(points.shape) == 1:
+#         points = points.reshape((1,-1))
+#     nPoints, nDims = points.shape
     
-    gradOut = np.zeros((nPoints,nDims))
-    for dimIter in range(nDims):
-        step = np.zeros(nDims)
-        step[dimIter] = 1
+#     gradOut = np.zeros((nPoints,nDims))
+#     for dimIter in range(nDims):
+#         step = np.zeros(nDims)
+#         step[dimIter] = 1
         
-        forwardStep = points + eps/2*step
-        backwardStep = points - eps/2*step
+#         forwardStep = points + eps/2*step
+#         backwardStep = points - eps/2*step
         
-        forwardEval = func(forwardStep)
-        backwardEval = func(backwardStep)
+#         forwardEval = func(forwardStep)
+#         backwardEval = func(backwardStep)
         
-        gradOut[:,dimIter] = (forwardEval-backwardEval)/eps
+#         gradOut[:,dimIter] = (forwardEval-backwardEval)/eps
     
-    return gradOut
+#     return gradOut
 
 # def action(path,potential,masses=None):
 #     """
@@ -331,14 +314,9 @@ def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
         return outVals
     return func_out
 
-def auxiliary_potential(func_in,shift=10**(-4)):
-    def func_out(coords):
-        return func_in(coords) + shift
-    return func_out
-
 def potential_target_func(points, potential, auxFunc=None):
     '''
-    
+    TODO: remove?
 
     Parameters
     ----------
@@ -412,209 +390,7 @@ def potential_central_grad(points,potential,auxFunc=None):
     return gradPES, gradAux
 def flood():
     return
-
     
-class RectBivariateSplineWrapper(RectBivariateSpline):
-    def __init__(self,*args,**kwargs):
-        super(RectBivariateSplineWrapper,self).__init__(*args,**kwargs)
-        self.function = self.func_wrapper()
-        
-    def func_wrapper(self):
-        def func_out(coords):
-            if coords.shape == (2,):
-                coords = coords.reshape((1,2))
-                
-            res = self.__call__(coords[:,0],coords[:,1],grid=False)
-            return res
-        return func_out
-
-class NDInterpWithBoundary:
-    """
-    Based on scipy.interpolate.RegularGridInterpolator
-    """
-    def __init__(self, points, values, boundaryHandler="exponential",minVal=0):
-        if len(points) < 3:
-            warnings.warn("Using ND linear interpolator with "+str(len(points))\
-                          +" dimensions. Consider using spline interpolator instead.")
-        
-        if boundaryHandler not in ["exponential"]:
-            raise ValueError("boundaryHandler '%s' is not defined" % boundaryHandler)
-        
-        if not hasattr(values, 'ndim'):
-            #In case "values" is not an array
-            values = np.asarray(values)
-            
-        if len(points) > values.ndim:
-            raise ValueError("There are %d point arrays, but values has %d "
-                             "dimensions" % (len(points), values.ndim))
-            
-        if hasattr(values, 'dtype') and hasattr(values, 'astype'):
-            if not np.issubdtype(values.dtype, np.inexact):
-                values = values.astype(float)
-                
-        for i, p in enumerate(points):
-            if not np.all(np.diff(p) > 0.):
-                raise ValueError("The points in dimension %d must be strictly "
-                                 "ascending" % i)
-            if not np.asarray(p).ndim == 1:
-                raise ValueError("The points in dimension %d must be "
-                                 "1-dimensional" % i)
-            if not values.shape[i] == len(p):
-                raise ValueError("There are %d points and %d values in "
-                                 "dimension %d" % (len(p), values.shape[i], i))
-        
-        self.grid = tuple([np.asarray(p) for p in points])
-        self.values = values
-        self.boundaryHandler = boundaryHandler
-        self.minVal = minVal #To be used later, perhaps
-
-    def __call__(self, xi):
-        """
-        Interpolation at coordinates
-        Parameters
-        ----------
-        xi : ndarray of shape (..., ndim)
-            The coordinates to sample the gridded data at
-        """
-        ndim = len(self.grid)
-        
-        #Don't really understand what this does
-        xi = interpnd._ndim_coords_from_arrays(xi, ndim=ndim)
-        if xi.shape[-1] != len(self.grid):
-            raise ValueError("The requested sample points xi have dimension "
-                              "%d, but this RegularGridInterpolator has "
-                              "dimension %d" % (xi.shape[1], ndim))
-        
-        #Checking if each point is acceptable, and interpolating individual points.
-        #Might as well just make the user deal with reshaping, unless I find I need
-        #to do so repeatedly
-        nPoints = int(xi.size/len(self.grid))
-        result = np.zeros(nPoints)
-        
-        for (ptIter, point) in enumerate(xi):
-            isInBounds = np.zeros((2,ndim),dtype=bool)
-            isInBounds[0] = (np.array([g[0] for g in self.grid]) <= point)
-            isInBounds[1] = (point <= np.array([g[-1] for g in self.grid]))
-            
-            if np.count_nonzero(~isInBounds) == 0:
-                indices, normDistances = self._find_indices(np.expand_dims(point,1))
-                result[ptIter] = self._evaluate_linear(indices, normDistances)
-            else:
-                if self.boundaryHandler == "exponential":
-                    result[ptIter] = self._exp_boundary_handler(point,isInBounds)
-                
-        return result
-    
-    def _find_indices(self, xi):
-        """
-        Finds indices of nearest gridpoint (utilizing the regularity of the grid).
-        Also computes how far in each coordinate dimension every point is from
-        the previous gridpoint (not the nearest), normalized such that the next 
-        gridpoint (in a particular dimension) is distance 1 from the nearest gridpoint.
-        The distance is normed to make the interpolation simpler.
-        
-        As an example, returned indices of [[2,3],[1,7],[3,2]] indicates that the
-        first point has nearest grid index (2,1,3), and the second has nearest
-        grid index (3,7,2).
-        
-        Note that, if the nearest edge is the outermost edge in a given coordinate,
-        the inner edge is return instead.
-
-        Parameters
-        ----------
-        xi : Numpy array
-            Array of coordinate(s) to evaluate at. Of dimension (ndims,_)
-
-        Returns
-        -------
-        indices : Tuple of numpy arrays
-            The indices of the nearest gridpoint for all points of xi. Can
-            be used as indices of a numpy array
-        normDistances : List of numpy arrays
-            The distance along each dimension to the nearest gridpoint
-
-        """
-        
-        indices = []
-        # compute distance to lower edge in unity units
-        normDistances = []
-        # iterate through dimensions
-        for x, grid in zip(xi, self.grid):
-            #This is why the grid must be sorted - this search is now quick. All
-            #this does is find the index in which to place x such that the list
-            #self.grid[coordIter] remains sorted.
-            i = np.searchsorted(grid, x) - 1
-            
-            #If x would be the new first element, index it as zero
-            i[i < 0] = 0
-            #If x would be the last element, make it not so. However, the way
-            #the interpolation scheme is set up, we need the nearest gridpoint
-            #that is not the outermost gridpoint. See below with grid[i+1]
-            i[i > grid.size - 2] = grid.size - 2
-            
-            indices.append(i)
-            normDistances.append((x - grid[i]) / (grid[i + 1] - grid[i]))
-            
-        return tuple(indices), normDistances
-
-    def _evaluate_linear(self, indices, normDistances):
-        """
-        A complicated way of implementing repeated linear interpolation. See
-        e.g. https://en.wikipedia.org/wiki/Bilinear_interpolation#Weighted_mean
-        for the 2D case. Note that the weights simplify because of the normed
-        distance that's returned from self._find_indices
-
-        Parameters
-        ----------
-        indices : TYPE
-            DESCRIPTION.
-        normDistances : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        values : TYPE
-            DESCRIPTION.
-
-        """
-        #TODO: remove extra dimension handling
-        # slice for broadcasting over trailing dimensions in self.values.
-        vslice = (slice(None),) + (None,)*(self.values.ndim - len(indices))
-        
-        # find relevant values
-        # each i and i+1 represents a edge
-        edges = itertools.product(*[[i, i + 1] for i in indices])
-        values = 0.
-        for edge_indices in edges:
-            weight = 1.
-            for ei, i, yi in zip(edge_indices, indices, normDistances):
-                weight *= np.where(ei == i, 1 - yi, yi)
-            values += np.asarray(self.values[edge_indices]) * weight[vslice]
-        return values
-    
-    def _exp_boundary_handler(self,point,isInBounds):
-        nearestAllowed = np.zeros(point.shape)
-        
-        for dimIter in range(point.size):
-            if np.all(isInBounds[:,dimIter]):
-                nearestAllowed[dimIter] = point[dimIter]
-            else:
-                #To convert from tuple -> numpy array -> int
-                failedInd = np.nonzero(isInBounds[:,dimIter]==False)[0].item()
-                if failedInd == 1:
-                    failedInd = -1
-                nearestAllowed[dimIter] = self.grid[dimIter][failedInd]
-        
-        #Evaluating the nearest allowed point on the boundary of the allowed region
-        indices, normDist = self._find_indices(np.expand_dims(nearestAllowed,1))
-        valAtNearest = self._evaluate_linear(indices,normDist)
-        
-        dist = np.linalg.norm(nearestAllowed-point)
-        
-        #Yes, I mean to take an additional square root here
-        result = valAtNearest*np.exp(np.sqrt(dist))
-        return result
-
 class LeastActionPath:
     """
     class documentation...?
@@ -1625,8 +1401,7 @@ class Dijkstra:
         
         #Ends when all endpoints have been reached, or it has iterated over every
         #node. Latter should not be possible; is a check in case something goes wrong.
-        nIters = 0
-        while endpointIndsList:
+        for i in range(self.potArr.size):
             neighborInds = np.array(currentInds) - relativeNeighborInds
             
             #Removing indices that take us off-grid. See e.g.
@@ -1671,257 +1446,9 @@ class Dijkstra:
             
             currentInds = np.unravel_index(np.argmin(tentativeDistance),\
                                            tentativeDistance.shape)
-            nIters += 1
-            # if nIters >= self.potArr.size:
-            #     break
-        print(nIters)
+            
+            #Will exit early if all of the endpoints have been visited
+            if not endpointIndsList:
+                break
+        
         return tentativeDistance, neighborsVisitDict, endpointIndsList
-    
-    def _dijkstra(self,maskedGrid,inertiaTensor,start,vMin="auto"):
-        """
-        For every point in the PES (?), determines the neighbor that has the
-            lowest energy cost to visit.
-        Doesn't return a path, or require an endpoint. Since we check every
-            point on the outer turning line, it is computationally efficient
-            to save the neighbor dictionary that's output below, and reuse it
-            for every endpoint that's checked
-        TODO: extend method to more than 2D
-        TODO: rewrite stuff like the start to be a keyword argument
-        """
-        if vMin == "auto":
-            vMin = 0
-            
-        #Points on the grid that are less than 0 are set
-            #to eps. In principle these points can be visited at no cost. This is
-            #avoided by not letting the same point be visited twice, and by starting
-            #near the ground state (I think). In principle, eGS = 0, but we can't
-            #clip at eGS if eGS < 0, else the path will benefit from traversing
-            #the E < E_GS region
-        V = maskedGrid.copy()
-        visitMask = V.mask.copy()
-        m = np.ones_like(V) * np.inf
-        connectivity = [(i, j) for i in [-1, 0, 1] for j in [-1, 0, 1] if \
-                        (not (i == j == 0))]
-        """
-        connectivity is used to select points as follows:
-            *    x    *
-            x    o    x
-            *    x    *
-            the "*" points are those with connectivity values (\pm 1, \pm 1),
-            the "x" points are those with one value of 0, and
-            "o" is the starting point. All except for "o" are considered to be
-            neighbors. 
-        """
-        cc = start #current coordinate (indices)
-        
-        m[cc] = 0
-        neighborVisitDict = {}
-        for _ in range(4 * V.size): #TODO: find out why we use 4 * V.size
-            neighbors = [tuple(e) for e in np.asarray(cc) - connectivity 
-                          if e[0] >= 0 and e[1] >= 0 and e[0] < V.shape[0] and \
-                              e[1] < V.shape[1]] #See diagram above
-            neighbors = [e for e in neighbors if not visitMask[e]]
-            
-            #Distance for each neighbor
-            tentativeDistance = []
-            ptList = np.zeros((2,2))
-            ptList[0,:] = tuple([cMesh[cc] for cMesh in self.coordMeshTuple])
-            for e in neighbors:
-                ptList[1,:] = tuple([cMesh[e] for cMesh in self.coordMeshTuple])
-                act = self._action(ptList,V[e],inertiaTensor)
-                tentativeDistance.append(act)
-            tentativeDistance = np.asarray(tentativeDistance)
-            
-            #Not clear exactly what this bit of code does
-            for (neIter, e) in enumerate(neighbors):
-                d = tentativeDistance[neIter] + m[cc]
-                if d < m[e]:
-                    m[e] = d
-                    neighborVisitDict[e] = cc
-            visitMask[cc] = True
-            mMask = np.ma.masked_array(m, visitMask)
-            cc = np.unravel_index(mMask.argmin(), m.shape)
-            
-        return m, neighborVisitDict
-    
-    def _shortest_path(self,start,end,neighborVisitDict):
-        """
-        Gives the overall path between two points, given the optimal paths
-            between any two points(?)
-        """
-        path = []
-        step = end
-        while True:
-            path.append(step)
-            if step == start: break
-            step = neighborVisitDict[step]
-        path.reverse()
-        return np.asarray(path)
-        
-    def _get_path(self,start,gsCont,maskedGrid,inertiaTensor,neighborVisitDict):
-        epsilon = 0.000001
-        
-        minLoss = 10000
-        pathOpt = None
-        endOpt = None
-        
-        #Outer turning line should be the longest segment (except in possible
-            #weird cases)
-        turningOps = [len(gsCont.allsegs[0][iter]) for iter in \
-                      range(len(gsCont.allsegs[0]))]
-        turningIter = turningOps.index(max(turningOps))
-        turningLine = gsCont.allsegs[0][turningIter]
-        
-        for point in turningLine:
-            #Have to round the endpoint to an actual grid point on the
-                #mesh, rather than the output from ax.contourf(). Also, for
-                #some reason (having to do with np.meshgrid()), the shape of
-                #all grids is (q30,q20), so these tuples must be adjusted as
-                #such as well
-            endPoint = tuple(np.round(point).astype(int))
-            endPoint = (endPoint[1],endPoint[0])
-            path = self._shortest_path(start,endPoint,neighborVisitDict)
-    
-            p1 = tuple(path[0])
-            loss = 0
-            for p2 in path[1:]:
-                p2 = tuple(p2)
-                nCoords = len(self.coordMeshTuple)
-                ptList = np.zeros((2,nCoords))
-                ptList[0,:] = tuple([cMesh[p1] for cMesh in self.coordMeshTuple])
-                ptList[1,:] = tuple([cMesh[p2] for cMesh in self.coordMeshTuple])
-                loss += self._action(ptList,maskedGrid[p2],inertiaTensor) #Must be masked array here
-                p1 = p2
-            if loss < minLoss - epsilon:
-                pathOpt = path
-                endOpt = endPoint
-                minLoss = loss
-        return endOpt, pathOpt, minLoss
-    
-    def _filter_segments(self,contourObj):
-        """
-        Takes a pyplot contourf object, with only the level at E = 0, and returns
-        the indices for the given mesh that describe the contour.
-
-        Parameters
-        ----------
-        contourObj : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
-
-        """
-        contourLengths = [len(ccp) for ccp in contourObj.allsegs[0]]
-        outerTurningIndex = np.argmax(contourLengths)
-        
-        outerContour = contourObj.allsegs[0][outerTurningIndex]
-        roundedContour = np.round(outerContour) #Round to int b/c returns indices, not grid points
-        
-        return outerContour, roundedContour
-    
-    def otp_wrapper(self,pesVals,inertiaVals,reshapeOrder="F",debug=False):
-        """
-        Inherently assumes a constant moment of inertia.
-
-        Parameters
-        ----------
-        pesVals : TYPE
-            DESCRIPTION.
-        inertiaVals : TYPE, optional
-            DESCRIPTION. The default is None.
-        reshapeOrder : TYPE, optional
-            Updated 14/05/2021
-            WARNING: super funky. Needs to be "F" for NN outputs, but I don't know
-            how that treats things for cleaning purposes
-            
-            Not immediately clear how arrays are reshaped in NN output, but I
-            suspect they're flattened according to the "C" convention. So, the
-            default reshaping order follows this. The raw data obeys the "F"
-            convention, and is passed as such. The default is "C".
-        
-        Returns
-        -------
-        otpDict : TYPE
-            DESCRIPTION.
-        fpathDict : TYPE
-            DESCRIPTION.
-        outerContourDict : TYPE
-            Note that this contains the (smoothed) indices, not the actual grid
-            points.
-        
-        """
-        if isinstance(pesVals,dict):
-            pesArrDict = pesVals
-        elif isinstance(pesVals,np.ndarray):
-            pesArrDict = Outer_Turning_Point.pes_arr_to_dict(pesVals)
-        else:
-            sys.exit("Err: otp_wrapper received pesVals as unknown datatype "+type(pesVals))
-        
-        if isinstance(inertiaVals,dict):
-            inertiaDict = inertiaVals
-        elif isinstance(inertiaVals,np.ndarray):
-            inertiaDict = Outer_Turning_Point.inertia_arr_to_dict(inertiaVals)
-        else:
-            sys.exit("Err: otp_wrapper received pesVals as datatype "+type(inertiaVals))
-            
-        otpDict = {}
-        fpathDict = {}
-        outerContourDict = {}
-        roundedOCDict = {}
-        
-        eps = 0.01
-        
-        for nuc in pesArrDict.keys():
-            #WARNING: untested when cleaning data. Is super weird, b/c of coordMeshTuple.
-                #Basically, np.meshgrid returns an array whose shape is inverted:
-                #if you feed in np.meshgrid(x,y), where len(x) == 11 and len(y) == 7,
-                #what you get out is a tuple of arrays of shape (7,11), which is backwards
-                #from what we want. Is fixed in NN_Plot_Class by specifying that the reshaped
-                #size is (11,7), then taking a transpose. Is equivalent to reshaping
-                #with order "F"
-            pesGrid = pesArrDict[nuc].reshape(self.coordMeshTuple[0].shape,\
-                                              order=reshapeOrder)
-            
-            #Common debugging location (at least ~twice so far)
-            if debug:
-                fig, ax = plt.subplots()
-                ax.contourf(self.coordMeshTuple[0],self.coordMeshTuple[1],pesGrid)
-                sys.exit("Breaking here")
-                
-            allLocalMinInds = ML_Helper_Functions.find_local_minimum(pesGrid)
-            
-            try:
-                gsInds, _, _ = \
-                    ML_Helper_Functions.min_inds_to_defvals(pesGrid,self.coordMeshTuple,\
-                                                            allLocalMinInds,returnInds=True)
-                
-                #The weight in the action is the sqrt of the energy
-                weightedGrid = np.sqrt(np.ma.masked_array(pesGrid.copy().clip(0)+eps,mask=False))
-                m, neighborVisitDict = self._dijkstra(weightedGrid,inertiaDict[nuc],\
-                                                      gsInds)
-                    
-                gsContour = self._find_gs_contours(pesGrid)
-                endInds, pathInds, minLoss = self._get_path(gsInds,gsContour,weightedGrid,\
-                                                            inertiaDict[nuc],neighborVisitDict)
-                otpDict[nuc] = tuple([cMesh[endInds] for cMesh in self.coordMeshTuple])
-                fpathDict[nuc] = np.array([[cMesh[tuple(pathInd)] for cMesh in self.coordMeshTuple]\
-                                           for pathInd in pathInds])
-                
-                outerContourDict[nuc], roundedOCDict[nuc] = \
-                    self._filter_segments(gsContour)
-            except ValueError:
-                #For e.g. dev jobs, in which the NN PES isn't even close to realistic.
-                #There, no ground state is found. This is caught with a ValueError.
-                #I'd still like things to proceed, and hence I fill everything with dummy data
-                print("Warning: ground state not found for "+nuc)
-                otpDict[nuc] = [-1] * len(self.coordMeshTuple)
-                fpathDict[nuc] = [[-1] * len(self.coordMeshTuple)]
-                outerContourDict[nuc] = [[-1] * len(self.coordMeshTuple)]
-                roundedOCDict[nuc] = [[-1] * len(self.coordMeshTuple)]
-            plt.close("all")
-        return otpDict, fpathDict, outerContourDict, roundedOCDict
-    
-        
-

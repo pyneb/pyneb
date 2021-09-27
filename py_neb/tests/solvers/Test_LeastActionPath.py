@@ -2,7 +2,9 @@ from context import *
 
 import unittest
 import warnings
-print(__file__)
+
+#pyNebDir imported from context; perhaps bad practice?
+print("\nRunning "+os.path.relpath(__file__,pyNebDir))
 
 class _compute_tangents_(unittest.TestCase):
     def test_first_branch(self):
