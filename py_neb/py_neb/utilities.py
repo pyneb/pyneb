@@ -233,10 +233,10 @@ def round_points_to_grid(coordMeshTuple,ptsArr):
     
     if ptsArr.shape == (nDims,):
         ptsArr = ptsArr.reshape((1,nDims))
-    else:
-        if ptsArr.shape[1] != nDims:
-            raise ValueError("ptsArr.shape = "+str(ptsArr.shape)+\
-                             "; second dimension should be nDims, "+str(nDims))
+    
+    if ptsArr.shape[1] != nDims:
+        raise ValueError("ptsArr.shape = "+str(ptsArr.shape)+\
+                         "; second dimension should be nDims, "+str(nDims))
         
     nPts = ptsArr.shape[0]
     
@@ -274,7 +274,7 @@ def round_points_to_grid(coordMeshTuple,ptsArr):
     
     return indsOut, gridValsOut
 
-def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False):
+def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False,eneg=0):
     """
     
 
@@ -296,7 +296,7 @@ def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False):
     nDims = len(coordMeshTuple)
     uniqueCoords = [np.unique(c) for c in coordMeshTuple]
     
-    allContours = find_approximate_contours(coordMeshTuple,potArr)
+    allContours = find_approximate_contours(coordMeshTuple,potArr,eneg=eneg)
     
     allowedEndpoints = np.zeros((0,nDims))
     allowedIndices = np.zeros((0,nDims),dtype=int)

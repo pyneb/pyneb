@@ -1262,7 +1262,12 @@ class Dijkstra:
                 = find_endpoints_on_grid(self.coordMeshTuple,self.potArr)
         else:
             self.allowedEndpoints = allowedEndpoints
-            raise ValueError("Need to find indices from allowedEndpoints; not implemented yet")
+            self.endpointIndices, _ = \
+                round_points_to_grid(self.coordMeshTuple,allowedEndpoints)
+        
+        if self.allowedEndpoints.shape == (self.nDims,):
+            self.allowedEndpoints = self.allowedEndpoints.reshape((1,self.nDims))
+        
         if self.allowedEndpoints.shape[1] != self.nDims:
             raise ValueError("self.allowedEndpoints.shape == "+\
                              str(self.allowedEndpoints.shape)+"; dimension 1 must be "\
@@ -1271,6 +1276,9 @@ class Dijkstra:
             raise ValueError("self.endpointIndices.shape == "+\
                              str(self.endpointIndices.shape)+"; dimension 1 must be "\
                              +str(self.nDims))
+        
+        #Flipping (N1,N2) -> (N2,N1) here. Expect all indices everywhere are
+        #handled in the normal order (N1,N2,...)
         self.endpointIndices[:,[1,0]] = self.endpointIndices[:,[0,1]]
         self.endpointIndices = [tuple(row) for row in self.endpointIndices]
         
