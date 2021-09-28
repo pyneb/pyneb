@@ -22,35 +22,35 @@ class _construct_path_dict_(unittest.TestCase):
         
         dijkstra = Dijkstra(initialPoint,coordMeshTuple,zz,target_func=dist_func,\
                             allowedEndpoints=finalPoint)
-        # dijkstra._
+        print(dijkstra.__dict__)
         
         return None
     
-    def test_2d_gauss_with_poly(self):
-        #Don't need anything more complicated than a function taking in a meshgrid
-        def dummy_func(meshGrid):
-            x, y = meshGrid
-            return x*(1-2*np.exp(-((x-2)**2+y**2)/0.2)) + 1.9
+    # def test_2d_gauss_with_poly(self):
+    #     #Don't need anything more complicated than a function taking in a meshgrid
+    #     def dummy_func(meshGrid):
+    #         x, y = meshGrid
+    #         return x*(1-2*np.exp(-((x-2)**2+y**2)/0.2)) + 1.9
                 
-        x = np.arange(-5,2.5,0.5)
-        y = np.arange(-1,1.5,0.5)
+    #     x = np.arange(-5,2.5,0.5)
+    #     y = np.arange(-1,1.5,0.5)
         
-        coordMeshTuple = np.meshgrid(x,y)
-        zz = dummy_func(coordMeshTuple)
-        # print(zz.size)
-        initialPoint = np.array([2.,0.])
+    #     coordMeshTuple = np.meshgrid(x,y)
+    #     zz = dummy_func(coordMeshTuple)
+    #     # print(zz.size)
+    #     initialPoint = np.array([2.,0.])
         
-        dijkstra = Dijkstra(initialPoint,coordMeshTuple,zz)
+    #     dijkstra = Dijkstra(initialPoint,coordMeshTuple,zz)
         
-        tentativeDistance, neighborsVisitDict, \
-            endpointIndsList = dijkstra._construct_path_dict()
+    #     tentativeDistance, neighborsVisitDict, \
+    #         endpointIndsList = dijkstra._construct_path_dict()
         
-        # print(tentativeDistance)
+    #     # print(tentativeDistance)
         
-        fig, ax = plt.subplots()
-        ax.contourf(*coordMeshTuple,tentativeDistance.data)
+    #     fig, ax = plt.subplots()
+    #     ax.contourf(*coordMeshTuple,tentativeDistance.data)
         
-        return None
+    #     return None
     
 if __name__ == "__main__":
     warnings.simplefilter("ignore")
