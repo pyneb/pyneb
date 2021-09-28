@@ -69,6 +69,62 @@ def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
             plt.close(fig)
         
         return allContours  
+ ### Analytic surfaces
+def V_sin(x,y,ax,ay):
+    result = ax*np.cos(2.0*np.pi*x) + ay*np.cos(2.0*np.pi*y) 
+    return(result)
+def Q(r,d,alpha,r0):
+    result = 0.5*d*(1.5*np.exp(-2.0*alpha*(r-r0)) - np.exp(-alpha*(r-r0)))
+    return(result)
+def J(r,d,alpha,r0):
+    result = 0.25*d*(np.exp(-2.0*alpha*(r-r0)) - 6.0*np.exp(-alpha*(r-r0)) )
+    return(result)
+def V_LEPS(rAB,rBC,rAC,a,b,c,dab,dbc,dac,alpha,r0):
+    
+    V1 =  Q(rAB,dab,alpha,r0)/(1 + a) + Q(rBC,dbc,alpha,r0)/(1+b) + Q(rAC,dac,alpha,r0)/(1+c)
+    V2 = np.sqrt((J(rAB,dab,alpha,r0)/(1+a))**2 + (J(rBC,dbc,alpha,r0)/(1+b))**2 + 
+                 (J(rAC,dac,alpha,r0)/(1+c))**2 - J(rAB,dab,alpha,r0)*J(rBC,dbc,alpha,r0)/((1+a)*(1+b)) - 
+                 J(rAC,dac,alpha,r0)*J(rBC,dbc,alpha,r0)/((1+b)*(1+c)) 
+                 - J(rAB,dab,alpha,r0)*J(rAC,dac,alpha,r0)/((1+a)*(1+c)) )
+    V = V1 - V2
+    return(V)
+def V_HO_LEPS(coords):
+    ### Parameters are from Bruce J. Berne, Giovanni Ciccotti,David F. Coker, Classical and Quantum Dynamics in Condensed Phase Simulations Proceedings of the International School of Physics (1998) Chapter 16
+    if isinstance(coords,np.ndarray) == False:
+        coords = np.array(coords)
+    
+    if len(coords.shape) == 1:
+        #print('its a scalar')
+        #print(coords)
+        coords = coords.reshape(1,-1) 
+    else:pass
+        
+    if len(coords.shape) >= 3:
+        #print('its a grid')
+        #print(coords)
+        rAB = coords[0]
+        x = coords[1]
+    else:
+        #print('its a vector')
+        #print(coords)
+        rAB = coords[:,0]
+        x = coords[:,1]
+    rAC = 3.742
+    a = .05
+    b = .80
+    c = .05
+    dab = 4.746
+    dbc = 4.746
+    dac = 3.445
+    r0 = 0.742
+    alpha = 1.942
+    kc = .2025
+    c2 = 1.154
+    V1 = V_LEPS(rAB,rAC-rAB,rAC,a,b,c,dab,dbc,dac,alpha,r0)
+    V2 = 2.0*kc*(rAB - (0.5*rAC - x/c2))**2
+    result = V1 + V2 
+    return(result)
+
 class PES():
     '''
     Class imports hdf5 and starts PES instance. functions contained in this class 
