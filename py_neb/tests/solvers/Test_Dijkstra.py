@@ -8,8 +8,8 @@ print("\nRunning "+os.path.relpath(__file__,pyNebDir))
 
 class _construct_path_dict_(unittest.TestCase):
     def test_3d_grid(self):
-        def dist_func(coords):
-            return np.linalg.norm(coords[1]-coords[0])
+        def dist_func(coords,enegs,masses):
+            return enegs[1]*np.linalg.norm(coords[1]-coords[0]), enegs, masses
         
         x1 = np.array([0,1])
         x2 = np.array([0,2])
@@ -22,35 +22,22 @@ class _construct_path_dict_(unittest.TestCase):
         
         dijkstra = Dijkstra(initialPoint,coordMeshTuple,zz,target_func=dist_func,\
                             allowedEndpoints=finalPoint)
-        print(dijkstra.__dict__)
+        dist, visitDict, endptList = \
+            dijkstra._construct_path_dict()
+        #Computed ~mostly by hand (did not check that these are the
+        #shortest distances b/c I'm lazy)
+        correctDistances = np.array([[[0.,2.],[2,5]],\
+                                     [[8,12.],[6*5**0.5,2+7*5**0.5]]])
+        correctVisitDict = \
+            {(1,1,1):(0,0,1),(1,1,0):(0,0,0),(1,0,1):(0,0,1),(1,0,0):(0,0,0),\
+             (0,1,1):(0,0,1),(0,1,0):(0,0,0),(0,0,1):(0,0,0)}
+            
+        self.assertIsNone(np.testing.assert_array_equal(correctDistances,dist.data))
+        self.assertDictEqual(visitDict,correctVisitDict)
+        self.assertListEqual(endptList,[])
         
         return None
     
-    # def test_2d_gauss_with_poly(self):
-    #     #Don't need anything more complicated than a function taking in a meshgrid
-    #     def dummy_func(meshGrid):
-    #         x, y = meshGrid
-    #         return x*(1-2*np.exp(-((x-2)**2+y**2)/0.2)) + 1.9
-                
-    #     x = np.arange(-5,2.5,0.5)
-    #     y = np.arange(-1,1.5,0.5)
-        
-    #     coordMeshTuple = np.meshgrid(x,y)
-    #     zz = dummy_func(coordMeshTuple)
-    #     # print(zz.size)
-    #     initialPoint = np.array([2.,0.])
-        
-    #     dijkstra = Dijkstra(initialPoint,coordMeshTuple,zz)
-        
-    #     tentativeDistance, neighborsVisitDict, \
-    #         endpointIndsList = dijkstra._construct_path_dict()
-        
-    #     # print(tentativeDistance)
-        
-    #     fig, ax = plt.subplots()
-    #     ax.contourf(*coordMeshTuple,tentativeDistance.data)
-        
-    #     return None
     
 if __name__ == "__main__":
     warnings.simplefilter("ignore")

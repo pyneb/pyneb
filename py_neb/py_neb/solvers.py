@@ -1307,7 +1307,9 @@ class Dijkstra:
 
         TODO: allow for non-grid PES, like if we trimmed off high-energy regions
         Maybe fill to a grid, and set those guys to infinite energy so they're
-        never selected?
+        never selected? Simplest to have a list of indices that are not allowed,
+        and set the mask to "visited" for those points, so that they are never
+        even considered.
         
         Returns
         -------
