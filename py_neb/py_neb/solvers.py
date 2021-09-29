@@ -1193,10 +1193,6 @@ class EulerLagrangeVerification:
         return None
     
 class Dijkstra:
-    """
-    Original Dijkstra implemented by Leo Neufcourt. Modified so that I can use it 
-    with my code.
-    """
     def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,\
                  target_func=action,allowedEndpoints=None,trimVals=[10**(-4),None]):
         """
@@ -1205,6 +1201,14 @@ class Dijkstra:
         way indices are generated expects a shape of (N1,...,ND). So, I swap
         the first two indices by hand. See https://numpy.org/doc/stable/reference/generated/numpy.meshgrid.html
         #TODO: error handling (try getting an index)(?)
+        
+        Note that indexing for Dijkstra *internal* functions are done in the
+        order (N2,N1,N3,...), for simplicity. The indexing that is returned
+        by self.__call__ is kept in this order by default.
+        
+        Note that the *value* of the array at a certain index is the same
+        regardless of the sort order of the indices, provided that the index
+        order matches that used when creating np.meshgrid
 
         Parameters
         ----------
@@ -1243,7 +1247,7 @@ class Dijkstra:
         
         if potArr.shape != self.coordMeshTuple[0].shape:
             raise ValueError("potArr.shape is "+str(potArr.shape)+\
-                             "; required shape is "+coordMeshTuple[0].shape)     
+                             "; required shape is "+str(coordMeshTuple[0].shape))
         self.potArr = potArr
         
         if inertArr is not None:
@@ -1395,10 +1399,63 @@ class Dijkstra:
         
         return tentativeDistance, neighborsVisitDict, endpointIndsList
     
-    def compute_paths(self,neighborsVisitDict):
-        allPaths = []
+    def _get_paths(self,neighborsVisitDict):
+        allPathsDict = {}
         for endptInds in self.endpointIndices:
             path = []
             step = endptInds
+            while step != self.initialInds:
+                path.append(step)
+                step = neighborsVisitDict[step]
+            path.append(self.initialInds)
+            path.reverse()
+            
+            allPathsDict[endptInds] = path
         
-        return None
+        return allPathsDict
+    
+    def __call__(self,flipIndsOrder=False):
+        """
+        
+
+        Parameters
+        ----------
+        
+
+        Raises
+        ------
+        ValueError
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """            
+        tentativeDistance, neighborsVisitDict, endpointIndsList = \
+            self._construct_path_dict()
+        
+        #Warns if any endpoint isn't visited
+        if endpointIndsList:
+            warnings.warn("Endpoint indices\n"+str(endpointIndsList)+\
+                          "\nnot visited")
+        pathIndsDict = self._get_paths(neighborsVisitDict)
+        
+        pathArrDict = {}
+        for finalInds in pathIndsDict.keys():
+            finalPt = np.array([c[finalInds] for c in self.coordMeshTuple])
+            actualPath = np.zeros((0,self.nDims))
+            for pathInd in pathIndsDict[finalInds]:
+                toAppend = \
+                    np.array([c[pathInd] for c in self.coordMeshTuple]).reshape((1,-1))
+                actualPath = np.append(actualPath,toAppend,axis=0)
+                
+            pathArrDict[tuple(finalPt.tolist())] = actualPath
+        
+        if flipIndsOrder:
+            warnings.warn("Indices are returned in order (N1,N2,...), which"\
+                          +" may not be suitable for calling np.meshgrid.")
+            raise TypeError("Have not implemented this option yet.")
+                
+        
+        return pathIndsDict, pathArrDict
