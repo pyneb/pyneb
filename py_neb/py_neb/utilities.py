@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import itertools
 
 from scipy.interpolate import interpnd, RectBivariateSpline
+from scipy.ndimage import filters, morphology #For minimum finding
 import warnings
 
 class TargetFunctions:
@@ -380,7 +381,7 @@ def shift_func(func_in,shift=10**(-4)):
 
     """
     def func_out(coords):
-        return func_in(coords) + shift
+        return func_in(coords) - shift
     return func_out
 
 def action(path,potential,masses=None):
