@@ -1,5 +1,7 @@
 import sys
 import os
+import time
+import pandas as pd
 
 pyNebDir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..//.."))
 if pyNebDir not in sys.path:
@@ -75,8 +77,8 @@ class LepsPot():
 
 leps = LepsPot()
 
-rab = np.arange(0,4,0.05)
-x = np.arange(-2,3.8,0.05)
+rab = np.arange(0,3.5,0.05)
+x = np.arange(-3,3.05,0.05)
 
 coordMeshTuple = np.meshgrid(rab,x)
 flattenedCoords = np.array([c.flatten() for c in coordMeshTuple]).T
@@ -92,15 +94,22 @@ zz = potential(flattenedCoords).reshape(coordMeshTuple[0].shape)
 minInds = find_local_minimum(zz)
 coordsAtMinima = [c[minInds] for c in coordMeshTuple]
 
-start = np.array([c[0] for c in coordsAtMinima])
-end = np.array([c[1] for c in coordsAtMinima])
+start = np.array([c[1] for c in coordsAtMinima])
+end = np.array([c[0] for c in coordsAtMinima])
 
 #Running Dijkstra's algorithm
 dijkstra = Dijkstra(start,coordMeshTuple,zz,allowedEndpoints=end)
+t0 = time.time()
 _, pathArrDict = dijkstra()
+t1 = time.time()
 path = pathArrDict[tuple(list(end))]
-action, _, _ = action(path,potential)
-print("Action along path: %.3f" % action)
+dijkstraAction, _, _ = action(path,potential)
+print("Action along path: %.3f" % dijkstraAction)
+print("Elapsed time: %.3f seconds" % (t1 - t0))
+
+ericPath = np.array(pd.read_csv("Eric_HO_LEPS_LAP_path.txt"))
+ericAction, _, _ = action(ericPath,potential)
+print("Action along Eric's path: %.3f" % ericAction)
 
 #Plotting results
 fig, ax = plt.subplots()
@@ -113,4 +122,11 @@ plt.colorbar(cf,ax=ax)
 ax.scatter(*start,color="red",marker="x")
 ax.scatter(*end,color="red",marker="^")
 
-ax.plot(path[:,0],path[:,1],color="white")
+ax.set(xlabel="rAB",ylabel="x",title="LEPs + HO")
+
+ax.plot(path[:,0],path[:,1],color="white",label="Dijkstra (%.3f)" % dijkstraAction)
+ax.plot(ericPath[:,0],ericPath[:,1],color="lime",label="NEB (%.3f)" % ericAction)
+
+ax.legend()
+
+fig.savefig("Djikstra_vs_NEB.pdf",bbox_inches="tight")
