@@ -291,7 +291,7 @@ def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
     
     return allContours
 
-def round_points_to_grid(coordMeshTuple,ptsArr):
+def round_points_to_grid(coordMeshTuple,ptsArr,dimOrder="meshgrid"):
     """
     
 
@@ -307,6 +307,9 @@ def round_points_to_grid(coordMeshTuple,ptsArr):
     None.
 
     """
+    if dimOrder not in ["meshgrid","human"]:
+        raise ValueError("dimOrder "+str(dimOrder)+" not recognized")
+    
     nDims = len(coordMeshTuple)
     if nDims < 2: #TODO: probably useless, but could be nice for completion
         raise TypeError("Expected nDims >= 2; recieved "+str(nDims))
@@ -347,16 +350,19 @@ def round_points_to_grid(coordMeshTuple,ptsArr):
         # For D dimensions, the output is of shape (N2,N1,N3,...,ND), while the
         # way indices are generated expects a shape of (N1,...,ND). So, I swap
         # the first two indices by hand. See https://numpy.org/doc/stable/reference/generated/numpy.meshgrid.html
-        inds[[0,1]] = inds[[1,0]]
+        if dimOrder == "meshgrid":
+            inds[[0,1]] = inds[[1,0]]
         inds = tuple(inds)
         gridValsOut[ptIter] = np.array([c[inds] for c in coordMeshTuple])
         
-    #Expect columns of returned indices to be in order (N1,N2,N3,...,ND)
-    indsOut[:,[0,1]] = indsOut[:,[1,0]]
+    if dimOrder == "meshgrid":
+        #Expect columns of returned indices to be in order (N1,N2,N3,...,ND)
+        indsOut[:,[0,1]] = indsOut[:,[1,0]]
     
     return indsOut, gridValsOut
 
-def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False,eneg=0):
+def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False,eneg=0,\
+                           dimOrder="meshgrid"):
     """
     
 
@@ -388,7 +394,7 @@ def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False,eneg=0):
         gridIndsOnLevel = []
         for cont in contOnLevel:
             locGridInds, locGridVals = \
-                round_points_to_grid(coordMeshTuple,cont)
+                round_points_to_grid(coordMeshTuple,cont,dimOrder=dimOrder)
             
             gridIndsOnLevel.append(locGridInds)
             gridContOnLevel.append(locGridVals)
