@@ -75,6 +75,7 @@ class LepsPot():
         
         return vOut
 
+#%%Setting up the potential on a grid
 leps = LepsPot()
 
 rab = np.arange(0,3.5,0.05)
@@ -97,21 +98,59 @@ coordsAtMinima = [c[minInds] for c in coordMeshTuple]
 start = np.array([c[1] for c in coordsAtMinima])
 end = np.array([c[0] for c in coordsAtMinima])
 
-#Running Dijkstra's algorithm
+#%%Getting least action path (LAP) with Dijkstra's algorithm
 dijkstra = Dijkstra(start,coordMeshTuple,zz,allowedEndpoints=end)
 t0 = time.time()
 _, pathArrDict = dijkstra()
 t1 = time.time()
 path = pathArrDict[tuple(list(end))]
 dijkstraAction, _, _ = action(path,potential)
+
+#%%Getting LAP with NEB
+nPts = 30
+nDims = 2
+
+lap = LeastActionPath(potential,nPts,nDims,endpointSpringForce=False,\
+                      endpointHarmonicForce=False)
+
+initialPath = \
+    np.vstack([np.linspace(start[cIter],end[cIter],nPts) for cIter in range(nDims)]).T
+tStep = 0.5
+maxIters = 1000
+useLocal = True
+
+verletLAP = VerletMinimization(lap,initialPath)
+verletLAP.fire(tStep,maxIters,useLocal=useLocal,fireParams={"dtMin":0.05})
+verletLAPAction = np.array([action(path,potential)[0] for path in verletLAP.allPts])
+
+#%%Getting minimum energy path with NEB
+nPts = 30
+nDims = 2
+
+lap = MinimumEnergyPath(potential,nPts,nDims,endpointSpringForce=False,\
+                        endpointHarmonicForce=False)
+
+initialPath = \
+    np.vstack([np.linspace(start[cIter],end[cIter],nPts) for cIter in range(nDims)]).T
+tStep = 0.5
+maxIters = 1000
+useLocal = True
+
+verletMEP = VerletMinimization(lap,initialPath)
+verletMEP.fire(tStep,maxIters,useLocal=useLocal,fireParams={"dtMin":0.05})
+verletMEPAction = np.array([action(path,potential)[0] for path in verletMEP.allPts])
+
+#%%Printing action values
 print("Action along path: %.3f" % dijkstraAction)
-print("Elapsed time: %.3f seconds" % (t1 - t0))
+print("Action along Verlet LAP: %.3f" % verletLAPAction[-1])
+print("Action along Verlet MEP: %.3f" % verletMEPAction[-1])
 
-ericPath = np.array(pd.read_csv("Eric_HO_LEPS_LAP_path.txt"))
-ericAction, _, _ = action(ericPath,potential)
-print("Action along Eric's path: %.3f" % ericAction)
+#%%Writing paths to text files
+np.savetxt("Dijkstra_path.txt",path,delimiter=",")
+np.savetxt("LAP.txt",verletLAP.allPts[-1],delimiter=",")
+np.savetxt("MEP.txt",verletMEP.allPts[-1],delimiter=",")
 
-#Plotting results
+#%%Plotting results
 fig, ax = plt.subplots()
 cf = ax.contourf(*coordMeshTuple,zz,levels=np.arange(0,50,1))
 ax.contour(*coordMeshTuple,zz,levels=np.arange(0,6),colors=["black"])
@@ -125,8 +164,15 @@ ax.scatter(*end,color="red",marker="^")
 ax.set(xlabel="rAB",ylabel="x",title="LEPs + HO")
 
 ax.plot(path[:,0],path[:,1],color="white",label="Dijkstra (%.3f)" % dijkstraAction)
-ax.plot(ericPath[:,0],ericPath[:,1],color="lime",label="NEB (%.3f)" % ericAction)
+ax.plot(verletLAP.allPts[-1,:,0],verletLAP.allPts[-1,:,1],marker=".",color="lime",\
+        label="LAP (%.3f)" % verletLAPAction[-1])
+ax.plot(verletMEP.allPts[-1,:,0],verletMEP.allPts[-1,:,1],marker=".",color="cyan",\
+        label="MEP (%.3f)" % verletMEPAction[-1])
 
 ax.legend()
 
-fig.savefig("Djikstra_vs_NEB.pdf",bbox_inches="tight")
+fig.savefig("Leps_potential_example.pdf",bbox_inches="tight")
+
+fig, ax = plt.subplots()
+ax.plot(verletLAPAction)
+ax.plot(verletMEPAction)
