@@ -147,7 +147,7 @@ class GradientApproximations:
         
         return None
 
-def find_all_local_minimum(arr):
+def find_local_minimum(arr):
     """
     Returns the indices corresponding to the local minimum values. Taken 
     directly from https://stackoverflow.com/a/3986876
