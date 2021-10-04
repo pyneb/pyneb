@@ -147,7 +147,7 @@ class GradientApproximations:
         
         return None
 
-def find_local_minimum(arr):
+def find_all_local_minimum(arr):
     """
     Returns the indices corresponding to the local minimum values. Taken 
     directly from https://stackoverflow.com/a/3986876
@@ -163,6 +163,8 @@ def find_local_minimum(arr):
         D arrays of length k, for k minima found
 
     """
+    warnings.warn("find_local_minimum is deprecated;"\
+                  +" recommend SurfaceUtils.find_local_minimum",DeprecationWarning)
     neighborhood = morphology.generate_binary_structure(len(arr.shape),1)
     local_min = (filters.minimum_filter(arr, footprint=neighborhood,\
                                         mode="nearest")==arr)
@@ -177,6 +179,85 @@ def find_local_minimum(arr):
     minIndsOut = tuple([allMinInds[coordIter,:] for \
                         coordIter in range(allMinInds.shape[0])])
     return minIndsOut
+
+class SurfaceUtils:
+    """
+    Defined for namespace purposes
+    """
+    @staticmethod
+    def find_all_local_minimum(arr):
+        """
+        Returns the indices corresponding to the local minimum values. Taken 
+        directly from https://stackoverflow.com/a/3986876
+        
+        Parameters
+        ----------
+        arr : Numpy array
+            A D-dimensional array.
+    
+        Returns
+        -------
+        minIndsOut : Tuple of numpy arrays
+            D arrays of length k, for k minima found
+    
+        """
+        neighborhood = morphology.generate_binary_structure(len(arr.shape),1)
+        local_min = (filters.minimum_filter(arr, footprint=neighborhood,\
+                                            mode="nearest")==arr)
+        
+        background = (arr==0)
+        eroded_background = morphology.binary_erosion(background,\
+                                                      structure=neighborhood,\
+                                                      border_value=1)
+            
+        detected_minima = local_min ^ eroded_background
+        allMinInds = np.vstack(local_min.nonzero())
+        minIndsOut = tuple([allMinInds[coordIter,:] for \
+                            coordIter in range(allMinInds.shape[0])])
+        return minIndsOut
+    
+    def find_local_minimum(arr,searchPerc=[0.25,0.25],returnOnlySmallest=True):
+        """
+        Returns the indices corresponding to the local minimum values within a
+        desired part of the PES.
+        
+        Parameters
+        ----------
+        arr : Numpy array
+            A D-dimensional array.
+        searchPerc : List
+            Percentage of each coordinate that the minimum is allowed to be in
+    
+        Returns
+        -------
+        minIndsOut : Tuple of numpy arrays
+            D arrays of length k, for k minima found
+    
+        """
+        if len(searchPerc) != len(arr.shape):
+            raise TypeError("searchPerc and arr have unequal lengths ("+\
+                            str(len(searchPerc))+") and ("+str(len(arr.shape))+")")
+        
+        allMinInds = np.vstack(SurfaceUtils.find_all_local_minimum(arr))
+        
+        #Selecting minima within the desired range
+        minIndsMask = np.ones(allMinInds.shape[1],dtype=bool)
+        for minIter in range(allMinInds.shape[1]):
+            for coordIter in range(allMinInds.shape[0]):
+                if allMinInds[coordIter,minIter] > \
+                    int(searchPerc[coordIter] * arr.shape[coordIter]):
+                        minIndsMask[minIter] = False
+        
+        allMinInds = allMinInds[:,minIndsMask]
+        
+        minIndsOut = tuple([allMinInds[coordIter,:] for \
+                            coordIter in range(allMinInds.shape[0])])
+        
+        if returnOnlySmallest:
+            actualMinInd = np.argmin(arr[minIndsOut])
+            minIndsOut = tuple([m[actualMinInd] for m in minIndsOut])
+            
+        return minIndsOut
 
 def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
     nDims = len(coordMeshTuple)
