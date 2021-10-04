@@ -1442,6 +1442,7 @@ class Dijkstra:
         pathIndsDict = self._get_paths(neighborsVisitDict)
         
         pathArrDict = {}
+        distanceDict = {}
         for finalInds in pathIndsDict.keys():
             finalPt = np.array([c[finalInds] for c in self.coordMeshTuple])
             actualPath = np.zeros((0,self.nDims))
@@ -1451,11 +1452,15 @@ class Dijkstra:
                 actualPath = np.append(actualPath,toAppend,axis=0)
                 
             pathArrDict[tuple(finalPt.tolist())] = actualPath
+            distanceDict[tuple(finalPt.tolist())] = tentativeDistance.data[finalInds]
         
         if flipIndsOrder:
             warnings.warn("Indices are returned in order (N1,N2,...), which"\
                           +" may not be suitable for calling np.meshgrid.")
             raise TypeError("Have not implemented this option yet.")
                 
-        
-        return pathIndsDict, pathArrDict
+        return pathIndsDict, pathArrDict, distanceDict
+    
+    # def get_shortest_path(self,pathArrDict):
+    #     actionsDict = {path:self.target_func()}
+    #     return None
