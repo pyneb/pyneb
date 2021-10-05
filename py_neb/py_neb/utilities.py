@@ -9,6 +9,9 @@ from scipy.interpolate import interpnd, RectBivariateSpline
 from scipy.ndimage import filters, morphology #For minimum finding
 import warnings
 
+global fdTol
+fdTol = 10**(-8)
+
 class TargetFunctions:
     #No need to do any compatibility checking with gradients here.
     @staticmethod
@@ -134,6 +137,51 @@ class TargetFunctions:
     def something_for_mep():
         return None
 
+def potential_target_func(points, potential, auxFunc=None):
+    '''
+    TODO: remove?
+
+    Parameters
+    ----------
+    points : TYPE
+        DESCRIPTION.
+    potential : TYPE
+        DESCRIPTION.
+    auxFunc : TYPE, optional
+        DESCRIPTION. The default is None.
+
+    Raises
+    ------
+    ValueError
+        DESCRIPTION.
+
+    Returns
+    -------
+    energies : TYPE
+        DESCRIPTION.
+    auxEnergies : TYPE
+        DESCRIPTION.
+
+    '''
+    ## essentially a wrapper function for the potential
+    ### expected points to be a (nPts,nDim) matrix.
+    ### potential should be a function capable of returning (nPts,nDim) matrix
+    nPoints, nDim = points.shape
+    if not isinstance(potential,np.ndarray):
+        potArr = potential(points)
+    else:
+        potArr = potential
+    potShape = (nPoints,)
+    if potArr.shape != potShape:
+        raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
+                         "; required shape is "+str(potShape)+". See potential function.")    
+    if auxFunc is None:
+        auxEnergies = None
+    else:
+        auxEnergies = auxFunc(points)
+    energies  = potential(points)    
+    return energies, auxEnergies
+
 class GradientApproximations:
     #Should check compatibility here (at least have a list of compatible actions
     #to check in *other* methods)
@@ -142,6 +190,136 @@ class GradientApproximations:
     def method_1():
         
         return None
+    
+def discrete_sqr_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
+                        target_func):
+    """
+    
+    Performs discretized action gradient, needs numerical PES still
+ 
+    """
+    eps = fdTol#10**(-8)
+    
+    gradOfPes = np.zeros(path.shape)
+    gradOfAction = np.zeros(path.shape)
+    
+    nPts, nDims = path.shape
+    
+    actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
+
+    # build gradOfAction and gradOfPes (constant mass)
+    gradOfPes = midpoint_grad(potential,path,eps=eps)
+    for ptIter in range(1,nPts-1):
+
+        dnorm=np.linalg.norm(path[ptIter] - path[ptIter-1])
+        dnormP1=np.linalg.norm(path[ptIter+1] - path[ptIter])
+        dhat = (path[ptIter] - path[ptIter-1])/dnorm
+        dhatP1 = (path[ptIter+1] - path[ptIter])/dnormP1
+
+        mu=massOnPath[ptIter,0,0]#/hbarc**2
+
+        gradOfAction[ptIter] = 0.5*(\
+            (mu*potentialOnPath[ptIter] + mu*potentialOnPath[ptIter-1])*dhat-\
+            (mu*potentialOnPath[ptIter] + mu*potentialOnPath[ptIter+1])*dhatP1+\
+            mu*gradOfPes[ptIter]*(dnorm+dnormP1))
+    
+    return gradOfAction, gradOfPes
+
+def discrete_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
+                        target_func):
+    """
+    
+    Performs discretized action gradient, needs numerical PES still
+ 
+    """
+    eps = fdTol#10**(-8)
+    
+    gradOfPes = np.zeros(path.shape)
+    gradOfAction = np.zeros(path.shape)
+    
+    nPts, nDims = path.shape
+    
+    actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
+
+    # build gradOfAction and gradOfPes (constant mass)
+    gradOfPes = midpoint_grad(potential,path,eps=eps)
+    for ptIter in range(1,nPts-1):
+
+        dnorm=np.linalg.norm(path[ptIter] - path[ptIter-1])
+        dnormP1=np.linalg.norm(path[ptIter+1] - path[ptIter])
+        dhat = (path[ptIter] - path[ptIter-1])/dnorm
+        dhatP1 = (path[ptIter+1] - path[ptIter])/dnormP1
+
+        mu=massOnPath[ptIter,0,0]#/hbarc**2
+        gradOfAction[ptIter] = 0.5*(\
+            (np.sqrt(2*mu*potentialOnPath[ptIter]) + np.sqrt(2*mu*potentialOnPath[ptIter-1]))*dhat-\
+            (np.sqrt(2*mu*potentialOnPath[ptIter]) + np.sqrt(2*mu*potentialOnPath[ptIter+1]))*dhatP1+\
+            mu*gradOfPes[ptIter]*(dnorm+dnormP1) / np.sqrt(2*mu*potentialOnPath[ptIter]))
+    
+    return gradOfAction, gradOfPes
+
+def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
+                        target_func):
+    """
+    potential and mass are as allowed in "action" func; will let that do the error
+    checking (for now...?)
+    
+    Takes forwards finite difference approx of any action-like function
+    
+    Does not return the gradient of the mass function, as that's not used elsewhere
+    in the algorithm
+    
+    Maybe put this + action inside of LeastActionPath? not sure how we want to structure that part
+    """
+    eps = fdTol#10**(-8)
+    
+    gradOfPes = np.zeros(path.shape)
+    gradOfAction = np.zeros(path.shape)
+    
+    nPts, nDims = path.shape
+    
+    actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
+    
+    for ptIter in range(nPts):
+        for dimIter in range(nDims):
+            steps = path.copy()
+            steps[ptIter,dimIter] += eps
+            actionAtStep, potAtStep, massAtStep = target_func(steps,potential,mass)
+            
+            gradOfPes[ptIter,dimIter] = (potAtStep[ptIter] - potentialOnPath[ptIter])/eps
+            gradOfAction[ptIter,dimIter] = (actionAtStep - actionOnPath)/eps
+    
+    return gradOfAction, gradOfPes
+
+def potential_central_grad(points,potential,auxFunc=None):
+    '''
+    
+
+    Parameters
+    ----------
+    points : TYPE
+        DESCRIPTION.
+    potential : TYPE
+        DESCRIPTION.
+    auxFunc : TYPE, optional
+        DESCRIPTION. The default is None.
+
+    Returns
+    -------
+    gradPES : TYPE
+        DESCRIPTION.
+    gradAux : TYPE
+        DESCRIPTION.
+
+    '''
+    h = 10**(-8)
+    ## check if it is a scalar is done inside midpoint_grad
+    gradPES = midpoint_grad(potential,points,eps=h)
+    if auxFunc is None:
+        gradAux = None
+    else: 
+        gradAux = midpoint_grad(auxFunc,points,eps=h)
+    return gradPES, gradAux
 
 def find_local_minimum(arr):
     """
@@ -806,3 +984,71 @@ class NDInterpWithBoundary:
         #Yes, I mean to take an additional square root here
         result = valAtNearest*np.exp(np.sqrt(dist))
         return result
+    
+def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
+    """
+    Formats a collection of functions for use in computing the inertia tensor.
+    Assumes the inertia tensor is symmetric.
+    
+    Parameters
+    ----------
+    dictOfFuncs : dict
+        Contains functions for each component of the inertia tensor
+        
+    uniqueKeys : list
+        Labels the unique coordinates of the inertia tensor, in the order they
+        are used in the inertia. For instance, if one uses (q20, q30) as the 
+        coordinates in this order, one should feed in ['20','30'], and the
+        inertia will be reshaped as
+        
+                    [[M_{20,20}, M_{20,30}]
+                     [M_{30,20}, M_{30,30}]].
+                    
+        Contrast this with feeding in ['30','20'], in which the inertia will
+        be reshaped as
+        
+                    [[M_{30,30}, M_{30,20}]
+                     [M_{20,30}, M_{20,20}]].
+
+    Returns
+    -------
+    func_out : function
+        The inertia tensor. Can be called as func_out(coords).
+
+    """
+    nDims = len(uniqueKeys)
+    pairedKeys = np.array([c1+c2 for c1 in uniqueKeys for c2 in uniqueKeys]).reshape(2*(nDims,))
+    dictKeys = np.zeros(pairedKeys.shape,dtype=object)
+    
+    for (idx, key) in np.ndenumerate(pairedKeys):
+        for dictKey in dictOfFuncs.keys():
+            if key in dictKey:
+                dictKeys[idx] = dictKey
+                
+    nFilledKeys = np.count_nonzero(dictKeys)
+    nExpectedFilledKeys = nDims*(nDims+1)/2
+    if nFilledKeys != nExpectedFilledKeys:
+        raise ValueError("Expected "+str(nExpectedFilledKeys)+" but found "+\
+                         str(nFilledKeys)+" instead. dictKeys = "+str(dictKeys))
+    
+    def func_out(coords):
+        if len(coords.shape) == 1:
+            coords = coords.reshape((1,nDims))
+        elif len(coords.shape) > 2:
+            raise ValueError("coords.shape = "+str(coords.shape)+\
+                             "; coords.shape must have length <= 2")
+        
+        nPoints = coords.shape[0]
+        outVals = np.zeros((nPoints,)+2*(nDims,))
+        
+        #Mass array is always 2D
+        for iIter in range(nDims):
+            for jIter in np.arange(iIter,nDims):
+                key = dictKeys[iIter,jIter]
+                fEvals = dictOfFuncs[key](coords)
+                
+                outVals[:,iIter,jIter] = fEvals
+                outVals[:,jIter,iIter] = fEvals
+                
+        return outVals
+    return func_out
