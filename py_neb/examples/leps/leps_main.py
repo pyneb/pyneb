@@ -101,10 +101,10 @@ end = np.array([c[0] for c in coordsAtMinima])
 #%%Getting least action path (LAP) with Dijkstra's algorithm
 dijkstra = Dijkstra(start,coordMeshTuple,zz,allowedEndpoints=end)
 t0 = time.time()
-_, pathArrDict = dijkstra()
+_, pathArrDict, actionDict = dijkstra()
 t1 = time.time()
 path = pathArrDict[tuple(list(end))]
-dijkstraAction, _, _ = action(path,potential)
+dijkstraAction = actionDict[tuple(list(end))]
 
 #%%Getting LAP with NEB
 nPts = 30
