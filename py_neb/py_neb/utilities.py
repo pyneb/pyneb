@@ -121,10 +121,6 @@ class TargetFunctions:
         if potArr.shape != potShape:
             raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
                              "; required shape is "+str(potShape)+". See action function.")
-        
-        for ptIter in range(nPoints):
-            if potArr[ptIter] < 0:
-                potArr[ptIter] = 0.01
             
         #Actual calculation
         actOut = 0
