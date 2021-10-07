@@ -134,166 +134,160 @@ class TargetFunctions:
         return actOut, potArr, massArr
     
     @staticmethod
-    def something_for_mep():
-        return None
+    def mep_default(points,potential,auxFunc=None):
+        '''
+        Essentially a wrapper function for the potential. Expected points to be 
+        a (nPts,nDim) matrix. Potential should be a function capable of returning 
+        a (nPts,nDim) matrix.
 
-def potential_target_func(points, potential, auxFunc=None):
-    '''
-    TODO: remove?
+        Parameters
+        ----------
+        points : TYPE
+            DESCRIPTION.
+        potential : TYPE
+            DESCRIPTION.
+        auxFunc : TYPE, optional
+            DESCRIPTION. The default is None.
 
-    Parameters
-    ----------
-    points : TYPE
-        DESCRIPTION.
-    potential : TYPE
-        DESCRIPTION.
-    auxFunc : TYPE, optional
-        DESCRIPTION. The default is None.
+        Raises
+        ------
+        ValueError
+            DESCRIPTION.
 
-    Raises
-    ------
-    ValueError
-        DESCRIPTION.
+        Returns
+        -------
+        energies : TYPE
+            DESCRIPTION.
+        auxEnergies : TYPE
+            DESCRIPTION.
 
-    Returns
-    -------
-    energies : TYPE
-        DESCRIPTION.
-    auxEnergies : TYPE
-        DESCRIPTION.
-
-    '''
-    ## essentially a wrapper function for the potential
-    ### expected points to be a (nPts,nDim) matrix.
-    ### potential should be a function capable of returning (nPts,nDim) matrix
-    nPoints, nDim = points.shape
-    if not isinstance(potential,np.ndarray):
-        potArr = potential(points)
-    else:
-        potArr = potential
-    potShape = (nPoints,)
-    if potArr.shape != potShape:
-        raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
-                         "; required shape is "+str(potShape)+". See potential function.")    
-    if auxFunc is None:
-        auxEnergies = None
-    else:
-        auxEnergies = auxFunc(points)
-    energies  = potential(points)    
-    return energies, auxEnergies
+        '''
+        
+        nPoints, nDim = points.shape
+        if not isinstance(potential,np.ndarray):
+            potArr = potential(points)
+        else:
+            potArr = potential
+        potShape = (nPoints,)
+        if potArr.shape != potShape:
+            raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
+                             "; required shape is "+str(potShape)+". See potential function.")    
+        if auxFunc is None:
+            auxEnergies = None
+        else:
+            auxEnergies = auxFunc(points)
+        
+        energies  = potential(points)    
+        
+        return energies, auxEnergies
 
 class GradientApproximations:
     #Should check compatibility here (at least have a list of compatible actions
     #to check in *other* methods)
     #Fill out as appropriate
-    @staticmethod
-    def method_1():
+    def discrete_sqr_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
+                                 target_func):
+        """
         
-        return None
-    
-def discrete_sqr_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
-                        target_func):
-    """
-    
-    Performs discretized action gradient, needs numerical PES still
- 
-    """
-    eps = fdTol#10**(-8)
-    
-    gradOfPes = np.zeros(path.shape)
-    gradOfAction = np.zeros(path.shape)
-    
-    nPts, nDims = path.shape
-    
-    actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
+        Performs discretized action gradient, needs numerical PES still
+     
+        """
+        eps = fdTol
+        
+        gradOfPes = np.zeros(path.shape)
+        gradOfAction = np.zeros(path.shape)
+        
+        nPts, nDims = path.shape
+        
+        actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
 
-    # build gradOfAction and gradOfPes (constant mass)
-    gradOfPes = midpoint_grad(potential,path,eps=eps)
-    for ptIter in range(1,nPts-1):
+        # build gradOfAction and gradOfPes (constant mass)
+        gradOfPes = midpoint_grad(potential,path,eps=eps)
+        for ptIter in range(1,nPts-1):
 
-        dnorm=np.linalg.norm(path[ptIter] - path[ptIter-1])
-        dnormP1=np.linalg.norm(path[ptIter+1] - path[ptIter])
-        dhat = (path[ptIter] - path[ptIter-1])/dnorm
-        dhatP1 = (path[ptIter+1] - path[ptIter])/dnormP1
+            dnorm=np.linalg.norm(path[ptIter] - path[ptIter-1])
+            dnormP1=np.linalg.norm(path[ptIter+1] - path[ptIter])
+            dhat = (path[ptIter] - path[ptIter-1])/dnorm
+            dhatP1 = (path[ptIter+1] - path[ptIter])/dnormP1
 
-        mu=massOnPath[ptIter,0,0]#/hbarc**2
+            mu=massOnPath[ptIter,0,0]
 
-        gradOfAction[ptIter] = 0.5*(\
-            (mu*potentialOnPath[ptIter] + mu*potentialOnPath[ptIter-1])*dhat-\
-            (mu*potentialOnPath[ptIter] + mu*potentialOnPath[ptIter+1])*dhatP1+\
-            mu*gradOfPes[ptIter]*(dnorm+dnormP1))
+            gradOfAction[ptIter] = 0.5*(\
+                (mu*potentialOnPath[ptIter] + mu*potentialOnPath[ptIter-1])*dhat-\
+                (mu*potentialOnPath[ptIter] + mu*potentialOnPath[ptIter+1])*dhatP1+\
+                mu*gradOfPes[ptIter]*(dnorm+dnormP1))
+        
+        return gradOfAction, gradOfPes
     
-    return gradOfAction, gradOfPes
+    def discrete_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
+                            target_func):
+        """
+        
+        Performs discretized action gradient, needs numerical PES still
+     
+        """
+        eps = fdTol
+        
+        gradOfPes = np.zeros(path.shape)
+        gradOfAction = np.zeros(path.shape)
+        
+        nPts, nDims = path.shape
+        
+        actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
 
-def discrete_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
-                        target_func):
-    """
-    
-    Performs discretized action gradient, needs numerical PES still
- 
-    """
-    eps = fdTol#10**(-8)
-    
-    gradOfPes = np.zeros(path.shape)
-    gradOfAction = np.zeros(path.shape)
-    
-    nPts, nDims = path.shape
-    
-    actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
+        # build gradOfAction and gradOfPes (constant mass)
+        gradOfPes = midpoint_grad(potential,path,eps=eps)
+        for ptIter in range(1,nPts-1):
 
-    # build gradOfAction and gradOfPes (constant mass)
-    gradOfPes = midpoint_grad(potential,path,eps=eps)
-    for ptIter in range(1,nPts-1):
+            dnorm=np.linalg.norm(path[ptIter] - path[ptIter-1])
+            dnormP1=np.linalg.norm(path[ptIter+1] - path[ptIter])
+            dhat = (path[ptIter] - path[ptIter-1])/dnorm
+            dhatP1 = (path[ptIter+1] - path[ptIter])/dnormP1
 
-        dnorm=np.linalg.norm(path[ptIter] - path[ptIter-1])
-        dnormP1=np.linalg.norm(path[ptIter+1] - path[ptIter])
-        dhat = (path[ptIter] - path[ptIter-1])/dnorm
-        dhatP1 = (path[ptIter+1] - path[ptIter])/dnormP1
-
-        mu=massOnPath[ptIter,0,0]#/hbarc**2
-        gradOfAction[ptIter] = 0.5*(\
-            (np.sqrt(2*mu*potentialOnPath[ptIter]) + np.sqrt(2*mu*potentialOnPath[ptIter-1]))*dhat-\
-            (np.sqrt(2*mu*potentialOnPath[ptIter]) + np.sqrt(2*mu*potentialOnPath[ptIter+1]))*dhatP1+\
-            mu*gradOfPes[ptIter]*(dnorm+dnormP1) / np.sqrt(2*mu*potentialOnPath[ptIter]))
+            mu=massOnPath[ptIter,0,0]
+            gradOfAction[ptIter] = 0.5*(\
+                (np.sqrt(2*mu*potentialOnPath[ptIter]) + np.sqrt(2*mu*potentialOnPath[ptIter-1]))*dhat-\
+                (np.sqrt(2*mu*potentialOnPath[ptIter]) + np.sqrt(2*mu*potentialOnPath[ptIter+1]))*dhatP1+\
+                mu*gradOfPes[ptIter]*(dnorm+dnormP1) / np.sqrt(2*mu*potentialOnPath[ptIter]))
+        
+        return gradOfAction, gradOfPes
     
-    return gradOfAction, gradOfPes
-
-def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
-                        target_func):
-    """
-    potential and mass are as allowed in "action" func; will let that do the error
-    checking (for now...?)
-    
-    Takes forwards finite difference approx of any action-like function
-    
-    Does not return the gradient of the mass function, as that's not used elsewhere
-    in the algorithm
-    
-    Maybe put this + action inside of LeastActionPath? not sure how we want to structure that part
-    """
-    eps = fdTol#10**(-8)
-    
-    gradOfPes = np.zeros(path.shape)
-    gradOfAction = np.zeros(path.shape)
-    
-    nPts, nDims = path.shape
-    
-    actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
-    
-    for ptIter in range(nPts):
-        for dimIter in range(nDims):
-            steps = path.copy()
-            steps[ptIter,dimIter] += eps
-            actionAtStep, potAtStep, massAtStep = target_func(steps,potential,mass)
-            
-            gradOfPes[ptIter,dimIter] = (potAtStep[ptIter] - potentialOnPath[ptIter])/eps
-            gradOfAction[ptIter,dimIter] = (actionAtStep - actionOnPath)/eps
-    
-    return gradOfAction, gradOfPes
+    def forward_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
+                            target_func):
+        """
+        potential and mass are as allowed in "action" func; will let that do the error
+        checking (for now...?)
+        
+        Takes forwards finite difference approx of any action-like function
+        
+        Does not return the gradient of the mass function, as that's not used elsewhere
+        in the algorithm
+        
+        Maybe put this + action inside of LeastActionPath? not sure how we want to structure that part
+        """
+        eps = fdTol
+        
+        gradOfPes = np.zeros(path.shape)
+        gradOfAction = np.zeros(path.shape)
+        
+        nPts, nDims = path.shape
+        
+        actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
+        
+        for ptIter in range(nPts):
+            for dimIter in range(nDims):
+                steps = path.copy()
+                steps[ptIter,dimIter] += eps
+                actionAtStep, potAtStep, massAtStep = target_func(steps,potential,mass)
+                
+                gradOfPes[ptIter,dimIter] = (potAtStep[ptIter] - potentialOnPath[ptIter])/eps
+                gradOfAction[ptIter,dimIter] = (actionAtStep - actionOnPath)/eps
+        
+        return gradOfAction, gradOfPes
 
 def potential_central_grad(points,potential,auxFunc=None):
     '''
-    
+    TODO: is this actually... used anywhere?
 
     Parameters
     ----------
@@ -321,38 +315,35 @@ def potential_central_grad(points,potential,auxFunc=None):
         gradAux = midpoint_grad(auxFunc,points,eps=h)
     return gradPES, gradAux
 
-def find_local_minimum(arr):
+def midpoint_grad(func,points,eps=10**(-8)):
     """
-    Returns the indices corresponding to the local minimum values. Taken 
-    directly from https://stackoverflow.com/a/3986876
+    TODO: allow for arbitrary shaped outputs, for use with inertia tensor
+    TODO: maybe only have one gradient approx ever
     
-    Parameters
-    ----------
-    arr : Numpy array
-        A D-dimensional array.
-
-    Returns
-    -------
-    minIndsOut : Tuple of numpy arrays
-        D arrays of length k, for k minima found
-
+    Midpoint finite difference. Probably best if not used with actual DFT calculations,
+        vs a forwards/reverse finite difference
+    Assumes func only depends on a single point (vs the action, which depends on
+         all of the points)
     """
-    warnings.warn("find_local_minimum is deprecated;"\
-                  +" recommend SurfaceUtils.find_local_minimum",DeprecationWarning)
-    neighborhood = morphology.generate_binary_structure(len(arr.shape),1)
-    local_min = (filters.minimum_filter(arr, footprint=neighborhood,\
-                                        mode="nearest")==arr)
+    if len(points.shape) == 1:
+        points = points.reshape((1,-1))
+    nPoints, nDims = points.shape
     
-    background = (arr==0)
-    eroded_background = morphology.binary_erosion(background,\
-                                                  structure=neighborhood,\
-                                                  border_value=1)
+    gradOut = np.zeros((nPoints,nDims))
+    for dimIter in range(nDims):
+        step = np.zeros(nDims)
+        step[dimIter] = 1
         
-    detected_minima = local_min ^ eroded_background
-    allMinInds = np.vstack(local_min.nonzero())
-    minIndsOut = tuple([allMinInds[coordIter,:] for \
-                        coordIter in range(allMinInds.shape[0])])
-    return minIndsOut
+        forwardStep = points + eps/2*step
+        backwardStep = points - eps/2*step
+        
+        forwardEval = func(forwardStep)
+        backwardEval = func(backwardStep)
+        
+        gradOut[:,dimIter] = (forwardEval-backwardEval)/eps
+    
+    return gradOut
+
 
 class SurfaceUtils:
     """
@@ -432,198 +423,166 @@ class SurfaceUtils:
             minIndsOut = tuple([m[actualMinInd] for m in minIndsOut])
             
         return minIndsOut
-
-def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
-    nDims = len(coordMeshTuple)
     
-    fig, ax = plt.subplots()
-    
-    if nDims == 1:
-        sys.exit("Err: weird edge case I haven't handled. Why are you looking at D=1?")
-    elif nDims == 2:
-        allContours = np.zeros(1,dtype=object)
-        if show:
-            cf = ax.contourf(*coordMeshTuple,zz,cmap="Spectral_r")
-            plt.colorbar(cf,ax=ax)
-        #Select allsegs[0] b/c I'm only finding one level; ccp.allsegs is a
-            #list of lists, whose first index is over the levels requested
-        allContours[0] = ax.contour(*coordMeshTuple,zz,levels=[eneg]).allsegs[0]
-    else:
-        allContours = np.zeros(zz.shape[2:],dtype=object)
-        possibleInds = np.indices(zz.shape[2:]).reshape((nDims-2,-1)).T
-        for ind in possibleInds:
-            meshInds = 2*(slice(None),) + tuple(ind)
-            localMesh = (coordMeshTuple[0][meshInds],coordMeshTuple[1][meshInds])
-            # print(localMesh)
-            allContours[tuple(ind)] = \
-                ax.contour(*localMesh,zz[meshInds],levels=[eneg]).allsegs[0]
-        if show:
-            plt.show(fig)
-            
-    if not show:
-        plt.close(fig)
-    
-    return allContours
-
-def round_points_to_grid(coordMeshTuple,ptsArr,dimOrder="meshgrid"):
-    """
-    
-
-    Parameters
-    ----------
-    coordMeshTuple : TYPE
-        DESCRIPTION.
-    ptsArr : TYPE
-        DESCRIPTION.
-
-    Returns
-    -------
-    None.
-
-    """
-    if dimOrder not in ["meshgrid","human"]:
-        raise ValueError("dimOrder "+str(dimOrder)+" not recognized")
-    
-    nDims = len(coordMeshTuple)
-    if nDims < 2: #TODO: probably useless, but could be nice for completion
-        raise TypeError("Expected nDims >= 2; recieved "+str(nDims))
+    @staticmethod
+    def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
+        nDims = len(coordMeshTuple)
         
-    uniqueCoords = [np.unique(c) for c in coordMeshTuple]
-    
-    if ptsArr.shape == (nDims,):
-        ptsArr = ptsArr.reshape((1,nDims))
-    
-    if ptsArr.shape[1] != nDims:
-        raise ValueError("ptsArr.shape = "+str(ptsArr.shape)+\
-                         "; second dimension should be nDims, "+str(nDims))
+        fig, ax = plt.subplots()
         
-    nPts = ptsArr.shape[0]
-    
-    indsOut = np.zeros((nPts,nDims),dtype=int)
-    
-    #In case some points are on the grid, which np.searchsorted doesn't seem to
-    #handle the way I'd like
-    for dimIter in range(nDims):
-        for (ptIter, pt) in enumerate(ptsArr[:,dimIter]):
-            #Nonsense with floating-point precision makes me use
-            #np.isclose rather than a == b
-            tentativeInd = np.argwhere(np.isclose(uniqueCoords[dimIter],pt))
-            if tentativeInd.shape == (0,1): #Nothing found on grid
-                indsOut[ptIter,dimIter] = \
-                    np.searchsorted(uniqueCoords[dimIter],pt) - 1
-            else: #Is on grid
-                indsOut[ptIter,dimIter] = tentativeInd
-    
-    #I subtract 1 in some cases
-    indsOut[indsOut<0] = 0
-    
-    gridValsOut = np.zeros((nPts,nDims))
-    for ptIter in range(nPts):
-        inds = indsOut[ptIter]
-        # Some indexing is done to deal with the default shape of np.meshgrid.
-        # For D dimensions, the output is of shape (N2,N1,N3,...,ND), while the
-        # way indices are generated expects a shape of (N1,...,ND). So, I swap
-        # the first two indices by hand. See https://numpy.org/doc/stable/reference/generated/numpy.meshgrid.html
-        if dimOrder == "meshgrid":
-            inds[[0,1]] = inds[[1,0]]
-        inds = tuple(inds)
-        gridValsOut[ptIter] = np.array([c[inds] for c in coordMeshTuple])
-        
-    if dimOrder == "meshgrid":
-        #Expect columns of returned indices to be in order (N1,N2,N3,...,ND)
-        indsOut[:,[0,1]] = indsOut[:,[1,0]]
-    
-    return indsOut, gridValsOut
-
-def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False,eneg=0,\
-                           dimOrder="meshgrid"):
-    """
-    
-
-    Parameters
-    ----------
-    returnAllPoints : TYPE, optional
-        DESCRIPTION. The default is False.
-
-    Returns
-    -------
-    allowedEndpoints : TYPE
-        DESCRIPTION.
-
-    """
-    if returnAllPoints:
-        warnings.warn("find_endpoints_on_grid is finding all "\
-                      +"contours; this may include starting point")
-    
-    nDims = len(coordMeshTuple)
-    uniqueCoords = [np.unique(c) for c in coordMeshTuple]
-    
-    allContours = find_approximate_contours(coordMeshTuple,potArr,eneg=eneg)
-    
-    allowedEndpoints = np.zeros((0,nDims))
-    allowedIndices = np.zeros((0,nDims),dtype=int)
-    
-    for contOnLevel in allContours:
-        gridContOnLevel = []
-        gridIndsOnLevel = []
-        for cont in contOnLevel:
-            locGridInds, locGridVals = \
-                round_points_to_grid(coordMeshTuple,cont,dimOrder=dimOrder)
-            
-            gridIndsOnLevel.append(locGridInds)
-            gridContOnLevel.append(locGridVals)
-        
-        if returnAllPoints:
-            for (cIter,c) in enumerate(gridContOnLevel):
-                allowedEndpoints = np.concatenate((allowedEndpoints,c),axis=0)
-                allowedIndices = np.concatenate((allowedIndices,gridIndsOnLevel[cIter]),axis=0)
+        if nDims == 1:
+            sys.exit("Err: weird edge case I haven't handled. Why are you looking at D=1?")
+        elif nDims == 2:
+            allContours = np.zeros(1,dtype=object)
+            if show:
+                cf = ax.contourf(*coordMeshTuple,zz,cmap="Spectral_r")
+                plt.colorbar(cf,ax=ax)
+            #Select allsegs[0] b/c I'm only finding one level; ccp.allsegs is a
+                #list of lists, whose first index is over the levels requested
+            allContours[0] = ax.contour(*coordMeshTuple,zz,levels=[eneg]).allsegs[0]
         else:
-            lenOfContours = np.array([c.shape[0] for c in gridContOnLevel])
-            outerIndex = np.argmax(lenOfContours)
-            allowedEndpoints = \
-                np.concatenate((allowedEndpoints,gridContOnLevel[outerIndex]),axis=0)
-            allowedIndices = \
-                np.concatenate((allowedIndices,gridIndsOnLevel[outerIndex]),axis=0)
+            allContours = np.zeros(zz.shape[2:],dtype=object)
+            possibleInds = np.indices(zz.shape[2:]).reshape((nDims-2,-1)).T
+            for ind in possibleInds:
+                meshInds = 2*(slice(None),) + tuple(ind)
+                localMesh = (coordMeshTuple[0][meshInds],coordMeshTuple[1][meshInds])
+                # print(localMesh)
+                allContours[tuple(ind)] = \
+                    ax.contour(*localMesh,zz[meshInds],levels=[eneg]).allsegs[0]
+            if show:
+                plt.show(fig)
+                
+        if not show:
+            plt.close(fig)
         
-    allowedEndpoints = np.unique(allowedEndpoints,axis=0)
-    allowedIndices = np.unique(allowedIndices,axis=0)
+        return allContours
     
-    return allowedEndpoints, allowedIndices
+    @staticmethod
+    def round_points_to_grid(coordMeshTuple,ptsArr,dimOrder="meshgrid"):
+        """
+        
 
-def midpoint_grad(func,points,eps=10**(-8)):
-    """
-    TODO: allow for arbitrary shaped outputs, for use with inertia tensor
-    TODO: maybe only have one gradient approx ever
-    
-    Midpoint finite difference. Probably best if not used with actual DFT calculations,
-        vs a forwards/reverse finite difference
-    Assumes func only depends on a single point (vs the action, which depends on
-         all of the points)
-    """
-    if len(points.shape) == 1:
-        points = points.reshape((1,-1))
-    nPoints, nDims = points.shape
-    
-    gradOut = np.zeros((nPoints,nDims))
-    for dimIter in range(nDims):
-        step = np.zeros(nDims)
-        step[dimIter] = 1
-        
-        forwardStep = points + eps/2*step
-        backwardStep = points - eps/2*step
-        
-        forwardEval = func(forwardStep)
-        backwardEval = func(backwardStep)
-        
-        gradOut[:,dimIter] = (forwardEval-backwardEval)/eps
-    
-    return gradOut
+        Parameters
+        ----------
+        coordMeshTuple : TYPE
+            DESCRIPTION.
+        ptsArr : TYPE
+            DESCRIPTION.
 
-def auxiliary_potential(func_in,shift=10**(-4)):
-    warnings.warn("auxiliary_potential is deprecated, use shift_func",DeprecationWarning)
-    def func_out(coords):
-        return func_in(coords) + shift
-    return func_out
+        Returns
+        -------
+        None.
+
+        """
+        if dimOrder not in ["meshgrid","human"]:
+            raise ValueError("dimOrder "+str(dimOrder)+" not recognized")
+        
+        nDims = len(coordMeshTuple)
+        if nDims < 2: #TODO: probably useless, but could be nice for completion
+            raise TypeError("Expected nDims >= 2; recieved "+str(nDims))
+            
+        uniqueCoords = [np.unique(c) for c in coordMeshTuple]
+        
+        if ptsArr.shape == (nDims,):
+            ptsArr = ptsArr.reshape((1,nDims))
+        
+        if ptsArr.shape[1] != nDims:
+            raise ValueError("ptsArr.shape = "+str(ptsArr.shape)+\
+                             "; second dimension should be nDims, "+str(nDims))
+            
+        nPts = ptsArr.shape[0]
+        
+        indsOut = np.zeros((nPts,nDims),dtype=int)
+        
+        #In case some points are on the grid, which np.searchsorted doesn't seem to
+        #handle the way I'd like
+        for dimIter in range(nDims):
+            for (ptIter, pt) in enumerate(ptsArr[:,dimIter]):
+                #Nonsense with floating-point precision makes me use
+                #np.isclose rather than a == b
+                tentativeInd = np.argwhere(np.isclose(uniqueCoords[dimIter],pt))
+                if tentativeInd.shape == (0,1): #Nothing found on grid
+                    indsOut[ptIter,dimIter] = \
+                        np.searchsorted(uniqueCoords[dimIter],pt) - 1
+                else: #Is on grid
+                    indsOut[ptIter,dimIter] = tentativeInd
+        
+        #I subtract 1 in some cases
+        indsOut[indsOut<0] = 0
+        
+        gridValsOut = np.zeros((nPts,nDims))
+        for ptIter in range(nPts):
+            inds = indsOut[ptIter]
+            # Some indexing is done to deal with the default shape of np.meshgrid.
+            # For D dimensions, the output is of shape (N2,N1,N3,...,ND), while the
+            # way indices are generated expects a shape of (N1,...,ND). So, I swap
+            # the first two indices by hand. See https://numpy.org/doc/stable/reference/generated/numpy.meshgrid.html
+            if dimOrder == "meshgrid":
+                inds[[0,1]] = inds[[1,0]]
+            inds = tuple(inds)
+            gridValsOut[ptIter] = np.array([c[inds] for c in coordMeshTuple])
+            
+        if dimOrder == "meshgrid":
+            #Expect columns of returned indices to be in order (N1,N2,N3,...,ND)
+            indsOut[:,[0,1]] = indsOut[:,[1,0]]
+        
+        return indsOut, gridValsOut
+    
+    @staticmethod
+    def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False,eneg=0,\
+                               dimOrder="meshgrid"):
+        """
+        
+
+        Parameters
+        ----------
+        returnAllPoints : TYPE, optional
+            DESCRIPTION. The default is False.
+
+        Returns
+        -------
+        allowedEndpoints : TYPE
+            DESCRIPTION.
+
+        """
+        if returnAllPoints:
+            warnings.warn("find_endpoints_on_grid is finding all "\
+                          +"contours; this may include starting point")
+        
+        nDims = len(coordMeshTuple)
+        uniqueCoords = [np.unique(c) for c in coordMeshTuple]
+        
+        allContours = find_approximate_contours(coordMeshTuple,potArr,eneg=eneg)
+        
+        allowedEndpoints = np.zeros((0,nDims))
+        allowedIndices = np.zeros((0,nDims),dtype=int)
+        
+        for contOnLevel in allContours:
+            gridContOnLevel = []
+            gridIndsOnLevel = []
+            for cont in contOnLevel:
+                locGridInds, locGridVals = \
+                    round_points_to_grid(coordMeshTuple,cont,dimOrder=dimOrder)
+                
+                gridIndsOnLevel.append(locGridInds)
+                gridContOnLevel.append(locGridVals)
+            
+            if returnAllPoints:
+                for (cIter,c) in enumerate(gridContOnLevel):
+                    allowedEndpoints = np.concatenate((allowedEndpoints,c),axis=0)
+                    allowedIndices = np.concatenate((allowedIndices,gridIndsOnLevel[cIter]),axis=0)
+            else:
+                lenOfContours = np.array([c.shape[0] for c in gridContOnLevel])
+                outerIndex = np.argmax(lenOfContours)
+                allowedEndpoints = \
+                    np.concatenate((allowedEndpoints,gridContOnLevel[outerIndex]),axis=0)
+                allowedIndices = \
+                    np.concatenate((allowedIndices,gridIndsOnLevel[outerIndex]),axis=0)
+            
+        allowedEndpoints = np.unique(allowedEndpoints,axis=0)
+        allowedIndices = np.unique(allowedIndices,axis=0)
+        
+        return allowedEndpoints, allowedIndices
 
 def shift_func(func_in,shift=10**(-4)):
     """
@@ -644,144 +603,6 @@ def shift_func(func_in,shift=10**(-4)):
     def func_out(coords):
         return func_in(coords) - shift
     return func_out
-
-def action(path,potential,masses=None):
-    """
-    Allowed masses:
-        -Constant mass; set masses = None
-        -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
-        -A function; set masses to a function
-    Allowed potential:
-        -Array of values; set potential to a numpy array of shape (nPoints,)
-        -A function; set masses to a function
-        
-    Computes action as
-        $ S = \sum_{i=1}^{nPoints} \sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
-    """
-    warnings.warn("action is deprecated, use TargetFunctions.action",DeprecationWarning)
-    
-    nPoints, nDims = path.shape
-    
-    if masses is None:
-        massArr = np.full((nPoints,nDims,nDims),np.identity(nDims))
-    elif not isinstance(masses,np.ndarray):
-        massArr = masses(path)
-    else:
-        massArr = masses
-        
-    massDim = (nPoints, nDims, nDims)
-    if massArr.shape != massDim:
-        raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
-                         "; required shape is "+str(massDim)+". See action function.")
-    
-    if not isinstance(potential,np.ndarray):
-        potArr = potential(path)
-    else:
-        potArr = potential
-    
-    potShape = (nPoints,)
-    if potArr.shape != potShape:
-        raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
-                         "; required shape is "+str(potShape)+". See action function.")
-    
-    for ptIter in range(nPoints):
-        if potArr[ptIter] < 0:
-            potArr[ptIter] = 0.01
-    
-    # if np.any(potArr[1:-2]<0):
-    #     print("Path: ")
-    #     print(path)
-    #     print("Potential: ")
-    #     print(potArr)
-    #     raise ValueError("Encountered energy E < 0; stopping.")
-        
-    #Actual calculation
-    actOut = 0
-    for ptIter in range(1,nPoints):
-        coordDiff = path[ptIter] - path[ptIter - 1]
-        dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
-        actOut += np.sqrt(2*potArr[ptIter]*dist)
-    
-    return actOut, potArr, massArr
-def action_sqr(path,potential,masses=None):
-    '''
-    Parameters
-    ----------
-    path : ndarray
-        np.ndarray of shape (Nimgs,nDim) containing postions of all images.
-    potential : object or ndarray
-        Allowed potential:
-        -Array of values; set potential to a numpy array of shape (nPoints,)
-        -A function; set masses to a function
-    masses : object or ndarray, Optional
-        Allowed masses:
-        -Constant mass; set masses = None
-        -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
-        -A function; set masses to a function
-
-    Raises
-    ------
-    ValueError
-        DESCRIPTION.
-
-    Returns
-    -------
-    actOut : float
-        
-    potArr : ndarray
-        ndarray of shape (Nimgs,1) containing the PES values for each image in path
-    massArr : ndarray
-        ndarray of shape (Nimgs,nDim,nDim) containing the mass tensors for each image in path.
-
-    '''
-    """    
-    Computes action as
-        $ S = \sum_{i=1}^{nPoints} \ E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b $
-    """
-    warnings.warn("action_sqr is deprecated, use TargetFunctions.action_squared",DeprecationWarning)
-    
-    nPoints, nDims = path.shape
-    
-    if masses is None:
-        massArr = np.full((nPoints,nDims,nDims),np.identity(nDims))
-    elif not isinstance(masses,np.ndarray):
-        massArr = masses(path)
-    else:
-        massArr = masses
-        
-    massDim = (nPoints, nDims, nDims)
-    if massArr.shape != massDim:
-        raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
-                         "; required shape is "+str(massDim)+". See action function.")
-    
-    if not isinstance(potential,np.ndarray):
-        potArr = potential(path)
-    else:
-        potArr = potential
-    
-    potShape = (nPoints,)
-    if potArr.shape != potShape:
-        raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
-                         "; required shape is "+str(potShape)+". See action function.")
-    
-    for ptIter in range(nPoints):
-        if potArr[ptIter] < 0:
-            potArr[ptIter] = 0.01
-    
-    # if np.any(potArr[1:-2]<0):
-    #     print("Path: ")
-    #     print(path)
-    #     print("Potential: ")
-    #     print(potArr)
-    #     raise ValueError("Encountered energy E < 0; stopping.")
-        
-    #Actual calculation
-    actOut = 0
-    for ptIter in range(1,nPoints):
-        coordDiff = path[ptIter] - path[ptIter - 1]
-        dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
-        actOut += potArr[ptIter]*dist
-    return actOut, potArr, massArr
 
 class RectBivariateSplineWrapper(RectBivariateSpline):
     def __init__(self,*args,**kwargs):
@@ -1052,3 +873,499 @@ def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
                 
         return outVals
     return func_out
+
+#%% Deprecated functions
+def potential_target_func(points, potential, auxFunc=None):
+    '''
+
+    Parameters
+    ----------
+    points : TYPE
+        DESCRIPTION.
+    potential : TYPE
+        DESCRIPTION.
+    auxFunc : TYPE, optional
+        DESCRIPTION. The default is None.
+
+    Raises
+    ------
+    ValueError
+        DESCRIPTION.
+
+    Returns
+    -------
+    energies : TYPE
+        DESCRIPTION.
+    auxEnergies : TYPE
+        DESCRIPTION.
+
+    '''
+    warnings.warn("potential_target_func is deprecated; use TargetFunctions.mep_default",\
+                  DeprecationWarning)
+    ## essentially a wrapper function for the potential
+    ### expected points to be a (nPts,nDim) matrix.
+    ### potential should be a function capable of returning (nPts,nDim) matrix
+    nPoints, nDim = points.shape
+    if not isinstance(potential,np.ndarray):
+        potArr = potential(points)
+    else:
+        potArr = potential
+    potShape = (nPoints,)
+    if potArr.shape != potShape:
+        raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
+                         "; required shape is "+str(potShape)+". See potential function.")    
+    if auxFunc is None:
+        auxEnergies = None
+    else:
+        auxEnergies = auxFunc(points)
+    energies  = potential(points)    
+    return energies, auxEnergies
+def discrete_sqr_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
+                        target_func):
+    """
+    
+    Performs discretized action gradient, needs numerical PES still
+ 
+    """
+    warnings.warn("discrete_sqr_action_grad deprecated, use"+\
+                  " GradientApproximations().discrete_sqr_action_grad",DeprecationWarning)
+    eps = fdTol
+    
+    gradOfPes = np.zeros(path.shape)
+    gradOfAction = np.zeros(path.shape)
+    
+    nPts, nDims = path.shape
+    
+    actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
+
+    # build gradOfAction and gradOfPes (constant mass)
+    gradOfPes = midpoint_grad(potential,path,eps=eps)
+    for ptIter in range(1,nPts-1):
+
+        dnorm=np.linalg.norm(path[ptIter] - path[ptIter-1])
+        dnormP1=np.linalg.norm(path[ptIter+1] - path[ptIter])
+        dhat = (path[ptIter] - path[ptIter-1])/dnorm
+        dhatP1 = (path[ptIter+1] - path[ptIter])/dnormP1
+
+        mu=massOnPath[ptIter,0,0]#/hbarc**2
+
+        gradOfAction[ptIter] = 0.5*(\
+            (mu*potentialOnPath[ptIter] + mu*potentialOnPath[ptIter-1])*dhat-\
+            (mu*potentialOnPath[ptIter] + mu*potentialOnPath[ptIter+1])*dhatP1+\
+            mu*gradOfPes[ptIter]*(dnorm+dnormP1))
+    
+    return gradOfAction, gradOfPes
+
+def discrete_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
+                        target_func):
+    """
+    
+    Performs discretized action gradient, needs numerical PES still
+ 
+    """
+    warnings.warn("discrete_action_grad is deprecated; use GradientApproximations().discrete_action_grad",\
+                  DeprecationWarning)
+    eps = fdTol#10**(-8)
+    
+    gradOfPes = np.zeros(path.shape)
+    gradOfAction = np.zeros(path.shape)
+    
+    nPts, nDims = path.shape
+    
+    actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
+
+    # build gradOfAction and gradOfPes (constant mass)
+    gradOfPes = midpoint_grad(potential,path,eps=eps)
+    for ptIter in range(1,nPts-1):
+
+        dnorm=np.linalg.norm(path[ptIter] - path[ptIter-1])
+        dnormP1=np.linalg.norm(path[ptIter+1] - path[ptIter])
+        dhat = (path[ptIter] - path[ptIter-1])/dnorm
+        dhatP1 = (path[ptIter+1] - path[ptIter])/dnormP1
+
+        mu=massOnPath[ptIter,0,0]#/hbarc**2
+        gradOfAction[ptIter] = 0.5*(\
+            (np.sqrt(2*mu*potentialOnPath[ptIter]) + np.sqrt(2*mu*potentialOnPath[ptIter-1]))*dhat-\
+            (np.sqrt(2*mu*potentialOnPath[ptIter]) + np.sqrt(2*mu*potentialOnPath[ptIter+1]))*dhatP1+\
+            mu*gradOfPes[ptIter]*(dnorm+dnormP1) / np.sqrt(2*mu*potentialOnPath[ptIter]))
+    
+    return gradOfAction, gradOfPes
+
+def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
+                        target_func):
+    """
+    potential and mass are as allowed in "action" func; will let that do the error
+    checking (for now...?)
+    
+    Takes forwards finite difference approx of any action-like function
+    
+    Does not return the gradient of the mass function, as that's not used elsewhere
+    in the algorithm
+    
+    Maybe put this + action inside of LeastActionPath? not sure how we want to structure that part
+    """
+    warnings.warn("forward_action_grad is deprecated; use GradientApproximations().forward_action_grad",\
+                  DeprecationWarning)
+    
+    eps = fdTol#10**(-8)
+    
+    gradOfPes = np.zeros(path.shape)
+    gradOfAction = np.zeros(path.shape)
+    
+    nPts, nDims = path.shape
+    
+    actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
+    
+    for ptIter in range(nPts):
+        for dimIter in range(nDims):
+            steps = path.copy()
+            steps[ptIter,dimIter] += eps
+            actionAtStep, potAtStep, massAtStep = target_func(steps,potential,mass)
+            
+            gradOfPes[ptIter,dimIter] = (potAtStep[ptIter] - potentialOnPath[ptIter])/eps
+            gradOfAction[ptIter,dimIter] = (actionAtStep - actionOnPath)/eps
+    
+    return gradOfAction, gradOfPes
+
+def find_local_minimum(arr):
+    """
+    Returns the indices corresponding to the local minimum values. Taken 
+    directly from https://stackoverflow.com/a/3986876
+    
+    Parameters
+    ----------
+    arr : Numpy array
+        A D-dimensional array.
+
+    Returns
+    -------
+    minIndsOut : Tuple of numpy arrays
+        D arrays of length k, for k minima found
+
+    """
+    warnings.warn("find_local_minimum is deprecated;"\
+                  +" use SurfaceUtils.find_local_minimum",DeprecationWarning)
+    neighborhood = morphology.generate_binary_structure(len(arr.shape),1)
+    local_min = (filters.minimum_filter(arr, footprint=neighborhood,\
+                                        mode="nearest")==arr)
+    
+    background = (arr==0)
+    eroded_background = morphology.binary_erosion(background,\
+                                                  structure=neighborhood,\
+                                                  border_value=1)
+        
+    detected_minima = local_min ^ eroded_background
+    allMinInds = np.vstack(local_min.nonzero())
+    minIndsOut = tuple([allMinInds[coordIter,:] for \
+                        coordIter in range(allMinInds.shape[0])])
+    return minIndsOut
+
+def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
+    warnings.warn("find_approximate_contours is deprecated;"\
+                  +" use SurfaceUtils.find_approximate_contours",DeprecationWarning)
+    
+    nDims = len(coordMeshTuple)
+    
+    fig, ax = plt.subplots()
+    
+    if nDims == 1:
+        sys.exit("Err: weird edge case I haven't handled. Why are you looking at D=1?")
+    elif nDims == 2:
+        allContours = np.zeros(1,dtype=object)
+        if show:
+            cf = ax.contourf(*coordMeshTuple,zz,cmap="Spectral_r")
+            plt.colorbar(cf,ax=ax)
+        #Select allsegs[0] b/c I'm only finding one level; ccp.allsegs is a
+            #list of lists, whose first index is over the levels requested
+        allContours[0] = ax.contour(*coordMeshTuple,zz,levels=[eneg]).allsegs[0]
+    else:
+        allContours = np.zeros(zz.shape[2:],dtype=object)
+        possibleInds = np.indices(zz.shape[2:]).reshape((nDims-2,-1)).T
+        for ind in possibleInds:
+            meshInds = 2*(slice(None),) + tuple(ind)
+            localMesh = (coordMeshTuple[0][meshInds],coordMeshTuple[1][meshInds])
+            # print(localMesh)
+            allContours[tuple(ind)] = \
+                ax.contour(*localMesh,zz[meshInds],levels=[eneg]).allsegs[0]
+        if show:
+            plt.show(fig)
+            
+    if not show:
+        plt.close(fig)
+    
+    return allContours
+
+def round_points_to_grid(coordMeshTuple,ptsArr,dimOrder="meshgrid"):
+    """
+    
+
+    Parameters
+    ----------
+    coordMeshTuple : TYPE
+        DESCRIPTION.
+    ptsArr : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    None.
+
+    """
+    warnings.warn("round_points_to_grid is deprecated;"\
+                  +" use SurfaceUtils.round_points_to_grid",DeprecationWarning)
+    
+    if dimOrder not in ["meshgrid","human"]:
+        raise ValueError("dimOrder "+str(dimOrder)+" not recognized")
+    
+    nDims = len(coordMeshTuple)
+    if nDims < 2: #TODO: probably useless, but could be nice for completion
+        raise TypeError("Expected nDims >= 2; recieved "+str(nDims))
+        
+    uniqueCoords = [np.unique(c) for c in coordMeshTuple]
+    
+    if ptsArr.shape == (nDims,):
+        ptsArr = ptsArr.reshape((1,nDims))
+    
+    if ptsArr.shape[1] != nDims:
+        raise ValueError("ptsArr.shape = "+str(ptsArr.shape)+\
+                         "; second dimension should be nDims, "+str(nDims))
+        
+    nPts = ptsArr.shape[0]
+    
+    indsOut = np.zeros((nPts,nDims),dtype=int)
+    
+    #In case some points are on the grid, which np.searchsorted doesn't seem to
+    #handle the way I'd like
+    for dimIter in range(nDims):
+        for (ptIter, pt) in enumerate(ptsArr[:,dimIter]):
+            #Nonsense with floating-point precision makes me use
+            #np.isclose rather than a == b
+            tentativeInd = np.argwhere(np.isclose(uniqueCoords[dimIter],pt))
+            if tentativeInd.shape == (0,1): #Nothing found on grid
+                indsOut[ptIter,dimIter] = \
+                    np.searchsorted(uniqueCoords[dimIter],pt) - 1
+            else: #Is on grid
+                indsOut[ptIter,dimIter] = tentativeInd
+    
+    #I subtract 1 in some cases
+    indsOut[indsOut<0] = 0
+    
+    gridValsOut = np.zeros((nPts,nDims))
+    for ptIter in range(nPts):
+        inds = indsOut[ptIter]
+        # Some indexing is done to deal with the default shape of np.meshgrid.
+        # For D dimensions, the output is of shape (N2,N1,N3,...,ND), while the
+        # way indices are generated expects a shape of (N1,...,ND). So, I swap
+        # the first two indices by hand. See https://numpy.org/doc/stable/reference/generated/numpy.meshgrid.html
+        if dimOrder == "meshgrid":
+            inds[[0,1]] = inds[[1,0]]
+        inds = tuple(inds)
+        gridValsOut[ptIter] = np.array([c[inds] for c in coordMeshTuple])
+        
+    if dimOrder == "meshgrid":
+        #Expect columns of returned indices to be in order (N1,N2,N3,...,ND)
+        indsOut[:,[0,1]] = indsOut[:,[1,0]]
+    
+    return indsOut, gridValsOut
+
+def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False,eneg=0,\
+                           dimOrder="meshgrid"):
+    warnings.warn("find_endpoints_on_grid is deprecated;"\
+                  +" use SurfaceUtils.find_endpoints_on_grid",DeprecationWarning)
+    """
+    
+
+    Parameters
+    ----------
+    returnAllPoints : TYPE, optional
+        DESCRIPTION. The default is False.
+
+    Returns
+    -------
+    allowedEndpoints : TYPE
+        DESCRIPTION.
+
+    """
+    if returnAllPoints:
+        warnings.warn("find_endpoints_on_grid is finding all "\
+                      +"contours; this may include starting point")
+    
+    nDims = len(coordMeshTuple)
+    uniqueCoords = [np.unique(c) for c in coordMeshTuple]
+    
+    allContours = find_approximate_contours(coordMeshTuple,potArr,eneg=eneg)
+    
+    allowedEndpoints = np.zeros((0,nDims))
+    allowedIndices = np.zeros((0,nDims),dtype=int)
+    
+    for contOnLevel in allContours:
+        gridContOnLevel = []
+        gridIndsOnLevel = []
+        for cont in contOnLevel:
+            locGridInds, locGridVals = \
+                round_points_to_grid(coordMeshTuple,cont,dimOrder=dimOrder)
+            
+            gridIndsOnLevel.append(locGridInds)
+            gridContOnLevel.append(locGridVals)
+        
+        if returnAllPoints:
+            for (cIter,c) in enumerate(gridContOnLevel):
+                allowedEndpoints = np.concatenate((allowedEndpoints,c),axis=0)
+                allowedIndices = np.concatenate((allowedIndices,gridIndsOnLevel[cIter]),axis=0)
+        else:
+            lenOfContours = np.array([c.shape[0] for c in gridContOnLevel])
+            outerIndex = np.argmax(lenOfContours)
+            allowedEndpoints = \
+                np.concatenate((allowedEndpoints,gridContOnLevel[outerIndex]),axis=0)
+            allowedIndices = \
+                np.concatenate((allowedIndices,gridIndsOnLevel[outerIndex]),axis=0)
+        
+    allowedEndpoints = np.unique(allowedEndpoints,axis=0)
+    allowedIndices = np.unique(allowedIndices,axis=0)
+    
+    return allowedEndpoints, allowedIndices
+
+def auxiliary_potential(func_in,shift=10**(-4)):
+    warnings.warn("auxiliary_potential is deprecated, use shift_func",DeprecationWarning)
+    def func_out(coords):
+        return func_in(coords) + shift
+    return func_out
+
+def action(path,potential,masses=None):
+    """
+    Allowed masses:
+        -Constant mass; set masses = None
+        -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
+        -A function; set masses to a function
+    Allowed potential:
+        -Array of values; set potential to a numpy array of shape (nPoints,)
+        -A function; set masses to a function
+        
+    Computes action as
+        $ S = \sum_{i=1}^{nPoints} \sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
+    """
+    warnings.warn("action is deprecated, use TargetFunctions.action",DeprecationWarning)
+    
+    nPoints, nDims = path.shape
+    
+    if masses is None:
+        massArr = np.full((nPoints,nDims,nDims),np.identity(nDims))
+    elif not isinstance(masses,np.ndarray):
+        massArr = masses(path)
+    else:
+        massArr = masses
+        
+    massDim = (nPoints, nDims, nDims)
+    if massArr.shape != massDim:
+        raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
+                         "; required shape is "+str(massDim)+". See action function.")
+    
+    if not isinstance(potential,np.ndarray):
+        potArr = potential(path)
+    else:
+        potArr = potential
+    
+    potShape = (nPoints,)
+    if potArr.shape != potShape:
+        raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
+                         "; required shape is "+str(potShape)+". See action function.")
+    
+    for ptIter in range(nPoints):
+        if potArr[ptIter] < 0:
+            potArr[ptIter] = 0.01
+    
+    # if np.any(potArr[1:-2]<0):
+    #     print("Path: ")
+    #     print(path)
+    #     print("Potential: ")
+    #     print(potArr)
+    #     raise ValueError("Encountered energy E < 0; stopping.")
+        
+    #Actual calculation
+    actOut = 0
+    for ptIter in range(1,nPoints):
+        coordDiff = path[ptIter] - path[ptIter - 1]
+        dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
+        actOut += np.sqrt(2*potArr[ptIter]*dist)
+    
+    return actOut, potArr, massArr
+
+def action_sqr(path,potential,masses=None):
+    '''
+    Parameters
+    ----------
+    path : ndarray
+        np.ndarray of shape (Nimgs,nDim) containing postions of all images.
+    potential : object or ndarray
+        Allowed potential:
+        -Array of values; set potential to a numpy array of shape (nPoints,)
+        -A function; set masses to a function
+    masses : object or ndarray, Optional
+        Allowed masses:
+        -Constant mass; set masses = None
+        -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
+        -A function; set masses to a function
+
+    Raises
+    ------
+    ValueError
+        DESCRIPTION.
+
+    Returns
+    -------
+    actOut : float
+        
+    potArr : ndarray
+        ndarray of shape (Nimgs,1) containing the PES values for each image in path
+    massArr : ndarray
+        ndarray of shape (Nimgs,nDim,nDim) containing the mass tensors for each image in path.
+
+    '''
+    """    
+    Computes action as
+        $ S = \sum_{i=1}^{nPoints} \ E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b $
+    """
+    warnings.warn("action_sqr is deprecated, use TargetFunctions.action_squared",DeprecationWarning)
+    
+    nPoints, nDims = path.shape
+    
+    if masses is None:
+        massArr = np.full((nPoints,nDims,nDims),np.identity(nDims))
+    elif not isinstance(masses,np.ndarray):
+        massArr = masses(path)
+    else:
+        massArr = masses
+        
+    massDim = (nPoints, nDims, nDims)
+    if massArr.shape != massDim:
+        raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
+                         "; required shape is "+str(massDim)+". See action function.")
+    
+    if not isinstance(potential,np.ndarray):
+        potArr = potential(path)
+    else:
+        potArr = potential
+    
+    potShape = (nPoints,)
+    if potArr.shape != potShape:
+        raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
+                         "; required shape is "+str(potShape)+". See action function.")
+    
+    for ptIter in range(nPoints):
+        if potArr[ptIter] < 0:
+            potArr[ptIter] = 0.01
+    
+    # if np.any(potArr[1:-2]<0):
+    #     print("Path: ")
+    #     print(path)
+    #     print("Potential: ")
+    #     print(potArr)
+    #     raise ValueError("Encountered energy E < 0; stopping.")
+        
+    #Actual calculation
+    actOut = 0
+    for ptIter in range(1,nPoints):
+        coordDiff = path[ptIter] - path[ptIter - 1]
+        dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
+        actOut += potArr[ptIter]*dist
+    return actOut, potArr, massArr
