@@ -5,7 +5,7 @@ import sys
 import matplotlib.pyplot as plt
 import itertools
 
-from scipy.interpolate import interpnd, RectBivariateSpline
+from scipy.interpolate import interpnd, RectBivariateSpline, splprep, splev
 from scipy.ndimage import filters, morphology #For minimum finding
 import warnings
 
@@ -26,7 +26,7 @@ class TargetFunctions:
             -A function; set masses to a function
             
         Computes action as
-            $ S = \sum_{i=1}^{nPoints} \sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
+            $ S = sum_{i=1}^{nPoints} sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
         """
         nPoints, nDims = path.shape
         
@@ -99,7 +99,7 @@ class TargetFunctions:
         '''
         """    
         Computes action as
-            $ S = \sum_{i=1}^{nPoints} \ E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b $
+            $ S = sum_{i=1}^{nPoints} E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b $
         """
         nPoints, nDims = path.shape
         
@@ -874,6 +874,56 @@ def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
         return outVals
     return func_out
 
+class InterpolatedPath:
+    def __init__(self,discretePath,kwargs={}):
+        """
+        Note that when one considers a 1D curve embedded in 2D, e.g. in a plot 
+        of a function, one should specify 'u' in kwargs. Otherwise, 'u' will
+        be computed based on the distance between points on the path, which
+        will generally lead to a different plot than what is desired.
+
+        Parameters
+        ----------
+        discretePath : TYPE
+            DESCRIPTION.
+        kwargs : TYPE, optional
+            DESCRIPTION. The default is {}.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.path = discretePath
+        
+        if self.path.ndim == 1:
+            listOfCoords = [self.path]
+        else:
+            listOfCoords = [d for d in self.path.T]
+        
+        if "full_output" not in kwargs:
+            kwargs["full_output"] = True
+        
+        if kwargs["full_output"]:
+            (self.tck, self.u), self.fp, self.ier, self.msg = \
+                splprep(listOfCoords,**kwargs)
+            print(self.msg)
+        else:
+            self.tck, self.u = splprep(listOfCoords,**kwargs)
+        
+    def __call__(self,t):
+        if np.any(t>1) or np.any(t<0):
+            raise ValueError("t must be between 0 and 1 for interpolation")
+        
+        return splev(t,self.tck)
+    
+    def compute_along_path(self,target_func,nImages,tfArgs=[],tfKWargs={}):
+        t = np.linspace(0,1,nImages)
+        path = np.array(self.__call__(t)).T
+        
+        tfOut = target_func(path,*tfArgs,**tfKWargs)
+        return path, tfOut
+
 #%% Deprecated functions
 def potential_target_func(points, potential, auxFunc=None):
     '''
@@ -1242,7 +1292,7 @@ def action(path,potential,masses=None):
         -A function; set masses to a function
         
     Computes action as
-        $ S = \sum_{i=1}^{nPoints} \sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
+        $ S = sum_{i=1}^{nPoints} sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
     """
     warnings.warn("action is deprecated, use TargetFunctions.action",DeprecationWarning)
     
@@ -1323,7 +1373,7 @@ def action_sqr(path,potential,masses=None):
     '''
     """    
     Computes action as
-        $ S = \sum_{i=1}^{nPoints} \ E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b $
+        $ S = sum_{i=1}^{nPoints} E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b $
     """
     warnings.warn("action_sqr is deprecated, use TargetFunctions.action_squared",DeprecationWarning)
     
