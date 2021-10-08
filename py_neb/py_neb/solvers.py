@@ -23,54 +23,6 @@ CONVENTIONS:
     -Similarly, functions (e.g. the action) that take in many points should also
         assume the first index iterates over the points
 """
-
-global fdTol
-fdTol = 10**(-8)
-
-def potential_target_func(points, potential, auxFunc=None):
-    '''
-    TODO: remove?
-
-    Parameters
-    ----------
-    points : TYPE
-        DESCRIPTION.
-    potential : TYPE
-        DESCRIPTION.
-    auxFunc : TYPE, optional
-        DESCRIPTION. The default is None.
-
-    Raises
-    ------
-    ValueError
-        DESCRIPTION.
-
-    Returns
-    -------
-    energies : TYPE
-        DESCRIPTION.
-    auxEnergies : TYPE
-        DESCRIPTION.
-
-    '''
-    ## essentially a wrapper function for the potential
-    ### expected points to be a (nPts,nDim) matrix.
-    ### potential should be a function capable of returning (nPts,nDim) matrix
-    nPoints, nDim = points.shape
-    if not isinstance(potential,np.ndarray):
-        potArr = potential(points)
-    else:
-        potArr = potential
-    potShape = (nPoints,)
-    if potArr.shape != potShape:
-        raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
-                         "; required shape is "+str(potShape)+". See potential function.")    
-    if auxFunc is None:
-        auxEnergies = None
-    else:
-        auxEnergies = auxFunc(points)
-    energies  = potential(points)    
-    return energies, auxEnergies
     
 class LeastActionPath:
     """
@@ -875,7 +827,8 @@ class EulerLagrangeVerification:
     
 class Dijkstra:
     def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,\
-                 target_func=action,allowedEndpoints=None,trimVals=[10**(-4),None]):
+                 target_func=TargetFunctions.action,allowedEndpoints=None,\
+                 trimVals=[10**(-4),None]):
         """
         Some indexing is done to deal with the default shape of np.meshgrid.
         For D dimensions, the output is of shape (N2,N1,N3,...,ND), while the
@@ -948,7 +901,7 @@ class Dijkstra:
         else:
             self.allowedEndpoints = allowedEndpoints
             self.endpointIndices, _ = \
-                round_points_to_grid(self.coordMeshTuple,allowedEndpoints)
+                SurfaceUtils.round_points_to_grid(self.coordMeshTuple,allowedEndpoints)
         
         if self.allowedEndpoints.shape == (self.nDims,):
             self.allowedEndpoints = self.allowedEndpoints.reshape((1,self.nDims))

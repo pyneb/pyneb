@@ -21,6 +21,9 @@ def read_potential():
     
     return dsetsDict
 
+#%%Alias for target function
+action = TargetFunctions.action
+
 #%%Setting up the potential on a grid
 coords = ["Q20","Q30"]
 
@@ -42,7 +45,7 @@ potential = RectBivariateSplineWrapper(*uniqueCoords,zz.T).func_wrapper()
 
 #%%Finding endpoints
 allowedEndpoints, allowedIndices = \
-    find_endpoints_on_grid(coordMeshTuple,zz)
+    SurfaceUtils.find_endpoints_on_grid(coordMeshTuple,zz)
 
 start = gsLoc
 end = np.array([298.,31.2]) #Selected with prior knowledge of the PES to be near

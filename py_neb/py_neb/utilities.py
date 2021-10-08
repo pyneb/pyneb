@@ -552,7 +552,7 @@ class SurfaceUtils:
         nDims = len(coordMeshTuple)
         uniqueCoords = [np.unique(c) for c in coordMeshTuple]
         
-        allContours = find_approximate_contours(coordMeshTuple,potArr,eneg=eneg)
+        allContours = SurfaceUtils.find_approximate_contours(coordMeshTuple,potArr,eneg=eneg)
         
         allowedEndpoints = np.zeros((0,nDims))
         allowedIndices = np.zeros((0,nDims),dtype=int)
@@ -562,7 +562,7 @@ class SurfaceUtils:
             gridIndsOnLevel = []
             for cont in contOnLevel:
                 locGridInds, locGridVals = \
-                    round_points_to_grid(coordMeshTuple,cont,dimOrder=dimOrder)
+                    SurfaceUtils.round_points_to_grid(coordMeshTuple,cont,dimOrder=dimOrder)
                 
                 gridIndsOnLevel.append(locGridInds)
                 gridContOnLevel.append(locGridVals)
