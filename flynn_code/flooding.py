@@ -242,15 +242,16 @@ E_gs = V_sin(x_gs)
 neighbor_shift = list(it.product([0,1,-1], repeat=nDim))[1:]
 neighbor_shift = np.array(neighbor_shift)
 
-x_neighbors = np.full(neighbor_shift.shape,x_gs)
+x_neighbors = np.full(neighbor_shift.shape,x_gs) # positions of all the nodes
 ## initialize all the points to the GS
 d = V_sin(x_gs) ## initialize the water height to V(x_gs)
 V_neighbors = V_sin(x_neighbors)  #initialize energy at each neighbor
-shift = .1
+shift = .05
 
 #while (x_neighbors[:,0] < x_max[0]).all() == True :
-neighbor_shift = x_neighbors +  6*neighbor_shift*shift
-print(x_neighbors)
+neighbor_shift = x_neighbors +  2*neighbor_shift*shift
+#for node in neighbor_shift:
+    # create a square around it 
 for i,point in enumerate(neighbor_shift):
     for j in range(len(lower_bndy)):
         if point[j] < lower_bndy[j]:

@@ -146,6 +146,7 @@ class PES():
         self.data_dict = {}
         for key in wanted_keys:
             self.data_dict[key] = np.array(data[key])
+        
     def get_keys(self,choice='coords'):
         string_out = f'Coordinates: {self.coord_keys} \nMass Components: {self.mass_keys} \nEnergy Key: {self.energy_key}'
         print(string_out)
@@ -189,7 +190,7 @@ class PES():
                 EE = zz - E_gs_shift
                 E_gs = EE[gs_ind]
                 gs_coord = np.array([grids[i][gs_ind] for i in range(len(grids))])
-                return(grids,zz,E_gs,gs_coord)
+                return(grids,EE,E_gs,gs_coord)
             else:
                 return(grids,zz)
         else:
@@ -215,15 +216,14 @@ class PES():
         shape = [len(coord_arrays[i]) for i in range(len(uniq_coords.keys()))]
         grids = {key:self.data_dict[key].reshape(*shape) for key in self.mass_keys}
         return(grids)
-    def get_2dsubspace(self,restrict_dict,plane):
+    def get_2dsubspace(self,constraint_names,level_surface_val,sub_plane):
         # returns a 2d slice of parameter space given fixed coordinates
         ### first convert data into a pandas dataframe. it is easier to work with 
         df = pd.DataFrame(self.data_dict)
-        const_names = restrict_dict.keys()
-        for key in const_names:
-            subspace = df.loc[df[key]==restrict_dict[key]]
-        x = subspace[plane[0]]
-        y = subspace[plane[1]]
+        for i,key in enumerate(constraint_names):
+            subspace = df.loc[df[key]==level_surface_val[i]]
+        x = subspace[sub_plane[0]]
+        y = subspace[sub_plane[1]]
         V = subspace[self.energy_key[0]]
         df2 = pd.DataFrame({'x':x,'y':y,'z':V})
         x1 = np.sort(df2.x.unique())
