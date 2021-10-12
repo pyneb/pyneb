@@ -1095,6 +1095,11 @@ class Dijkstra:
                 
         return pathIndsDict, pathArrDict, distanceDict
     
-    # def get_shortest_path(self,pathArrDict):
-    #     actionsDict = {path:self.target_func()}
-    #     return None
+    def minimum_endpoint(self,distanceDict):
+        minDist = np.inf
+        for (endpt, dist) in distanceDict.items():
+            if dist < minDist:
+                endptOut = endpt
+                minDist = dist
+        
+        return endptOut

@@ -807,7 +807,7 @@ class NDInterpWithBoundary_experimental:
     Based on scipy.interpolate.RegularGridInterpolator
     """
     def __init__(self, gridPoints, gridVals, boundaryHandler="exponential", symmExtend=None,\
-                 splKWargs=None):
+                 splKWargs={}):
         """
         
 
@@ -847,7 +847,7 @@ class NDInterpWithBoundary_experimental:
         self.boundaryHandler = bdyHandlerFuncs[boundaryHandler]
         
         if symmExtend is None:
-            symmExtend = np.array([False,True]+(len(points)-2)*[False],dtype=bool)
+            symmExtend = np.array([False,True]+(self.nDims-2)*[False],dtype=bool)
         elif not isinstance(symmExtend,np.ndarray):
             warnings.warn("Using symmetric extension "+str(symmExtend)+\
                           " for all dimensions. Make sure this is intended.")
@@ -860,7 +860,14 @@ class NDInterpWithBoundary_experimental:
         self.symmExtend = symmExtend
         
         if self.nDims == 2:
-            self.rbv = RectBivariateSpline(*gridPoints,gridVals,**splKWargs)
+            expectedShape = tuple([len(g) for g in gridPoints])
+            if gridVals.shape == expectedShape:
+                self.rbv = RectBivariateSpline(*gridPoints,gridVals,**splKWargs)
+            elif gridVals.T.shape == expectedShape:
+                self.rbv = RectBivariateSpline(*gridPoints,gridVals.T,**splKWargs)
+            else:
+                raise ValueError("gridVals.shape does not match expected shape "+\
+                                 str(expectedShape))
             self._call = self._call_2d
         else:
             self._call = self._call_nd
@@ -908,26 +915,20 @@ class NDInterpWithBoundary_experimental:
             if self.symmExtend[dimIter]:
                 points[:,dimIter] = np.abs(points[:,dimIter])
         
-        
-        #Don't really understand what this does. Removed here - assume all points
-        #being fed in are numpy arrays, which is what this returns... I think?
-        # xi = interpnd._ndim_coords_from_arrays(xi, ndim=self.nDims)
-        
-        
         #Checking if each point is acceptable, and interpolating individual points.
-        result = np.zeros(nPoints)
+        result = np.zeros(points.shape[0])
         
-        for (ptIter, point) in enumerate(xi):
-            isInBounds = np.zeros((2,ndim),dtype=bool)
-            isInBounds[0] = (np.array([g[0] for g in self.grid]) <= point)
-            isInBounds[1] = (point <= np.array([g[-1] for g in self.grid]))
+        for (ptIter, point) in enumerate(points):
+            isInBounds = np.zeros((2,self.nDims),dtype=bool)
+            isInBounds[0] = (np.array([g[0] for g in self.gridPoints]) <= point)
+            isInBounds[1] = (point <= np.array([g[-1] for g in self.gridPoints]))
             
             if np.count_nonzero(~isInBounds) == 0:
                 result[ptIter] = self._call(point)
             else:
                 result[ptIter] = self.boundaryHandler(point,isInBounds)
                 
-        return result
+        return result.reshape(originalShape)
     
     def _call_2d(self,point):
         return self.rbv(point[0],point[1],grid=False)
@@ -1148,7 +1149,7 @@ class InterpolatedPath:
         if kwargs["full_output"]:
             (self.tck, self.u), self.fp, self.ier, self.msg = \
                 splprep(listOfCoords,**kwargs)
-            print(self.msg)
+            # print(self.msg)
         else:
             self.tck, self.u = splprep(listOfCoords,**kwargs)
         
