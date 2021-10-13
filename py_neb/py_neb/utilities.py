@@ -1,3 +1,5 @@
+from fileio import *
+
 #Appears to be common/best practice to import required packages in every file
 #they are used in
 import numpy as np
