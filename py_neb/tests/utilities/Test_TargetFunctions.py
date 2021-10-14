@@ -276,8 +276,31 @@ class action_squared_(unittest.TestCase):
         return None
     
 class mep_default_(unittest.TestCase):
-    def test_1(self):
-        #TODO
+    def test_potential_function(self):
+        path = np.arange(4).reshape((2,2))
+        def potential(path):
+            return path[:,0]**2 + path[:,1]**2
+        def auxFunc(path):
+            return path[:,0]**3 + path[:,1]**3
+        
+        eneg, aux_eneg = TargetFunctions.mep_default(path,potential,auxFunc=auxFunc)
+        
+        correctEneg = np.array([1,13])
+        correctAux = np.array([1,35])
+        
+        self.assertIsNone(np.testing.assert_array_equal(eneg,correctEneg))
+        self.assertIsNone(np.testing.assert_array_equal(aux_eneg,correctAux))
+        
+        return None
+    
+    def test_wrong_potential_shape(self):
+        path = np.arange(10).reshape((5,2))
+        potential = np.arange(30)**2
+        auxFunc = np.arange(30)**3
+        
+        with self.assertRaises(ValueError):
+            TargetFunctions.mep_default(path,potential,auxFunc)
+            
         return None
     
 if __name__ == "__main__":

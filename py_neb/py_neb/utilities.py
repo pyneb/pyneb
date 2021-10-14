@@ -164,8 +164,6 @@ class TargetFunctions:
             DESCRIPTION.
 
         '''
-        raise DeprecationWarning("If you actually use this, please let Daniel know")
-        
         nPoints, nDim = points.shape
         if not isinstance(potential,np.ndarray):
             potArr = potential(points)

@@ -38,38 +38,6 @@ Tests added:
         *Test with one point, inside of the grid region
     ==========================================================================
 """
-    
-class forward_action_grad_(unittest.TestCase):
-    def test_correct_inputs(self):
-        path = np.array([[0,0],[1,1],[2,2]],dtype=float)
-        
-        def potential(path):
-            return path[:,0]**2 + path[:,1]**2
-        
-        def mass(path):
-            return np.full((3,2,2),np.identity(2),dtype=float)
-        
-        potentialOnPath = potential(path)
-        massOnPath = mass(path)
-        
-        gradOfAction, gradOfPes = \
-            forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
-                                action)
-              
-        #Computed by hand/Mathematica
-        correctGradOfPes = np.array([[0,0],[2,2],[4,4]],dtype=float)
-        correctGradOfAction = np.stack(2*(np.array([-np.sqrt(2),-1.77636*10**(-7),\
-                                                    3*np.sqrt(2)]),)).T
-        
-        #Heuristic absolute tolerance of 10**(-8) makes it pass the test. Makes
-        #sense that gradient isn't more precise, as finite-difference step is
-        #eps = 10**(-8)
-        self.assertIsNone(np.testing.assert_allclose(gradOfPes,correctGradOfPes,\
-                                                     atol=10**(-8)))
-        self.assertIsNone(np.testing.assert_allclose(gradOfAction,correctGradOfAction,\
-                                                     atol=10**(-8)))
-        
-        return None
 
 class mass_funcs_to_array_func_(unittest.TestCase):
     def test_allowed_keys(self):
@@ -207,31 +175,6 @@ class GridInterpWithBoundaries_call_(unittest.TestCase):
         
         correctVals = np.array([39.41149756,0.05,10])
         self.assertIsNone(np.testing.assert_allclose(values,correctVals))
-        return None
-    
-class potential_test(unittest.TestCase):
-    def test_potential_function (self):
-        path = np.arange(4).reshape((2,2))
-        def potential(path):
-            return path[:,0]**2 + path[:,1]**2
-        def auxFunc(path):
-            return path[:,0]**3 + path[:,1]**3
-        
-        eneg, aux_eneg = potential_target_func(path,potential,auxFunc=auxFunc)
-        
-        correctEneg = np.array([1,13])
-        correctAux = np.array([1,35])
-        
-        self.assertIsNone(np.testing.assert_array_equal(eneg,correctEneg))
-        self.assertIsNone(np.testing.assert_array_equal(aux_eneg,correctAux))
-        
-        return None
-    def test_wrong_potential_shape(self):
-        path = np.arange(10).reshape((5,2))
-        potential = np.arange(30)**2
-        auxFunc = np.arange(30)**3
-        with self.assertRaises(TypeError):
-            potential(path,potential,auxFunc)
         return None
     
 class potential_grad(unittest.TestCase):
