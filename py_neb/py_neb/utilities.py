@@ -9,6 +9,7 @@ import itertools
 
 from scipy.interpolate import interpnd, RectBivariateSpline, splprep, splev
 from scipy.ndimage import filters, morphology #For minimum finding
+from pathos.multiprocessing import ProcessingPool as Pool
 import warnings
 
 global fdTol
@@ -187,6 +188,59 @@ class GradientApproximations:
     #Should check compatibility here (at least have a list of compatible actions
     #to check in *other* methods)
     #Fill out as appropriate
+    def discrete_element(self,potential,mass,path,dr,drp1,beff,beffp1,beffm1,pot,potp1,potm1):
+        eps = fdTol
+        gradOfPes = midpoint_grad(potential,path,eps=eps)
+        gradOfBeff = beff_grad(mass,path,dr,eps=eps)
+        dnorm=np.linalg.norm(dr)
+        dnormP1=np.linalg.norm(dr)
+        dhat = dr/dnorm
+        dhatP1 = dr/dnormP1
+        gradOfAction = 0.5*(\
+            (beff*pot + beffm1*potm1)*dhat-\
+            (beff*pot + beffp1*potp1)*dhatP1+\
+            (beff*gradOfPes + pot*gradOfBeff)*(dnorm+dnormP1))
+        return gradOfAction, gradOfPes
+    def discrete_sqr_action_grad_mp(self,path,potential,potentialOnPath,mass,massOnPath,\
+                                 target_func):
+        """
+        
+        Performs discretized action gradient, needs numerical PES still
+     
+        """
+        eps = fdTol
+        
+        gradOfPes = np.zeros(path.shape)
+        gradOfBeff = np.zeros(path.shape)
+        gradOfAction = np.zeros(path.shape)
+        dr = np.zeros(path.shape)
+        beff = np.zeros(potentialOnPath.shape)
+        
+        nPts, nDims = path.shape
+        
+        actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
+
+        dr[1:,:] = np.array([path[ptIter] - path[ptIter-1] \
+                               for ptIter in range(1,nPts)])
+        
+        beff[1:] = np.array([np.dot(np.dot(massOnPath[ptIter],dr[ptIter]),dr[ptIter])/np.sum(dr[ptIter,:]**2) \
+                               for ptIter in range(1,nPts)])
+        pool = Pool(4)
+
+        mp_in = zip(itertools.repeat(potential),itertools.repeat(mass),path[1:nPts-1,:], \
+                dr[1:nPts-1,:], dr[2:nPts,:], dr[0:nPts-2,:], \
+                beff[1:nPts-1], beff[2:nPts], beff[0:nPts-2], \
+                potentialOnPath[1:nPts-1], potentialOnPath[2:nPts], potentialOnPath[0:nPts-2])
+
+        mapOut = pool.map(self.discrete_element, \
+                itertools.repeat(potential,nPts-1),itertools.repeat(mass,nPts-1),path[1:nPts-1,:], \
+                dr[1:nPts-1,:], dr[2:nPts,:], \
+                beff[1:nPts-1], beff[2:nPts], beff[0:nPts-2], \
+                potentialOnPath[1:nPts-1], potentialOnPath[2:nPts], potentialOnPath[0:nPts-2])
+        gradOfAction[1:nPts-1,:] = np.array(mapOut[:][0][0][:])
+        gradOfPes[1:nPts-1,:] = np.array(mapOut[:][1][0][:])
+        return gradOfAction, gradOfPes
+    
     def discrete_sqr_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
                                  target_func):
         """
@@ -197,27 +251,36 @@ class GradientApproximations:
         eps = fdTol
         
         gradOfPes = np.zeros(path.shape)
+        gradOfBeff = np.zeros(path.shape)
         gradOfAction = np.zeros(path.shape)
+        dr = np.zeros(path.shape)
+        beff = np.zeros(potentialOnPath.shape)
         
         nPts, nDims = path.shape
         
         actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
 
-        # build gradOfAction and gradOfPes (constant mass)
-        gradOfPes = midpoint_grad(potential,path,eps=eps)
+        dr[1:,:] = np.array([path[ptIter] - path[ptIter-1] \
+                               for ptIter in range(1,nPts)])
+
+        beff[1] = np.dot(np.dot(massOnPath[1],dr[1]),dr[1])/np.sum(dr[1,:]**2)
+
         for ptIter in range(1,nPts-1):
 
-            dnorm=np.linalg.norm(path[ptIter] - path[ptIter-1])
-            dnormP1=np.linalg.norm(path[ptIter+1] - path[ptIter])
-            dhat = (path[ptIter] - path[ptIter-1])/dnorm
-            dhatP1 = (path[ptIter+1] - path[ptIter])/dnormP1
+            gradOfPes[ptIter] = midpoint_grad(potential,path[ptIter],eps=eps)
+            gradOfBeff[ptIter] = beff_grad(mass,path[ptIter],dr[ptIter],eps=eps)
 
-            mu=massOnPath[ptIter,0,0]
+            beff[ptIter+1] = np.dot(np.dot(massOnPath[ptIter+1],dr[ptIter+1]),dr[ptIter+1])/np.sum(dr[ptIter,:]**2)
+            
+            dnorm=np.linalg.norm(dr[ptIter])
+            dnormP1=np.linalg.norm(dr[ptIter+1])
+            dhat = dr[ptIter]/dnorm
+            dhatP1 = dr[ptIter+1]/dnormP1
 
             gradOfAction[ptIter] = 0.5*(\
-                (mu*potentialOnPath[ptIter] + mu*potentialOnPath[ptIter-1])*dhat-\
-                (mu*potentialOnPath[ptIter] + mu*potentialOnPath[ptIter+1])*dhatP1+\
-                mu*gradOfPes[ptIter]*(dnorm+dnormP1))
+                (beff[ptIter]*potentialOnPath[ptIter] + beff[ptIter-1]*potentialOnPath[ptIter-1])*dhat-\
+                (beff[ptIter]*potentialOnPath[ptIter] + beff[ptIter+1]*potentialOnPath[ptIter+1])*dhatP1+\
+                (beff[ptIter]*gradOfPes[ptIter] + potentialOnPath[ptIter]*gradOfBeff[ptIter])*(dnorm+dnormP1))
         
         return gradOfAction, gradOfPes
     
@@ -330,7 +393,6 @@ def midpoint_grad(func,points,eps=10**(-8)):
     if len(points.shape) == 1:
         points = points.reshape((1,-1))
     nPoints, nDims = points.shape
-    
     gradOut = np.zeros((nPoints,nDims))
     for dimIter in range(nDims):
         step = np.zeros(nDims)
@@ -341,9 +403,38 @@ def midpoint_grad(func,points,eps=10**(-8)):
         
         forwardEval = func(forwardStep)
         backwardEval = func(backwardStep)
-        
+
         gradOut[:,dimIter] = (forwardEval-backwardEval)/eps
     
+    return gradOut
+
+def beff_grad(func,points,dr,eps=10**(-8)):
+    """
+    Midpoint finite difference of B_eff mass.
+    """
+    if len(points.shape) == 1:
+        points = points.reshape((1,-1))
+        #dr = dr.reshape((1,-1))
+    nPoints, nDims = points.shape
+
+    gradOut = np.zeros((nPoints,nDims))
+
+    ds = np.sum(dr[:]**2)
+
+    for dimIter in range(nDims):
+        step = np.zeros(nDims)
+        step[dimIter] = 1
+
+        forwardStep = points + eps/2*step
+        backwardStep = points - eps/2*step
+
+        massP1 = func(forwardStep)
+        massM1 = func(backwardStep)
+
+        forwardEval = np.dot(np.dot(massP1,dr),dr)/ds
+        backwardEval = np.dot(np.dot(massM1,dr),dr)/ds
+
+        gradOut[:,dimIter] = (forwardEval-backwardEval)/eps 
     return gradOut
 
 
