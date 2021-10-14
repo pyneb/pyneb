@@ -177,50 +177,6 @@ class GridInterpWithBoundaries_call_(unittest.TestCase):
         self.assertIsNone(np.testing.assert_allclose(values,correctVals))
         return None
     
-class potential_grad(unittest.TestCase):
-    def test_correct_outputs(self):
-        path = np.array([[0,0],[1,1],[2,2]],dtype=float)
-        
-        def potential(path):
-            return path[:,0]**2 + path[:,1]**2
-        
-        def auxFunc(path):
-            return path[:,0]**3 + path[:,1]**3
-        
-        potentialOnPath = potential(path)
-        
-        gradOfPES, gradOfAux = potential_central_grad(path,potential,auxFunc)
-        #Computed by hand
-        correctGradOfPes = np.stack(np.array([[0,0],[2,2],[4,4]],dtype=float))
-        correctGradOfAux = np.stack(np.array([[0,0],[3,3],[12,12]],dtype=float))
-        #Heuristic absolute tolerance of 10**(-8) makes it pass the test. Makes
-        #sense that gradient isn't more precise, as finite-difference step is
-        #eps = 10**(-8)
-        self.assertIsNone(np.testing.assert_allclose(gradOfPES,correctGradOfPes,\
-                                                     atol=10**(-8)))
-        self.assertIsNone(np.testing.assert_allclose(gradOfAux,correctGradOfAux,\
-                                                     atol=10**(-8)))
-        return None
-    def test_correct_outputs_no_aux(self):
-        path = np.array([[0,0],[1,1],[2,2]],dtype=float)
-        
-        def potential(path):
-            return path[:,0]**2 + path[:,1]**2
-        
-        potentialOnPath = potential(path)
-        
-        gradOfPES, gradOfAux = potential_central_grad(path,potential,auxFunc=None)
-        #Computed by hand/Mathematica
-        correctGradOfPes = np.array([[0,0],[2,2],[4,4]],dtype=float)
-        correctGradOfAux = None
-        
-        #Heuristic absolute tolerance of 10**(-8) makes it pass the test. Makes
-        #sense that gradient isn't more precise, as finite-difference step is
-        #eps = 10**(-8)
-        self.assertIsNone(np.testing.assert_allclose(gradOfPES,correctGradOfPes,\
-                                                     atol=10**(-8)))
-        self.assertIsNone(gradOfAux)
-        return None
 class VerletMinimization_velocity_verlet(unittest.TestCase):
     def test_single_step(self):
         def pot(coords):

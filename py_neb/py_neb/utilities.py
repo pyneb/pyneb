@@ -19,6 +19,7 @@ class TargetFunctions:
     @staticmethod
     def action(path,potential,masses=None):
         """
+        TODO: docs
         Allowed masses:
             -Constant mass; set masses = None
             -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
@@ -54,9 +55,8 @@ class TargetFunctions:
             raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
                              "; required shape is "+str(potShape)+". See action function.")
         
-        for ptIter in range(nPoints):
-            if potArr[ptIter] < 0:
-                potArr[ptIter] = 0.01
+        #TODO: check if we actually want this. Maybe with a warning?
+        potArr = potArr.clip(0)
             
         #Actual calculation
         actOut = 0
@@ -64,6 +64,62 @@ class TargetFunctions:
             coordDiff = path[ptIter] - path[ptIter - 1]
             dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
             actOut += np.sqrt(2*potArr[ptIter]*dist)
+        
+        return actOut, potArr, massArr
+    
+    @staticmethod
+    def term_in_action_sum(points,potential,masses=None):
+        """
+        TODO: docs
+        Allowed masses:
+            -Constant mass; set masses = None
+            -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
+            -A function; set masses to a function
+        Allowed potential:
+            -Array of values; set potential to a numpy array of shape (nPoints,)
+            -A function; set masses to a function
+            
+        Computes action as
+            $ S = sum_{i=1}^{nPoints} sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
+        """
+        nDims = points.shape[1]
+        if points.shape[0] != 2:
+            raise ValueError("Expected exactly 2 points; received "+str(points.shape[0]))
+        
+        if masses is None:
+            massArr = np.identity(nDims)
+        elif not isinstance(masses,np.ndarray):
+            massArr = masses(points[1])
+        else:
+            massArr = masses
+            
+        massDim = (nDims,nDims)
+        if massArr.shape != massDim:
+            raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
+                             "; required shape is "+str(massDim))
+        
+        #In case a scalar value is fed in
+        if isinstance(potential,(int,float)):
+            potential = np.array([potential])
+        
+        if not isinstance(potential,np.ndarray):
+            potArr = potential(points[1])
+        else:
+            potArr = potential
+        
+        potShape = (1,)
+        if potArr.shape != potShape:
+            raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
+                             "; required shape is "+str(potShape))
+        
+        #TODO: check if we want this
+        potArr = potArr.clip(0)
+        
+        #Actual calculation
+        coordDiff = points[1] - points[0]
+        #The M_{ab} dx^a dx^b bit
+        dist = np.dot(coordDiff,np.dot(massArr,coordDiff))
+        actOut = np.sqrt(2*potArr[0]*dist)
         
         return actOut, potArr, massArr
     
@@ -256,15 +312,33 @@ class GradientApproximations:
     def forward_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
                             target_func):
         """
-        potential and mass are as allowed in "action" func; will let that do the error
-        checking (for now...?)
+        Takes forwards finite difference approx of any action-like function.
+        See e.g. TargetFunctions.action. Note that the full action is computed
+        at every finite difference step.
         
-        Takes forwards finite difference approx of any action-like function
-        
-        Does not return the gradient of the mass function, as that's not used elsewhere
-        in the algorithm
-        
-        Maybe put this + action inside of LeastActionPath? not sure how we want to structure that part
+        Does not return the gradient of the mass function, as that's not used 
+        elsewhere.
+
+        Parameters
+        ----------
+        path : ndarray
+            The path. Of shape (nPoints,nDims)
+        potential : -
+            As allowed in TargetFunctions.action
+        potentialOnPath : ndarray
+            Potential on the path. Of shape (nPoints,).
+        mass : -
+            As allowed in TargetFunctions.action
+        massOnPath : ndarray or None
+            Mass on path. If not None, of shape (nPoints,nDims,nDims).
+        target_func : function
+            Function whose gradient is being computed
+
+        Returns
+        -------
+        gradOfAction : ndarray
+        gradOfPes : ndarray
+
         """
         eps = fdTol
         
@@ -285,10 +359,87 @@ class GradientApproximations:
                 gradOfAction[ptIter,dimIter] = (actionAtStep - actionOnPath)/eps
         
         return gradOfAction, gradOfPes
+    
+    def forward_action_component_grad(self,path,potential,potentialOnPath,mass,\
+                                      massOnPath,target_func):
+        """
+        Requires an approximation of the action that just sums up values along
+        the path, such as TargetFunctions.action. Then, this computes the
+        forwards finite difference approximation of every *term in the sum*.
+        
+        Note the difference with GradientApproximations().forward_action_grad:
+        there, the full action is computed for every step. Here, only the component
+        at that step is computed.
+        
+        Does not return the gradient of the mass function, as that's not used 
+        elsewhere.
+
+        Parameters
+        ----------
+        path : ndarray
+            The path. Of shape (nPoints,nDims)
+        potential : -
+            As allowed in TargetFunctions.action
+        potentialOnPath : ndarray
+            Potential on the path. Of shape (nPoints,).
+        mass : -
+            As allowed in TargetFunctions.action
+        massOnPath : ndarray or None
+            Mass on path. If not None, of shape (nPoints,nDims,nDims).
+        target_func : function
+            One term in the sum of any action-like approximation. See e.g.
+            TargetFunctions.term_in_action_sum
+
+        Returns
+        -------
+        gradOfAction : ndarray
+        gradOfPes : ndarray
+
+        """
+        eps = fdTol
+        
+        gradOfPes = np.zeros(path.shape)
+        gradOut = np.zeros(path.shape)
+        
+        nPts, nDims = path.shape
+        
+        if massOnPath is None:
+            massOnPath = np.full((nPts,nDims,nDims),np.identity(nDims))
+        
+        #Treat the endpoints separately
+        for ptIter in range(1,nPts-1):
+            for dimIter in range(nDims):
+                points = path[ptIter-1:ptIter+1]
+                actTermAtPt, _, _ = \
+                    target_func(points,potentialOnPath[ptIter],massOnPath[ptIter])
+                
+                step = points.copy()
+                step[1,dimIter] += eps
+                actTermAtStep, potAtStep, massAtStep = \
+                    target_func(step,potential,mass)
+                    
+                gradOfPes[ptIter,dimIter] = \
+                    (potAtStep - potentialOnPath[ptIter])/eps
+                gradOut[ptIter,dimIter] = (actTermAtStep - actTermAtPt)/eps
+        
+        #Handling endpoints
+        for dimIter in range(nDims):
+            pt = points[0]
+            pt[dimIter] += eps
+            potAtStep = potential(pt)
+            gradOfPes[0,dimIter] = (potAtStep - potentialOnPath[0])/eps
+            
+            pt = points[-1]
+            pt[dimIter] += eps
+            potAtStep = potential(pt)
+            gradOfPes[-1,dimIter] = (potAtStep - potentialOnPath[-1])/eps
+            
+        return gradOut, gradOfPes
 
 def potential_central_grad(points,potential,auxFunc=None):
     '''
-    TODO: is this actually... used anywhere?
+    Used in MEP for force updates. There, one only needs the gradient of the
+    PES.
 
     Parameters
     ----------
@@ -324,8 +475,10 @@ def midpoint_grad(func,points,eps=10**(-8)):
     Midpoint finite difference. Probably best if not used with actual DFT calculations,
         vs a forwards/reverse finite difference
     Assumes func only depends on a single point (vs the action, which depends on
-         all of the points)
+          all of the points)
     """
+    warnings.warn("midpoint_grad may be deprecated, if nobody uses it",DeprecationWarning)
+    
     if len(points.shape) == 1:
         points = points.reshape((1,-1))
     nPoints, nDims = points.shape
