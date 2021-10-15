@@ -243,9 +243,8 @@ class GradientApproximations:
     #Should check compatibility here (at least have a list of compatible actions
     #to check in *other* methods)
     #Fill out as appropriate
-    def discrete_element(self,potential,mass,path,dr,drp1,beff,beffp1,beffm1,pot,potp1,potm1):
+    def discrete_element(self,potential,mass,path,gradOfPes,dr,drp1,beff,beffp1,beffm1,pot,potp1,potm1):
         eps = fdTol
-        gradOfPes = midpoint_grad(potential,path,eps=eps)
         gradOfBeff = beff_grad(mass,path,dr,eps=eps)
         dnorm=np.linalg.norm(dr)
         dnormP1=np.linalg.norm(dr)
@@ -255,7 +254,7 @@ class GradientApproximations:
             (beff*pot + beffm1*potm1)*dhat-\
             (beff*pot + beffp1*potp1)*dhatP1+\
             (beff*gradOfPes + pot*gradOfBeff)*(dnorm+dnormP1))
-        return gradOfAction, gradOfPes
+        return gradOfAction
     def discrete_sqr_action_grad_mp(self,path,potential,potentialOnPath,mass,massOnPath,\
                                  target_func):
         """
@@ -273,7 +272,8 @@ class GradientApproximations:
         
         nPts, nDims = path.shape
         
-        actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
+        #Build grad of potential
+        gradOfPes = midpoint_grad(potential,path,eps=eps)
 
         dr[1:,:] = np.array([path[ptIter] - path[ptIter-1] \
                                for ptIter in range(1,nPts)])
@@ -289,11 +289,10 @@ class GradientApproximations:
 
         mapOut = pool.map(self.discrete_element, \
                 itertools.repeat(potential,nPts-1),itertools.repeat(mass,nPts-1),path[1:nPts-1,:], \
-                dr[1:nPts-1,:], dr[2:nPts,:], \
+                gradOfPes[1:nPts-1],dr[1:nPts-1,:], dr[2:nPts,:], \
                 beff[1:nPts-1], beff[2:nPts], beff[0:nPts-2], \
                 potentialOnPath[1:nPts-1], potentialOnPath[2:nPts], potentialOnPath[0:nPts-2])
-        gradOfAction[1:nPts-1,:] = np.array(mapOut[:][0][0][:])
-        gradOfPes[1:nPts-1,:] = np.array(mapOut[:][1][0][:])
+        gradOfAction[1:nPts-1,:] = np.array(mapOut[:][0][:])
         return gradOfAction, gradOfPes
     
     def discrete_sqr_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
@@ -313,8 +312,9 @@ class GradientApproximations:
         
         nPts, nDims = path.shape
         
-        actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
-
+        #Build grad of potential
+        gradOfPes = midpoint_grad(potential,path,eps=eps)
+        
         dr[1:,:] = np.array([path[ptIter] - path[ptIter-1] \
                                for ptIter in range(1,nPts)])
 
@@ -322,7 +322,6 @@ class GradientApproximations:
 
         for ptIter in range(1,nPts-1):
 
-            gradOfPes[ptIter] = midpoint_grad(potential,path[ptIter],eps=eps)
             gradOfBeff[ptIter] = beff_grad(mass,path[ptIter],dr[ptIter],eps=eps)
 
             beff[ptIter+1] = np.dot(np.dot(massOnPath[ptIter+1],dr[ptIter+1]),dr[ptIter+1])/np.sum(dr[ptIter,:]**2)
