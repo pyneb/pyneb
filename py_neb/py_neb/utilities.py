@@ -450,7 +450,9 @@ class GradientApproximations:
         massOnPath : ndarray or None
             Mass on path. If not None, of shape (nPoints,nDims,nDims).
         target_func : function
-            One term in the sum of any action-like approximation. See e.g.
+            Any term in TargetFunctions that is the sum of some constituent
+            terms (e.g. TargetFunctions.action). Uses target_func.__name__
+            to select the gradient of a term in the sum, such as 
             TargetFunctions.term_in_action_sum
 
         Returns
