@@ -6,6 +6,19 @@ import warnings
 #pyNebDir imported from context; perhaps bad practice?
 print("\nRunning "+os.path.relpath(__file__,pyNebDir))
 
+class __init___(unittest.TestCase):
+    def test_1(self):
+        #At the moment, nothing is actually initialized in the __init__ method.
+        #If anything there breaks, I guess this'll tell us, but for now it's mostly
+        #placeholder code
+        g = GradientApproximations()
+        return None
+    
+class discrete_element_(unittest.TestCase):
+    #TODO: tests
+    def test_1(self):
+        return None
+
 class discrete_sqr_action_grad_(unittest.TestCase):
     #TODO: tests
     def test_1(self):
@@ -49,7 +62,54 @@ class forward_action_grad_(unittest.TestCase):
         return None
     
 class forward_action_component_grad_(unittest.TestCase):
-    def test_1(self):
+    def test_none_mass(self):
+        def potential(coordArr):
+            if coordArr.ndim == 1:
+                coordArr = coordArr.reshape((1,-1))
+            return coordArr[:,0]**2 + coordArr[:,1]**2
+        
+        path = np.array([[1.,2,3],[1,2,3]]).T
+        potOnPath = potential(path)
+        
+        g = GradientApproximations()
+        gradOut, gradOfPes = \
+            g.forward_action_component_grad(path,potential,potOnPath,None,None,\
+                                            TargetFunctions.action)
+                
+        correctGradOut = 3.*np.sqrt(2)*np.array([[0.,0],[1,1],[0,0]])
+        correctPesGrad = np.array([[2.,2],[4,4],[6,6]])
+        
+        self.assertIsNone(np.testing.assert_allclose(gradOut,correctGradOut))
+        self.assertIsNone(np.testing.assert_allclose(gradOfPes,correctPesGrad))
+        
+        return None
+    
+    def test_with_mass(self):
+        def potential(coordArr):
+            if coordArr.ndim == 1:
+                coordArr = coordArr.reshape((1,-1))
+            return coordArr[:,0]**2 + coordArr[:,1]**2
+        
+        def mass(coordArr):
+            if coordArr.ndim == 1:
+                coordArr = coordArr.reshape((1,-1))
+            return np.full((coordArr.shape[0],2,2),np.identity(2))
+        
+        path = np.array([[1.,2,3],[1,2,3]]).T
+        potOnPath = potential(path)
+        massOnPath = mass(path)
+        
+        g = GradientApproximations()
+        gradOut, gradOfPes = \
+            g.forward_action_component_grad(path,potential,potOnPath,mass,massOnPath,\
+                                            TargetFunctions.action)
+                
+        correctGradOut = 3.*np.sqrt(2)*np.array([[0.,0],[1,1],[0,0]])
+        correctPesGrad = np.array([[2.,2],[4,4],[6,6]])
+        
+        self.assertIsNone(np.testing.assert_allclose(gradOut,correctGradOut))
+        self.assertIsNone(np.testing.assert_allclose(gradOfPes,correctPesGrad))
+        
         return None
     
 class potential_central_grad_(unittest.TestCase):

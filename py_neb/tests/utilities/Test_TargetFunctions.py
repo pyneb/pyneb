@@ -168,7 +168,7 @@ class term_in_action_sum_(unittest.TestCase):
         potential = 2
         
         act, eneg, mass = TargetFunctions.term_in_action_sum(path,potential,\
-                                                             masses=mass)
+                                                              masses=mass)
         
         correctAction = 8.
         correctMass = np.array([[1.,1.],[0.,2.]])

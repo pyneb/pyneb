@@ -90,23 +90,25 @@ class TargetFunctions:
         if masses is None:
             massArr = np.identity(nDims)
         elif not isinstance(masses,np.ndarray):
-            massArr = masses(points[1])
+            massArr = masses(points[1]).reshape((nDims,nDims))
         else:
             massArr = masses
-            
+        
         massDim = (nDims,nDims)
         if massArr.shape != massDim:
             raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
                              "; required shape is "+str(massDim))
         
-        #In case a scalar value is fed in
-        if isinstance(potential,(int,float)):
-            potential = np.array([potential])
-        
-        if not isinstance(potential,np.ndarray):
+        #There's lots of things that can be fed in, including odd things like
+        #np.int objects. These aren't caught with a simple filter like "isinstance(potential,int)",
+        #so I'm trying it this way for a bit
+        try:
             potArr = potential(points[1])
-        else:
-            potArr = potential
+        except TypeError:
+            if not isinstance(potential,np.ndarray):
+                potArr = np.array([potential])
+            else:
+                potArr = potential
         
         potShape = (1,)
         if potArr.shape != potShape:
@@ -240,9 +242,22 @@ class TargetFunctions:
         return energies, auxEnergies
 
 class GradientApproximations:
-    #Should check compatibility here (at least have a list of compatible actions
-    #to check in *other* methods)
-    #Fill out as appropriate
+    def __init__(self):
+        """
+        When calling a method of GradientApproximations, we always supply a
+        target_func, such as TargetFunctions.action. However, sometimes we
+        only want the gradient wrt one term in the sum that makes up target_func.
+        So, we map target_func to a function that evaluates exactly one component
+        in the sum. This mapping is defined here.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.targetFuncToComponentMap = \
+            {"action":TargetFunctions.term_in_action_sum}
+    
     def discrete_element(self,potential,mass,path,gradOfPes,dr,drp1,beff,beffp1,beffm1,pot,potp1,potm1):
         eps = fdTol
         gradOfBeff = beff_grad(mass,path,dr,eps=eps)
@@ -440,12 +455,11 @@ class GradientApproximations:
         ----------
         path : ndarray
             The path. Of shape (nPoints,nDims)
-        potential : -
-            As allowed in TargetFunctions.action
+        potential : function.
+            Must take as input an array of shape path.shape
         potentialOnPath : ndarray
             Potential on the path. Of shape (nPoints,).
-        mass : -
-            As allowed in TargetFunctions.action
+        mass : function or None
         massOnPath : ndarray or None
             Mass on path. If not None, of shape (nPoints,nDims,nDims).
         target_func : function
@@ -460,6 +474,9 @@ class GradientApproximations:
         gradOfPes : ndarray
 
         """
+        targetFuncName = target_func.__name__
+        tf_component = self.targetFuncToComponentMap[targetFuncName]
+        
         eps = fdTol
         
         gradOfPes = np.zeros(path.shape)
@@ -473,27 +490,26 @@ class GradientApproximations:
         #Treat the endpoints separately
         for ptIter in range(1,nPts-1):
             for dimIter in range(nDims):
-                points = path[ptIter-1:ptIter+1]
+                points = path[ptIter-1:ptIter+1].copy()
                 actTermAtPt, _, _ = \
-                    target_func(points,potentialOnPath[ptIter],massOnPath[ptIter])
+                    tf_component(points,potentialOnPath[ptIter],massOnPath[ptIter])
                 
-                step = points.copy()
-                step[1,dimIter] += eps
+                points[1,dimIter] += eps
                 actTermAtStep, potAtStep, massAtStep = \
-                    target_func(step,potential,mass)
-                    
+                    tf_component(points,potential,mass)
+                
                 gradOfPes[ptIter,dimIter] = \
                     (potAtStep - potentialOnPath[ptIter])/eps
                 gradOut[ptIter,dimIter] = (actTermAtStep - actTermAtPt)/eps
         
         #Handling endpoints
         for dimIter in range(nDims):
-            pt = points[0]
+            pt = path[0].copy()
             pt[dimIter] += eps
             potAtStep = potential(pt)
             gradOfPes[0,dimIter] = (potAtStep - potentialOnPath[0])/eps
             
-            pt = points[-1]
+            pt = path[-1].copy()
             pt[dimIter] += eps
             potAtStep = potential(pt)
             gradOfPes[-1,dimIter] = (potAtStep - potentialOnPath[-1])/eps
@@ -541,8 +557,6 @@ def midpoint_grad(func,points,eps=10**(-8)):
     Assumes func only depends on a single point (vs the action, which depends on
           all of the points)
     """
-    warnings.warn("midpoint_grad may be deprecated, if nobody uses it",DeprecationWarning)
-    
     if len(points.shape) == 1:
         points = points.reshape((1,-1))
     nPoints, nDims = points.shape
