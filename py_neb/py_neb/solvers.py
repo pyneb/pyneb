@@ -29,6 +29,8 @@ CONVENTIONS:
 class LeastActionPath:
     """
     class documentation...?
+    
+    Maintainer: Daniel
     """
     def __init__(self,potential,nPts,nDims,mass=None,endpointSpringForce=True,\
                  endpointHarmonicForce=True,target_func=action,\
@@ -254,6 +256,9 @@ class LeastActionPath:
         return netForce
 
 class MinimumEnergyPath:
+    """
+    Maintainer: Eric
+    """
     def __init__(self,potential,nPts,nDims,endpointSpringForce=True,\
                  endpointHarmonicForce=True,auxFunc = None,target_func=potential_target_func,\
                  target_func_grad=potential_central_grad,nebParams={}):
@@ -459,10 +464,33 @@ class MinimumEnergyPath:
             netForce[-1] = springForce[-1]
         return netForce
     
-#TODO: maybe rename something like ForceMinimization?   
 #TODO: do we compute the action for all points after optimizing? or let someone else do that? 
 class VerletMinimization:
+    """
+    Maintainer: Daniel
+    """
     def __init__(self,nebObj,initialPoints):
+        """
+        
+
+        Parameters
+        ----------
+        nebObj : TYPE
+            DESCRIPTION.
+        initialPoints : TYPE
+            DESCRIPTION.
+
+        Raises
+        ------
+        AttributeError
+            DESCRIPTION.
+        ValueError
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+        """
         #It'll probably do this automatically, but whatever
         if not hasattr(nebObj,"compute_force"):
             raise AttributeError("Object "+str(nebObj)+" has no attribute compute_force")
@@ -505,7 +533,6 @@ class VerletMinimization:
             DESCRIPTION.
         allForces : TYPE
             DESCRIPTION.
-
         """
         #allPts is longer by 1 than the velocities/forces, because the last 
         #velocity/force computed should be used to update the points one 
@@ -574,7 +601,6 @@ class VerletMinimization:
         Returns
         -------
         None.
-
         """
         
         defaultFireParams = \
@@ -714,6 +740,9 @@ class VerletMinimization:
         return None
     
 class EulerLagrangeSolver:
+    """
+    Maintainer: Daniel
+    """
     def __init__(self,initialPath,eneg_func,mass_func=None,grad_approx=midpoint_grad):
         self.initialPath = initialPath
         self.eneg_func = eneg_func
@@ -764,6 +793,9 @@ class EulerLagrangeSolver:
         return sol
     
 class EulerLagrangeVerification:
+    """
+    Maintainer: Daniel
+    """
     def __init__(self,path,enegOnPath,eneg_func,massOnPath=None,mass_func=None,\
                  grad_approx=midpoint_grad):
         #TODO: major issue here when points aren't evenly spaced along the arc-length
@@ -843,6 +875,9 @@ class EulerLagrangeVerification:
         return None
     
 class Dijkstra:
+    """
+    Maintainer: Daniel
+    """
     def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,\
                  target_func=TargetFunctions.action,allowedEndpoints=None,\
                  trimVals=[10**(-4),None]):

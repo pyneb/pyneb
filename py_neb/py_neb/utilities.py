@@ -31,6 +31,8 @@ class TargetFunctions:
             
         Computes action as
             $ S = sum_{i=1}^{nPoints} sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
+            
+        Maintainer: Daniel
         """
         nPoints, nDims = path.shape
         
@@ -82,6 +84,8 @@ class TargetFunctions:
             
         Computes action as
             $ S = sum_{i=1}^{nPoints} sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
+            
+        Maintainer: Daniel
         """
         nDims = points.shape[1]
         if points.shape[0] != 2:
@@ -156,7 +160,8 @@ class TargetFunctions:
             ndarray of shape (Nimgs,1) containing the PES values for each image in path
         massArr : ndarray
             ndarray of shape (Nimgs,nDim,nDim) containing the mass tensors for each image in path.
-
+            
+        Maintainer: Eric
         '''
         """    
         Computes action as
@@ -221,7 +226,8 @@ class TargetFunctions:
             DESCRIPTION.
         auxEnergies : TYPE
             DESCRIPTION.
-
+            
+        Maintainer: Eric
         '''
         nPoints, nDim = points.shape
         if not isinstance(potential,np.ndarray):
@@ -253,12 +259,50 @@ class GradientApproximations:
         Returns
         -------
         None.
-
+        
+        Maintainer: Daniel
         """
         self.targetFuncToComponentMap = \
             {"action":TargetFunctions.term_in_action_sum}
     
     def discrete_element(self,potential,mass,path,gradOfPes,dr,drp1,beff,beffp1,beffm1,pot,potp1,potm1):
+        """
+        
+
+        Parameters
+        ----------
+        potential : TYPE
+            DESCRIPTION.
+        mass : TYPE
+            DESCRIPTION.
+        path : TYPE
+            DESCRIPTION.
+        gradOfPes : TYPE
+            DESCRIPTION.
+        dr : TYPE
+            DESCRIPTION.
+        drp1 : TYPE
+            DESCRIPTION.
+        beff : TYPE
+            DESCRIPTION.
+        beffp1 : TYPE
+            DESCRIPTION.
+        beffm1 : TYPE
+            DESCRIPTION.
+        pot : TYPE
+            DESCRIPTION.
+        potp1 : TYPE
+            DESCRIPTION.
+        potm1 : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        gradOfAction : TYPE
+            DESCRIPTION.
+            
+        Maintainer: Kyle
+        """
         eps = fdTol
         gradOfBeff = beff_grad(mass,path,dr,eps=eps)
         dnorm=np.linalg.norm(dr)
@@ -275,7 +319,9 @@ class GradientApproximations:
         """
         
         Performs discretized action gradient, needs numerical PES still
-     
+        
+        
+        Maintainer: Kyle
         """
         eps = fdTol
         
@@ -315,7 +361,8 @@ class GradientApproximations:
         """
         
         Performs discretized action gradient, needs numerical PES still
-     
+        
+        Maintainer: Kyle
         """
         eps = fdTol
         
@@ -358,7 +405,8 @@ class GradientApproximations:
         """
         
         Performs discretized action gradient, needs numerical PES still
-     
+        
+        Maintainer: Kyle
         """
         eps = fdTol
         
@@ -415,7 +463,8 @@ class GradientApproximations:
         -------
         gradOfAction : ndarray
         gradOfPes : ndarray
-
+        
+        Maintainer: Daniel
         """
         eps = fdTol
         
@@ -472,7 +521,8 @@ class GradientApproximations:
         -------
         gradOfAction : ndarray
         gradOfPes : ndarray
-
+        
+        Maintainer: Daniel
         """
         targetFuncName = target_func.__name__
         tf_component = self.targetFuncToComponentMap[targetFuncName]
@@ -536,7 +586,8 @@ def potential_central_grad(points,potential,auxFunc=None):
         DESCRIPTION.
     gradAux : TYPE
         DESCRIPTION.
-
+    
+    Maintainer: Eric
     '''
     h = 10**(-8)
     ## check if it is a scalar is done inside midpoint_grad
@@ -556,6 +607,8 @@ def midpoint_grad(func,points,eps=10**(-8)):
         vs a forwards/reverse finite difference
     Assumes func only depends on a single point (vs the action, which depends on
           all of the points)
+    
+    Maintainer: Eric
     """
     if len(points.shape) == 1:
         points = points.reshape((1,-1))
@@ -578,6 +631,8 @@ def midpoint_grad(func,points,eps=10**(-8)):
 def beff_grad(func,points,dr,eps=10**(-8)):
     """
     Midpoint finite difference of B_eff mass.
+    
+    Maintainer: Kyle
     """
     if len(points.shape) == 1:
         points = points.reshape((1,-1))
@@ -608,6 +663,8 @@ def beff_grad(func,points,dr,eps=10**(-8)):
 class SurfaceUtils:
     """
     Defined for namespace purposes
+    
+    Maintainer: Daniel
     """
     @staticmethod
     def find_all_local_minimum(arr):
@@ -858,13 +915,17 @@ def shift_func(func_in,shift=10**(-4)):
     -------
     func_out : function
         The shifted function
-
+    
+    Maintainer: Daniel
     """
     def func_out(coords):
         return func_in(coords) - shift
     return func_out
 
 class RectBivariateSplineWrapper(RectBivariateSpline):
+    """
+    Maintainer: Daniel
+    """
     def __init__(self,*args,**kwargs):
         warnings.warn("Deprecating RectBivariateSplineWrapper in favor of "\
                       +"2D method in NDInterpWithBoundary")
@@ -883,6 +944,8 @@ class RectBivariateSplineWrapper(RectBivariateSpline):
 class NDInterpWithBoundary:
     """
     Based on scipy.interpolate.RegularGridInterpolator
+    
+    Maintainer: Daniel
     """
     def __init__(self, points, values, boundaryHandler="exponential",minVal=0):
         if len(points) < 3:
@@ -1065,6 +1128,8 @@ class NDInterpWithBoundary:
 class NDInterpWithBoundary_experimental:
     """
     Based on scipy.interpolate.RegularGridInterpolator
+    
+    Maintainer: Daniel
     """
     def __init__(self, gridPoints, gridVals, boundaryHandler="exponential", symmExtend=None,\
                  splKWargs={}):
@@ -1335,7 +1400,8 @@ def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
     -------
     func_out : function
         The inertia tensor. Can be called as func_out(coords).
-
+        
+    Maintainer: Daniel
     """
     nDims = len(uniqueKeys)
     pairedKeys = np.array([c1+c2 for c1 in uniqueKeys for c2 in uniqueKeys]).reshape(2*(nDims,))
@@ -1375,6 +1441,9 @@ def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
     return func_out
 
 class InterpolatedPath:
+    """
+    Maintainer: Daniel
+    """
     def __init__(self,discretePath,kwargs={}):
         """
         Note that when one considers a 1D curve embedded in 2D, e.g. in a plot 
