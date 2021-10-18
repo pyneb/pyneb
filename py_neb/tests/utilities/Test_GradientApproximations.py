@@ -157,6 +157,16 @@ class potential_central_grad_(unittest.TestCase):
         self.assertIsNone(gradOfAux)
         return None
     
+class midpoint_grad_(unittest.TestCase):
+    #TODO: tests
+    def test_1(self):
+        return None
+    
+class beff_grad_(unittest.TestCase):
+    #TODO: tests
+    def test_1(self):
+        return None
+    
 if __name__ == "__main__":
     warnings.simplefilter("default")
     warnings.filterwarnings("ignore",message=".*should_run_async.*")
