@@ -629,12 +629,9 @@ class VerletMinimization:
         for step in range(1,maxIters+1):
             #TODO: check potential off-by-one indexing on tStep
             if useLocal:
-                start = time.time()
                 tStepArr,alphaArr,stepsSinceReset = \
                     self._local_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
                                           fireParams)
-                end = time.time()
-                print("Fire iter: ",end -start)
             else:
                 tStepArr,alphaArr,stepsSinceReset = \
                     self._global_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
@@ -656,10 +653,7 @@ class VerletMinimization:
         self.allPts[step] = self.allPts[step-1] + \
             tStepPrev*self.allVelocities[step-1] + \
             0.5*self.allForces[step-1]*tStepPrev**2
-        start = time.time()
         self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
-        end = time.time()
-        print("Compute force: ",end -start)
         #What the Wikipedia article on velocity Verlet uses
         self.allVelocities[step] = \
             0.5*tStepPrev*(self.allForces[step]+self.allForces[step-1])
