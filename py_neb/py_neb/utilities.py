@@ -265,41 +265,39 @@ class GradientApproximations:
         self.targetFuncToComponentMap = \
             {"action":TargetFunctions.term_in_action_sum}
     
-    def discrete_element(self,potential,mass,path,gradOfPes,dr,drp1,beff,beffp1,beffm1,pot,potp1,potm1):
+    def discrete_element(self,mass,path,gradOfPes,dr,drp1,beff,beffp1,beffm1,pot,potp1,potm1):
         """
         
 
         Parameters
         ----------
-        potential : TYPE
-            DESCRIPTION.
-        mass : TYPE
-            DESCRIPTION.
-        path : TYPE
-            DESCRIPTION.
-        gradOfPes : TYPE
-            DESCRIPTION.
-        dr : TYPE
-            DESCRIPTION.
-        drp1 : TYPE
-            DESCRIPTION.
-        beff : TYPE
-            DESCRIPTION.
-        beffp1 : TYPE
-            DESCRIPTION.
-        beffm1 : TYPE
-            DESCRIPTION.
-        pot : TYPE
-            DESCRIPTION.
-        potp1 : TYPE
-            DESCRIPTION.
-        potm1 : TYPE
-            DESCRIPTION.
+        mass : function
+            Callable mass function
+        path : float
+            Point i
+        gradOfPes : float array
+            Gradient of PES at point i
+        dr : float array
+            dr = r_i - r_i-1
+        drp1 : float array
+            drp1 = r_i+1 - r_i
+        beff : float
+            Effective mass at point i
+        beffp1 : float
+            Effective mass at point i+1
+        beffm1 : float
+            Effective mass at point i-1
+        pot : float
+            Potential at point i.
+        potp1 : float
+            Potential at point i+1
+        potm1 : float
+            Potential at point i-1
 
         Returns
         -------
-        gradOfAction : TYPE
-            DESCRIPTION.
+        gradOfAction : float array
+            Gradient of action at point i
             
         Maintainer: Kyle
         """
@@ -343,13 +341,8 @@ class GradientApproximations:
                                for ptIter in range(1,nPts)])
         pool = Pool(4)
 
-        mp_in = zip(itertools.repeat(potential),itertools.repeat(mass),path[1:nPts-1,:], \
-                dr[1:nPts-1,:], dr[2:nPts,:], dr[0:nPts-2,:], \
-                beff[1:nPts-1], beff[2:nPts], beff[0:nPts-2], \
-                potentialOnPath[1:nPts-1], potentialOnPath[2:nPts], potentialOnPath[0:nPts-2])
-
         mapOut = pool.map(self.discrete_element, \
-                itertools.repeat(potential,nPts-1),itertools.repeat(mass,nPts-1),path[1:nPts-1,:], \
+                itertools.repeat(mass,nPts-1),path[1:nPts-1,:], \
                 gradOfPes[1:nPts-1],dr[1:nPts-1,:], dr[2:nPts,:], \
                 beff[1:nPts-1], beff[2:nPts], beff[0:nPts-2], \
                 potentialOnPath[1:nPts-1], potentialOnPath[2:nPts], potentialOnPath[0:nPts-2])
