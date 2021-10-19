@@ -33,8 +33,8 @@ class LeastActionPath:
     Maintainer: Daniel
     """
     def __init__(self,potential,nPts,nDims,mass=None,endpointSpringForce=True,\
-                 endpointHarmonicForce=True,target_func=action,\
-                 target_func_grad=forward_action_grad,nebParams={}):
+                 endpointHarmonicForce=True,target_func=TargetFunctions.action,\
+                 target_func_grad=GradientApproximations().forward_action_grad,nebParams={}):
         """
         asdf
 
@@ -192,21 +192,13 @@ class LeastActionPath:
             else:
                 sys.exit("Err: points "+str(points)+\
                          " does not match expected shape in LeastActionPath")
-        start = time.time()
+        
         integVal, energies, masses = self.target_func(points,self.potential,self.mass)
-        end = time.time()
-        print("Target func eval: ",end-start)
-        start = time.time()
         tangents = self._compute_tangents(points,energies)
-        end = time.time()
-        print("Compute tangents: ",end-start)
-        start = time.time()
+        
         gradOfAction, gradOfPes = \
             self.target_func_grad(points,self.potential,energies,self.mass,masses,\
                                   self.target_func)
-        end = time.time()
-        print("Compute grad: ",end-start)
-        start = time.time()
                 
         negIntegGrad = -gradOfAction
         trueForce = -gradOfPes
@@ -223,8 +215,6 @@ class LeastActionPath:
         for i in range(1,self.nPts-1):
             netForce[i] = perpForce[i] + springForce[i]
         
-        end = time.time()
-        print("Compute netforce: ",end-start)
         #TODO: add check if force is very small...?
         
         #Avoids throwing divide-by-zero errors, but also deals with points with
@@ -260,7 +250,8 @@ class MinimumEnergyPath:
     Maintainer: Eric
     """
     def __init__(self,potential,nPts,nDims,endpointSpringForce=True,\
-                 endpointHarmonicForce=True,auxFunc = None,target_func=potential_target_func,\
+                 endpointHarmonicForce=True,auxFunc=None,\
+                 target_func=TargetFunctions.mep_default,\
                  target_func_grad=potential_central_grad,nebParams={}):
         """
         Parameters
