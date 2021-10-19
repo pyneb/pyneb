@@ -11,6 +11,10 @@ import inspect
 class DijkstraLogger:
     def __init__(self,djkInst,logLevel=1):
         self.logLevel = logLevel
+        if self.logLevel not in [0,1]:
+            raise ValueError("DijkstraLogger logLevel "+str(self.logLevel)+\
+                             " not allowed.")
+        
         self.initTime = datetime.datetime.now().isoformat()
         self.djkInst = djkInst
         os.makedirs("logs",exist_ok=True)
@@ -120,3 +124,66 @@ class DijkstraLogger:
         h5File.close()
         return None
     
+class LoadDijkstraLog:
+    #Maybe can just be a function
+    def __init__(self,file):
+        if not file.endswith(".djk"):
+            raise TypeError("File "+str(file)+" does not have extension .djk")
+        
+        scalarAttrs = ["runTime","target_func"]
+        tupleAttrs = ["initialInds","initialPoint"]
+        expectedDSets = ["allPathsIndsDict","allowedEndpoints","endpointIndices",\
+                         "inertArr","neighborsVisitDict","pathArrDict","potArr",\
+                         "tentativeDistance"]
+        dsetsDict = {}
+        
+        h5File = h5py.File(file,"r")
+        
+        for attr in h5File.attrs:
+            if attr in scalarAttrs:
+                setattr(self,attr,h5File.attrs[attr])
+            elif attr in tupleAttrs:
+                setattr(self,attr,tuple(np.array(h5File.attrs[attr])))
+            else:
+                warnings.warn("Attribute "+attr+" not recognized; will not be loaded")
+                
+        for d in expectedDSets:
+            if d in h5File:
+                dsetsDict[d] = np.array(h5File[d])
+            else:
+                h5File.close()
+                raise ValueError("Dataset "+d+" expected but not found")
+                
+        self.uniqueCoords = [np.array(c) for c in h5File["uniqueCoords"]]
+        
+        h5File.close()
+        
+        self._set_attrs(dsetsDict)
+        
+    def _set_attrs(self,dsetsDict):
+        #Tested via Spyder console, but not rigorously
+        self.allPathsIndsDict = {}
+        for (i,p) in enumerate(dsetsDict["allPathsIndsDict"]):
+            self.allPathsIndsDict[tuple(p["finalInd"])] = \
+                [tuple(val) for val in p["pathInds"][:p["nPts"]]]
+                
+        self.allowedEndpoints = dsetsDict["allowedEndpoints"]
+        self.endpointIndices = [tuple(val) for val in dsetsDict["endpointIndices"]]
+        self.inertArr = np.array(dsetsDict["inertArr"])
+        
+        self.neighborsVisitDict = {}
+        for (i,p) in enumerate(dsetsDict["neighborsVisitDict"]):
+            self.neighborsVisitDict[tuple(p["key"])] = tuple(p["val"])
+            
+        self.pathArrDict = {}
+        for (i,p) in enumerate(dsetsDict["pathArrDict"]):
+            self.allPathsIndsDict[tuple(p["finalPoint"])] = \
+                np.array(p["path"][:p["nPts"]])
+                
+        self.potArr = dsetsDict["potArr"]
+        
+        self.tentativeDistance = \
+            np.ma.masked_array(dsetsDict["tentativeDistance"]["data"],\
+                               mask=dsetsDict["tentativeDistance"]["mask"])
+            
+        return None
