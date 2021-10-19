@@ -19,7 +19,6 @@ class SaneEqualityArray(np.ndarray):
                 self.shape == other.shape and
                 np.allclose(self, other))
 
-
 class _construct_path_dict_(unittest.TestCase):
     def test_3d_grid(self):
         def dist_func(coords,enegs,masses):
@@ -95,13 +94,15 @@ class __call___(unittest.TestCase):#<--- yes, this class has 5 underscores in it
         dijkstra = Dijkstra(initialPoint,coordMeshTuple,zz,target_func=dist_func,\
                             allowedEndpoints=finalPoint)
         
-        pathIndsDict, pathArrDict = dijkstra()
+        pathIndsDict, pathArrDict, distDict = dijkstra(returnAll=True)
         
         correctPathInds = \
-            {(1,1,1):[(0,0,0),(0,0,1),(1,1,1)],(1,1,0):[(0,0,0),(1,1,0)]}
+            {(1,2,3):[(0,0,0),(0,0,1),(1,1,1)],(1,2,1):[(0,0,0),(1,1,0)]}
         correctPaths = \
             {(1,2,3):np.array([[0.,0.,1.],[0.,0.,3.],[1.,2.,3.]]),\
              (1,2,1):np.array([[0.,0.,1.],[1.,2.,1.]])}
+        #TODO: check that this is actually correct
+        correctDistDict = {(1, 2, 3): 17.65247584249853, (1, 2, 1): 13.416407864998739}
         
         #Doing this to effectively compare the dictionaries, using SaneEqualityArray
         correctPathsForComparison = {}
@@ -112,9 +113,11 @@ class __call___(unittest.TestCase):#<--- yes, this class has 5 underscores in it
         
         self.assertDictEqual(correctPathInds,pathIndsDict)
         self.assertDictEqual(correctPathsForComparison,pathArrDict)
+        warnings.warn("Still need to check that the distance dicts are equal")
                 
         return None
     
 if __name__ == "__main__":
-    warnings.simplefilter("ignore")
+    warnings.simplefilter("default")
+    warnings.filterwarnings("ignore",message=".*should_run_async.*")
     unittest.main()

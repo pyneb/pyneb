@@ -871,7 +871,7 @@ class Dijkstra:
     """
     def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,\
                  target_func=TargetFunctions.action,allowedEndpoints=None,\
-                 trimVals=[10**(-4),None]):
+                 trimVals=[10**(-4),None],logLevel=1):
         """
         Some indexing is done to deal with the default shape of np.meshgrid.
         For D dimensions, the output is of shape (N2,N1,N3,...,ND), while the
@@ -918,15 +918,36 @@ class Dijkstra:
         self.coordMeshTuple = coordMeshTuple
         self.uniqueCoords = [np.unique(c) for c in self.coordMeshTuple]
         
+        expectedShape = np.array([len(c) for c in self.uniqueCoords])
+        expectedShape[[1,0]] = expectedShape[[0,1]]
+        expectedShape = tuple(expectedShape)
+        
+        tempCMesh = []
+        for c in self.coordMeshTuple:
+            if c.shape != expectedShape:
+                cNew = np.swapaxes(c,0,1)
+                if cNew.shape == expectedShape:
+                    tempCMesh.append(cNew)
+                else:
+                    raise ValueError("coordMeshTuple has wrong dimensions somehow")
+        if tempCMesh:
+            self.coordMeshTuple = tuple(tempCMesh)
+        
         self.target_func = target_func
         
         self.nDims = len(coordMeshTuple)
         
-        if potArr.shape != self.coordMeshTuple[0].shape:
-            raise ValueError("potArr.shape is "+str(potArr.shape)+\
-                             "; required shape is "+str(coordMeshTuple[0].shape))
-        self.potArr = potArr
-        
+        if potArr.shape == expectedShape:
+            self.potArr = potArr
+        else:
+            potNew = np.swapaxes(potArr,0,1)
+            if potNew.shape == expectedShape:
+                self.potArr = potNew
+            else:
+                raise ValueError("potArr.shape is "+str(potArr.shape)+\
+                                 "; required shape is "+str(expectedShape)+\
+                                 " (or with swapped first two indices)")
+        #TODO: apply error checking above to inertArr
         if inertArr is not None:
             inertArrRequiredShape = self.potArr.shape + 2*(self.nDims,)
             if inertArr.shape != inertArrRequiredShape:
@@ -940,7 +961,7 @@ class Dijkstra:
         
         if allowedEndpoints is None:
             self.allowedEndpoints, self.endpointIndices \
-                = find_endpoints_on_grid(self.coordMeshTuple,self.potArr)
+                = SurfaceUtils.find_endpoints_on_grid(self.coordMeshTuple,self.potArr)
         else:
             self.allowedEndpoints = allowedEndpoints
             self.endpointIndices, _ = \
@@ -964,8 +985,9 @@ class Dijkstra:
         self.endpointIndices = [tuple(row) for row in self.endpointIndices]
         
         #Clip the potential to the min/max. Done after finding possible endpoints.
-        if trimVals != [None,None]:
-            self.potArr = self.potArr.clip(trimVals[0],trimVals[1])
+        self.trimVals = trimVals
+        if self.trimVals != [None,None]:
+            self.potArr = self.potArr.clip(self.trimVals[0],self.trimVals[1])
         
         #Getting indices for self.initialPoint
         self.initialInds = np.zeros(self.nDims,dtype=int)
@@ -979,6 +1001,8 @@ class Dijkstra:
         #and self.initialInds[1] <= Nx
         self.initialInds[[1,0]] = self.initialInds[[0,1]]
         self.initialInds = tuple(self.initialInds)
+        
+        self.djkLogger = DijkstraLogger(self,logLevel=logLevel)
     
     def _construct_path_dict(self):
         """
@@ -997,6 +1021,8 @@ class Dijkstra:
         None.
 
         """
+        t0 = time.time()
+        
         suggestedMaxSize = 50000
         if self.potArr.size >= suggestedMaxSize:
             warnings.warn("Number of nodes is "+str(self.potArr.size)+\
@@ -1073,11 +1099,19 @@ class Dijkstra:
             #Will exit early if all of the endpoints have been visited
             if not endpointIndsList:
                 break
+            
+        t1 = time.time()
+        runTime = t1 - t0
+            
+        var = (tentativeDistance,neighborsVisitDict,endpointIndsList,runTime)
+        nms = ("tentativeDistance","neighborsVisitDict","endpointIndsList","runTime")
+        
+        self.djkLogger.log(var,nms)
         
         return tentativeDistance, neighborsVisitDict, endpointIndsList
     
     def _get_paths(self,neighborsVisitDict):
-        allPathsDict = {}
+        allPathsIndsDict = {}
         for endptInds in self.endpointIndices:
             path = []
             step = endptInds
@@ -1087,11 +1121,16 @@ class Dijkstra:
             path.append(self.initialInds)
             path.reverse()
             
-            allPathsDict[endptInds] = path
+            allPathsIndsDict[endptInds] = path
         
-        return allPathsDict
+        var = (allPathsIndsDict,)
+        nms = ("allPathsIndsDict",)
+        
+        self.djkLogger.log(var,nms)
+        
+        return allPathsIndsDict
     
-    def __call__(self,flipIndsOrder=False):
+    def __call__(self,returnAll=False):
         """
         
 
@@ -1108,7 +1147,7 @@ class Dijkstra:
         -------
         None.
 
-        """            
+        """
         tentativeDistance, neighborsVisitDict, endpointIndsList = \
             self._construct_path_dict()
         
@@ -1118,6 +1157,7 @@ class Dijkstra:
                           "\nnot visited")
         pathIndsDict = self._get_paths(neighborsVisitDict)
         
+        pathIndsDictRet = {} #Returns with the keys equal to the final point, not the index
         pathArrDict = {}
         distanceDict = {}
         for finalInds in pathIndsDict.keys():
@@ -1127,16 +1167,22 @@ class Dijkstra:
                 toAppend = \
                     np.array([c[pathInd] for c in self.coordMeshTuple]).reshape((1,-1))
                 actualPath = np.append(actualPath,toAppend,axis=0)
-                
+            
+            pathIndsDictRet[tuple(finalPt.tolist())] = pathIndsDict[finalInds]
             pathArrDict[tuple(finalPt.tolist())] = actualPath
             distanceDict[tuple(finalPt.tolist())] = tentativeDistance.data[finalInds]
+            
+        #Don't log pathIndsDictRet, as it's logged under pathIndsDict
+        #Don't log distanceDict, as it's logged under tentativeDistance
+        var = (pathArrDict,)
+        nms = ("pathArrDict",)
+        self.djkLogger.log(var,nms)
         
-        if flipIndsOrder:
-            warnings.warn("Indices are returned in order (N1,N2,...), which"\
-                          +" may not be suitable for calling np.meshgrid.")
-            raise TypeError("Have not implemented this option yet.")
-                
-        return pathIndsDict, pathArrDict, distanceDict
+        if returnAll:
+            return pathIndsDictRet, pathArrDict, distanceDict
+        else:
+            endptOut = self.minimum_endpoint(distanceDict)
+            return pathIndsDictRet[endptOut], pathArrDict[endptOut], distanceDict[endptOut]
     
     def minimum_endpoint(self,distanceDict):
         minDist = np.inf
@@ -1144,5 +1190,5 @@ class Dijkstra:
             if dist < minDist:
                 endptOut = endpt
                 minDist = dist
-        
+        self.djkLogger.log((endptOut,),("endptOut",))
         return endptOut
