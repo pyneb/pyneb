@@ -34,7 +34,8 @@ class LeastActionPath:
     """
     def __init__(self,potential,nPts,nDims,mass=None,endpointSpringForce=True,\
                  endpointHarmonicForce=True,target_func=TargetFunctions.action,\
-                 target_func_grad=GradientApproximations().forward_action_grad,nebParams={}):
+                 target_func_grad=GradientApproximations().forward_action_grad,\
+                 nebParams={},logLevel=1,loggerSettings={}):
         """
         asdf
 
@@ -82,8 +83,11 @@ class LeastActionPath:
             if key not in nebParams:
                 nebParams[key] = defaultNebParams[key]
         
+        #Not sure why I did things this way...
         for key in nebParams.keys():
             setattr(self,key,nebParams[key])
+        #For compatibility with the logger
+        self.nebParams = nebParams
             
         if isinstance(endpointSpringForce,bool):
             endpointSpringForce = 2*(endpointSpringForce,)
@@ -105,6 +109,8 @@ class LeastActionPath:
         self.nDims = nDims
         self.target_func = target_func
         self.target_func_grad = target_func_grad
+        
+        self.logger = ForceLogger(self,logLevel,loggerSettings)
     
     def _compute_tangents(self,points,energies):
         """
@@ -242,6 +248,10 @@ class LeastActionPath:
                                               self.kappa*(energies[-1]-self.constraintEneg))*normForce
         else:
             netForce[-1] = springForce[-1]
+        
+        variablesDict = {"points":points,"tangents":tangents,"springForce":springForce,\
+                         "netForce":netForce}
+        self.logger.log(variablesDict)
         
         return netForce
 

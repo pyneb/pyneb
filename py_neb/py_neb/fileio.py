@@ -8,6 +8,144 @@ import warnings
 import functools
 import inspect
 
+class ForceLogger:
+    def __init__(self,classInst,logLevel,loggerSettings):
+        self.loggerSettings = loggerSettings
+        defaultSettings = {"writeFreq":50}
+        for s in defaultSettings:
+            if s not in self.loggerSettings:
+                self.loggerSettings[s] = defaultSettings[s]
+        
+        self.logLevel = logLevel
+        if self.logLevel not in [0,1]:
+            raise ValueError("ForceLogger logLevel "+str(self.logLevel)+\
+                             " not allowed.")
+                
+        self.initTime = datetime.datetime.now().isoformat()
+        self.classInst = classInst
+        os.makedirs("logs",exist_ok=True)
+        
+        self.loggedVariables = \
+            {0:[],1:["points","tangents","springForce","netForce"]}
+        varShapes = \
+            {0:[],1:4*[(self.loggerSettings["writeFreq"],self.classInst.nPts,self.classInst.nDims)]}
+        
+        if self.logLevel != 0:
+            self.iterCounter = 0
+            #Setting the variables that are to be logged at this level
+            self.logDict = {}
+            for (dsetNm,dsetShape) in zip(self.loggedVariables[self.logLevel],\
+                                          varShapes[self.logLevel]):
+                self.logDict[dsetNm] = np.zeros(dsetShape)
+            
+            self.fileName = "logs/"+self.initTime+".frc"
+            
+            #Creating attributes and initializing datasets
+            h5File = h5py.File(self.fileName,"w")
+            
+            #For any nonzero logging level, we'll want these attributes. It's just
+            #a question of which datasets we want to store
+            h5File.attrs.create("potential",self.classInst.potential.__qualname__)
+            h5File.attrs.create("target_func",self.classInst.target_func.__qualname__)
+            h5File.attrs.create("target_func_grad",self.classInst.target_func_grad.__qualname__)
+            
+            #MinimumEnergyPath does not use the inertia tensor; this accounts for that
+            if hasattr(self.classInst,"mass"):
+                if self.classInst.mass is None:
+                    massNm = "constant"
+                else:
+                    massNm = self.classInst.mass.__qualname__
+            else:
+                massNm = "constant"
+            h5File.attrs.create("mass",massNm)
+            
+            h5File.attrs.create("endpointSpringForce",np.array(self.classInst.endpointSpringForce))
+            h5File.attrs.create("endpointHarmonicForce",np.array(self.classInst.endpointHarmonicForce))
+            
+            h5File.create_group("nebParams")
+            for (key, val) in self.classInst.nebParams.items():
+                h5File["nebParams"].attrs.create(key,val)
+            
+            for (nm, arr) in self.logDict.items():
+                h5File.create_dataset(nm,arr.shape,maxshape=(None,)+tuple(arr.shape[1:]))
+            
+            h5File.close()
+            
+    def log(self,variablesDict):
+        if self.logLevel != 0:
+            idx = self.iterCounter % self.loggerSettings["writeFreq"]
+            for varNm in self.loggedVariables[self.logLevel]:
+                self.logDict[varNm][idx] = variablesDict[varNm]
+                
+            if idx == (self.loggerSettings["writeFreq"] - 1):
+                h5File = h5py.File(self.fileName,"a")
+                for nm in self.loggedVariables[self.logLevel]:
+                    h5File[nm].resize((self.iterCounter+1,)+tuple(h5File[nm].shape[1:]))
+                    h5File[nm][-self.loggerSettings["writeFreq"]:] = self.logDict[nm]
+                
+                h5File.close()
+                
+            self.iterCounter += 1
+        
+        return None
+    
+    def flush(self):
+        """
+        Note that this must be called, as the self.log only writes the data in
+        chunks. Any data falling outside of those chunks will be stored in 
+        self.logDict, but not written.
+
+        Parameters
+        ----------
+        variables : TYPE
+            DESCRIPTION.
+        variableNames : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        if self.logLevel != 0:
+            idx = self.iterCounter % self.loggerSettings["writeFreq"]
+            #Only flushes if necessary
+            if idx != (self.loggerSettings["writeFreq"] - 1):
+                h5File = h5py.File(self.fileName,"a")
+                for nm in self.loggedVariables[self.logLevel]:
+                    h5File[nm].resize((self.iterCounter+1,)+tuple(h5File[nm].shape[1:]))
+                    h5File[nm][-idx:] = self.logDict[nm][:idx]
+                
+                h5File.close()
+        return None
+    
+class LoadForceLog:
+    def __init__(self,file):
+        if not file.endswith(".frc"):
+            raise TypeError("File "+str(file)+" does not have extension .frc")
+            
+        scalarAttrs = ["potential","target_func","target_func_grad","mass"]
+        arrayAttrs = ["endpointSpringForce","endpointHarmonicForce"]
+                    
+        self.fileName = file
+        h5File = h5py.File(self.fileName,"r")
+        for attr in h5File.attrs:
+            if attr in scalarAttrs:
+                setattr(self,attr,h5File.attrs[attr])
+            elif attr in arrayAttrs:
+                setattr(self,attr,np.array(h5File.attrs[attrs]))
+            else:
+                warnings.warn("Attribute "+attr+" not recognized; will not be loaded")
+        
+        self.nebParams = {}
+        for attr in h5File["nebParams"].attrs:
+            self.nebParams[attr] = h5File["nebParams"][attr]
+            
+        for dset in h5File.keys():
+            setattr(self,dset,np.array(h5File[dset]))
+        
+        h5File.close()
+
 class DijkstraLogger:
     def __init__(self,djkInst,logLevel=1):
         self.logLevel = logLevel

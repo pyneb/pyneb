@@ -14,7 +14,7 @@ class _compute_tangents_(unittest.TestCase):
         nPts = 4
         nDims = 2
         
-        lap = LeastActionPath(pot,nPts,nDims)
+        lap = LeastActionPath(pot,nPts,nDims,logLevel=0)
         
         points = np.stack(2*(np.arange(4),)).T
         enegs = np.arange(4)
@@ -38,7 +38,7 @@ class _compute_tangents_(unittest.TestCase):
         nPts = 4
         nDims = 2
         
-        lap = LeastActionPath(pot,nPts,nDims)
+        lap = LeastActionPath(pot,nPts,nDims,logLevel=0)
         
         points = np.stack(2*(np.arange(4),)).T
         enegs = np.arange(3,-1,-1)
@@ -62,7 +62,7 @@ class _compute_tangents_(unittest.TestCase):
         nPts = 3
         nDims = 2
         
-        lap = LeastActionPath(pot,nPts,nDims)
+        lap = LeastActionPath(pot,nPts,nDims,logLevel=0)
         
         points = np.stack(2*(np.arange(3),)).T
         enegs = np.array([-1,-5,1])
@@ -86,7 +86,7 @@ class _compute_tangents_(unittest.TestCase):
         nPts = 3
         nDims = 2
         
-        lap = LeastActionPath(pot,nPts,nDims)
+        lap = LeastActionPath(pot,nPts,nDims,logLevel=0)
         
         points = np.stack(2*(np.arange(3),)).T
         #Maybe not obvious that this takes the last branch. Checked it by
@@ -116,7 +116,7 @@ class _spring_force_(unittest.TestCase):
         
         points = np.stack(2*(np.array([0,1,3]),)).T
         
-        lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce)
+        lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce,logLevel=0)
         tangents = np.zeros((nPts,nDims))
         tangents[1] = np.sqrt(2)/2
         
@@ -139,7 +139,7 @@ class _spring_force_(unittest.TestCase):
         
         points = np.stack(2*(np.array([0,1,3]),)).T
         
-        lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce)
+        lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce,logLevel=0)
         tangents = np.zeros((nPts,nDims))
         tangents[1] = np.sqrt(2)/2
         
@@ -161,7 +161,7 @@ class _spring_force_(unittest.TestCase):
         
         points = np.stack(2*(np.array([0,1,3]),)).T
         
-        lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce)
+        lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce,logLevel=0)
         tangents = np.zeros((nPts,nDims))
         tangents[1] = np.sqrt(2)/2
         
@@ -183,7 +183,7 @@ class _spring_force_(unittest.TestCase):
         
         points = np.stack(2*(np.array([0,1,3]),)).T
         
-        lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce)
+        lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce,logLevel=0)
         tangents = np.zeros((nPts,nDims))
         tangents[1] = np.sqrt(2)/2
         
@@ -205,7 +205,7 @@ class compute_force_(unittest.TestCase):
         
         points = np.stack(2*(np.array([0,1,3],dtype=float),)).T
         
-        lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1,"kappa":2})
+        lap = LeastActionPath(pot,nPts,nDims,nebParams={"k":1,"kappa":2},logLevel=0)
         
         netForce = lap.compute_force(points)
         
