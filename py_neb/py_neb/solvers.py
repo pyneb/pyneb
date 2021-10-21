@@ -734,6 +734,274 @@ class VerletMinimization:
         
         return None
     
+class VerletMinimization_newAPI:
+    """
+    Maintainer: Daniel
+    """
+    def __init__(self,nebObj,initialPoints,optimizer,optArgs={}):
+        """
+        
+
+        Parameters
+        ----------
+        nebObj : TYPE
+            DESCRIPTION.
+        initialPoints : TYPE
+            DESCRIPTION.
+
+        Raises
+        ------
+        AttributeError
+            DESCRIPTION.
+        ValueError
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+        """
+        #It'll probably do this automatically, but whatever
+        if not hasattr(nebObj,"compute_force"):
+            raise AttributeError("Object "+str(nebObj)+" has no attribute compute_force")
+            
+        self.nebObj = nebObj
+        self.initialPoints = initialPoints
+        self.nPts, self.nDims = initialPoints.shape
+        
+        if self.nPts != self.nebObj.nPts:
+            raise ValueError("Obj "+str(self.nebObj)+" and initialPoints have "\
+                             +"a different number of points")
+                
+        self.allPts = None
+        self.allVelocities = None
+        self.allForces = None
+        
+    def velocity_verlet(self,tStep,maxIters,dampingParameter=0):
+        """
+        Implements Algorithm 6 of https://doi.org/10.1021/acs.jctc.7b00360
+        with optional damping force.
+        
+        TODO: that paper has many errors, esp. off-by-one errors. Could lead
+        to issues. Consult http://dx.doi.org/10.1063/1.2841941 instead.
+        TODO: modify to edit self.allPts and etc
+
+        Parameters
+        ----------
+        tStep : TYPE
+            DESCRIPTION.
+        maxIters : TYPE
+            DESCRIPTION.
+        dampingParameter : TYPE, optional
+            DESCRIPTION. The default is 0.
+
+        Returns
+        -------
+        allPts : TYPE
+            DESCRIPTION.
+        allVelocities : TYPE
+            DESCRIPTION.
+        allForces : TYPE
+            DESCRIPTION.
+        """
+        #allPts is longer by 1 than the velocities/forces, because the last 
+        #velocity/force computed should be used to update the points one 
+        #last time (else that's computational time that's wasted)
+        allPts = np.zeros((maxIters+2,self.nPts,self.nDims))
+        allVelocities = np.zeros((maxIters+1,self.nPts,self.nDims))
+        allForces = np.zeros((maxIters+1,self.nPts,self.nDims))
+        
+        vProj = np.zeros((self.nPts,self.nDims))
+        
+        allPts[0] = self.initialPoints
+        allForces[0] = self.nebObj.compute_force(self.initialPoints)
+        allVelocities[0] = tStep*allForces[0]
+        allPts[1] = allPts[0] + allVelocities[0]*tStep + 0.5*allForces[0]*tStep**2
+        
+        for step in range(1,maxIters+1):
+            allForces[step] = self.nebObj.compute_force(allPts[step])
+            
+            for ptIter in range(self.nPts):
+                product = np.dot(allVelocities[step-1,ptIter],allForces[step,ptIter])
+                if product > 0:
+                    vProj[ptIter] = \
+                        product*allForces[step,ptIter]/\
+                            np.dot(allForces[step,ptIter],allForces[step,ptIter])
+                else:
+                    vProj[ptIter] = np.zeros(self.nDims)
+                    
+            #Damping term. Algorithm 6 uses allVelocities[step], but that hasn't
+            #been computed yet. Note that this isn't applied to compute allPts[1].
+            accel = allForces[step] - dampingParameter*allVelocities[step-1]                
+            allVelocities[step] = vProj + tStep * accel
+            
+            allPts[step+1] = allPts[step] + allVelocities[step]*tStep + \
+                0.5*accel*tStep**2
+            
+        return allPts, allVelocities, allForces
+    
+    def fire(self,tStep,maxIters,fireParams={},useLocal=False):
+        """
+        Wrapper for fast inertial relaxation engine.
+        FIRE step taken from http://dx.doi.org/10.1103/PhysRevLett.97.170201
+        
+        Velocity update taken from 
+        https://en.wikipedia.org/wiki/Verlet_integration#Velocity_Verlet
+        
+        TODO: consider making FIRE its own class, or allowing for attributes
+        like fireParams and etc
+        TODO: add maxmove parameter to prevent path exploding
+
+        Parameters
+        ----------
+        tStep : TYPE
+            DESCRIPTION.
+        maxIters : TYPE
+            DESCRIPTION.
+        fireParams : TYPE, optional
+            DESCRIPTION. The default is {}.
+        useLocal : TYPE, optional
+            DESCRIPTION. The default is False.
+
+        Raises
+        ------
+        ValueError
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+        """
+        
+        defaultFireParams = \
+            {"dtMax":10.,"dtMin":0.001,"nAccel":10,"fInc":1.1,"fAlpha":0.99,\
+             "fDecel":0.5,"aStart":0.1}
+            
+        for key in fireParams.keys():
+            if key not in defaultFireParams.keys():
+                raise ValueError("Key "+key+" in fireParams not allowed")
+                
+        for key in defaultFireParams.keys():
+            if key not in fireParams.keys():
+                fireParams[key] = defaultFireParams[key]
+                
+        self.allPts = np.zeros((maxIters+2,self.nPts,self.nDims))
+        self.allVelocities = np.zeros((maxIters+1,self.nPts,self.nDims))
+        self.allForces = np.zeros((maxIters+1,self.nPts,self.nDims))
+        
+        self.allPts[0] = self.initialPoints
+        self.allForces[0] = self.nebObj.compute_force(self.allPts[0])
+        
+        if useLocal:
+            stepsSinceReset = np.zeros(self.nPts)
+            tStepArr = np.zeros((maxIters+1,self.nPts))
+            alphaArr = np.zeros((maxIters+1,self.nPts))
+            stepsSinceReset = np.zeros(self.nPts)
+        else:
+            stepsSinceReset = 0
+            tStepArr = np.zeros(maxIters+1)
+            alphaArr = np.zeros(maxIters+1)
+        
+        tStepArr[0] = tStep
+        alphaArr[0] = fireParams["aStart"]
+        
+        for step in range(1,maxIters+1):
+            #TODO: check potential off-by-one indexing on tStep
+            if useLocal:
+                tStepArr,alphaArr,stepsSinceReset = \
+                    self._local_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
+                                          fireParams)
+            else:
+                tStepArr,alphaArr,stepsSinceReset = \
+                    self._global_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
+                                           fireParams)
+        
+        if useLocal:
+            tStepFinal = tStepArr[-1].reshape((-1,1))
+            self.allPts[-1] = self.allPts[-2] + tStepFinal*self.allVelocities[-1] + \
+                0.5*self.allForces[-1]*tStepFinal**2
+        else:
+            self.allPts[-1] = self.allPts[-2] + tStepArr[-1]*self.allVelocities[-1] + \
+                0.5*self.allForces[-1]*tStepArr[-1]**2
+        
+        return tStepArr, alphaArr, stepsSinceReset
+    
+    def _local_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
+        tStepPrev = tStepArr[step-1].reshape((-1,1)) #For multiplication below
+        
+        self.allPts[step] = self.allPts[step-1] + \
+            tStepPrev*self.allVelocities[step-1] + \
+            0.5*self.allForces[step-1]*tStepPrev**2
+        self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
+        #What the Wikipedia article on velocity Verlet uses
+        self.allVelocities[step] = \
+            0.5*tStepPrev*(self.allForces[step]+self.allForces[step-1])
+        
+        for ptIter in range(self.nPts):
+            alpha = alphaArr[step-1,ptIter]
+            
+            product = np.dot(self.allVelocities[step-1,ptIter],self.allForces[step,ptIter])
+            if product > 0:
+                vMag = np.linalg.norm(self.allVelocities[step-1,ptIter])
+                fHat = self.allForces[step,ptIter]/np.linalg.norm(self.allForces[step,ptIter])
+                self.allVelocities[step,ptIter] += (1-alpha)*self.allVelocities[step-1,ptIter] + \
+                    alpha*vMag*fHat
+                
+                if stepsSinceReset[ptIter] > fireParams["nAccel"]:
+                    tStepArr[step,ptIter] = \
+                        min(tStepArr[step-1,ptIter]*fireParams["fInc"],fireParams["dtMax"])
+                    alphaArr[step,ptIter] = alpha*fireParams["fAlpha"]
+                else:
+                    tStepArr[step,ptIter] = tStepArr[step-1,ptIter]
+                
+                stepsSinceReset[ptIter] += 1
+            else:
+                tStepArr[step,ptIter] = \
+                    max(tStepArr[step-1,ptIter]*fireParams["fDecel"],fireParams["dtMin"])
+                alphaArr[step,ptIter] = fireParams["aStart"]
+                stepsSinceReset[ptIter] = 0
+        
+        return tStepArr, alphaArr, stepsSinceReset
+    
+    def _global_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
+        self.allPts[step] = self.allPts[step-1] + \
+            tStepArr[step-1]*self.allVelocities[step-1] + \
+            0.5*self.allForces[step-1]*tStepArr[step-1]**2
+        self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
+        
+        #Doesn't seem to make a difference
+        #What the Wikipedia article on velocity Verlet uses
+        self.allVelocities[step] = \
+            0.5*tStepArr[step-1]*(self.allForces[step]+self.allForces[step-1])
+        #What Eric uses
+        # self.allVelocities[step] = tStepArr[step-1]*self.allForces[step]
+        
+        for ptIter in range(self.nPts):
+            alpha = alphaArr[step-1]
+            
+            product = np.dot(self.allVelocities[step-1,ptIter],self.allForces[step,ptIter])
+            if product > 0:
+                vMag = np.linalg.norm(self.allVelocities[step-1,ptIter])
+                fHat = self.allForces[step,ptIter]/np.linalg.norm(self.allForces[step,ptIter])
+                vp = (1-alpha)*self.allVelocities[step-1,ptIter] + alpha*vMag*fHat
+                self.allVelocities[step,ptIter] += vp
+                
+                if stepsSinceReset > fireParams["nAccel"]:
+                    tStepArr[step] = min(tStepArr[step-1]*fireParams["fInc"],fireParams["dtMax"])
+                    alphaArr[step] = alpha*fireParams["fAlpha"]
+                
+                stepsSinceReset += 1
+            else:
+                tStepArr[step] = max(tStepArr[step-1]*fireParams["fDecel"],fireParams["dtMin"])
+                # self.allVelocities[step,ptIter] = np.zeros(self.nDims)
+                alphaArr[step] = fireParams["aStart"]
+                stepsSinceReset = 0
+        
+        return tStepArr, alphaArr, stepsSinceReset
+    
+    def _check_early_stop(self):
+        
+        return None
+    
 class EulerLagrangeSolver:
     """
     Maintainer: Daniel

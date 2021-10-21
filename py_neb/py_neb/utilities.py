@@ -662,8 +662,17 @@ class SurfaceUtils:
     @staticmethod
     def find_all_local_minimum(arr):
         """
-        Returns the indices corresponding to the local minimum values. Taken 
-        directly from https://stackoverflow.com/a/3986876
+        Returns the indices corresponding to the local minimum values. Taken
+        originally from https://stackoverflow.com/a/3986876
+        
+        Finder checks along the cardinal directions. If all neighbors in those
+        directions are greater than or equal to the current value, the index
+        is returned as a minimum. For the border, the array is reflected about
+        the axis. As a result, many indices are found that are not technically
+        local minima. However, we do want the border results - in practice,
+        nuclei often have a ground state at zero deformation in one collective
+        coordinate; to find that, we must include the border indices. To exclude
+        them, one can then call SurfaceUtils.find_local_minimum.
         
         Parameters
         ----------
@@ -677,8 +686,10 @@ class SurfaceUtils:
     
         """
         neighborhood = morphology.generate_binary_structure(len(arr.shape),1)
-        local_min = (filters.minimum_filter(arr, footprint=neighborhood,\
-                                            mode="nearest")==arr)
+        #Test case was giving floating-point differences along the outer edge of
+        #the array
+        local_min = np.isclose(filters.minimum_filter(arr, footprint=neighborhood,\
+                                                      mode="nearest"),arr,atol=10**(-15))
         
         background = (arr==0)
         eroded_background = morphology.binary_erosion(background,\
@@ -701,17 +712,33 @@ class SurfaceUtils:
         arr : Numpy array
             A D-dimensional array.
         searchPerc : List
-            Percentage of each coordinate that the minimum is allowed to be in
+            Percentage of each coordinate that the minimum is allowed to be in.
+            See Notes for a note on searchPerc
+        returnOnlySmallest : Bool. Default is True
+            If True, returns only the (first) smallest value. If False, returns
+            all minima in the searched region.
     
         Returns
         -------
         minIndsOut : Tuple of numpy arrays
-            D arrays of length k, for k minima found
+            D arrays of length k, for k minima found in the region. If returnOnlySmallest,
+            returns a tuple, not a tuple of arrays
+            
+        Notes
+        -----
+        Note that, if we write searchPerc=[s1,s2], then s1 is the range for
+        the first coordinate of arr. If arr was constructed to agree with
+        np.meshgrid's default indexing, then s1 will actually restrict the
+        range of the second (physical) coordinate: np.meshgrid(X,Y,Z,...)
+        returns arrays of shape (Y.len,X.len,Z.len,...)
     
         """
         if len(searchPerc) != len(arr.shape):
             raise TypeError("searchPerc and arr have unequal lengths ("+\
                             str(len(searchPerc))+") and ("+str(len(arr.shape))+")")
+                
+        if np.any(np.array(searchPerc)<=0) or np.any(np.array(searchPerc)>1):
+            raise ValueError("All entries in searchPerc must be in the interval (0,1].")
         
         allMinInds = np.vstack(SurfaceUtils.find_all_local_minimum(arr))
         
@@ -736,12 +763,44 @@ class SurfaceUtils:
     
     @staticmethod
     def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
+        """
+        Finds 2D contours on a D-dimensional surface. Does so by considering
+        2D surfaces, using the first 2 indices of zz, and iterating over all other
+        indices. At every set of indices, pyplot.contour is called, to get the
+        2D contour(s) on the surface at that level. The contours are not filled
+        with the value of the coordinates with the other indices - i.e. each
+        segment is of shape (k,2), regardless of the number of dimensions.
+
+        Parameters
+        ----------
+        coordMeshTuple : tuple of ndarray
+            Coordinate mesh, e.g. output of np.meshgrid
+        zz : ndarray
+            Potential on mesh
+        eneg : float, optional
+            Energy of the desired contour. The default is 0.
+        show : bool, optional
+            Whether to plot the contours. The default is False.
+
+        Raises
+        ------
+        NotImplementedError
+            Does not work for 1 dimension.
+
+        Returns
+        -------
+        allContours : ndarray of lists
+            Each element is the returned value of ax.contour.allsegs[0], i.e.
+            a list consisting of 2D arrays describing the contour on that slize
+            of zz
+
+        """
         nDims = len(coordMeshTuple)
         
         fig, ax = plt.subplots()
         
         if nDims == 1:
-            sys.exit("Err: weird edge case I haven't handled. Why are you looking at D=1?")
+            raise NotImplementedError("Why are you looking at D=1?")
         elif nDims == 2:
             allContours = np.zeros(1,dtype=object)
             if show:
@@ -768,27 +827,35 @@ class SurfaceUtils:
         return allContours
     
     @staticmethod
-    def round_points_to_grid(coordMeshTuple,ptsArr,dimOrder="meshgrid"):
+    def round_points_to_grid(coordMeshTuple,ptsArr):
         """
-        
+        Rounds an array of points to the nearest point on a grid.
 
         Parameters
         ----------
-        coordMeshTuple : TYPE
-            DESCRIPTION.
-        ptsArr : TYPE
-            DESCRIPTION.
+        coordMeshTuple : tuple of ndarrays
+            The grid. Taken as output of np.meshgrid
+        ptsArr : ndarray
+            The points to round. Of shape (nPoints,nDims), where nDims is the
+            number of coordinates.
 
         Returns
         -------
-        None.
-
-        """
-        if dimOrder not in ["meshgrid","human"]:
-            raise ValueError("dimOrder "+str(dimOrder)+" not recognized")
+        indsOut : ndarray of ints
+            The indices of the points. Of shape (nPoints,nDims). See notes.
+        gridValsOut : ndarray
+            The nearest grid values. Of shape (nPoints,nDims).
         
+        Notes
+        -----
+        Has standard complication from np.meshgrid - indexing is (N2,N1,N3,...),
+        when the coordinates have lengths (N1,N2,N3,...). This assumes the default
+        indexing of np.meshgrid for coordMeshTuple, but the returned indices are
+        in order (N1,N2,N3,...) (at the moment). TODO: change this?
+
+        """        
         nDims = len(coordMeshTuple)
-        if nDims < 2: #TODO: probably useless, but could be nice for completion
+        if nDims < 2:
             raise TypeError("Expected nDims >= 2; recieved "+str(nDims))
             
         uniqueCoords = [np.unique(c) for c in coordMeshTuple]
@@ -827,20 +894,17 @@ class SurfaceUtils:
             # For D dimensions, the output is of shape (N2,N1,N3,...,ND), while the
             # way indices are generated expects a shape of (N1,...,ND). So, I swap
             # the first two indices by hand. See https://numpy.org/doc/stable/reference/generated/numpy.meshgrid.html
-            if dimOrder == "meshgrid":
-                inds[[0,1]] = inds[[1,0]]
+            inds[[0,1]] = inds[[1,0]]
             inds = tuple(inds)
             gridValsOut[ptIter] = np.array([c[inds] for c in coordMeshTuple])
             
-        if dimOrder == "meshgrid":
-            #Expect columns of returned indices to be in order (N1,N2,N3,...,ND)
-            indsOut[:,[0,1]] = indsOut[:,[1,0]]
+        #Expect columns of returned indices to be in order (N1,N2,N3,...,ND)
+        indsOut[:,[0,1]] = indsOut[:,[1,0]]
         
         return indsOut, gridValsOut
     
     @staticmethod
-    def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False,eneg=0,\
-                               dimOrder="meshgrid"):
+    def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False,eneg=0):
         """
         
 
@@ -872,7 +936,7 @@ class SurfaceUtils:
             gridIndsOnLevel = []
             for cont in contOnLevel:
                 locGridInds, locGridVals = \
-                    SurfaceUtils.round_points_to_grid(coordMeshTuple,cont,dimOrder=dimOrder)
+                    SurfaceUtils.round_points_to_grid(coordMeshTuple,cont)
                 
                 gridIndsOnLevel.append(locGridInds)
                 gridContOnLevel.append(locGridVals)

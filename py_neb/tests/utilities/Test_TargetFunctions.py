@@ -6,14 +6,6 @@ import warnings
 #pyNebDir imported from context; perhaps bad practice?
 print("\nRunning "+os.path.relpath(__file__,pyNebDir))
 
-"""
-Tests:
-    -find_local_minimum
-    -find_approximate_contours
-    -round_points_to_grid
-    -find_endpoints_on_grid
-
-"""
 class action_(unittest.TestCase):
     def test_constant_mass_array_potential(self):
         path = np.arange(10).reshape((5,2))

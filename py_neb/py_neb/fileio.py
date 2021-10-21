@@ -145,6 +145,13 @@ class LoadForceLog:
             setattr(self,dset,np.array(h5File[dset]))
         
         h5File.close()
+        
+class VerletLogger:
+    def __init__(self,vltInst,logLevel):
+        self.logLevel = logLevel
+        if self.logLevel not in [0,1]:
+            raise ValueError("VerletLogger logLevel "+str(self.logLevel)+\
+                             " not allowed.")
 
 class DijkstraLogger:
     def __init__(self,djkInst,logLevel=1):
