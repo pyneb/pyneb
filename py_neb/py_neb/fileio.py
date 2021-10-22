@@ -57,7 +57,15 @@ class ForceLogger:
             #     h5File["potential"].attrs.create("potential",self.classInst.potential.__qualname__)
             #     #TODO: write potential settings here
             # else:
-            h5File.attrs.create("potential",self.classInst.potential.__qualname__)
+            if hasattr(self.classInst.potential,"__qualname__"):
+                nm = self.classInst.potential.__qualname__
+            elif hasattr(type(self.classInst.potential),"__qualname__"):
+                nm = type(self.classInst.potential).__qualname__
+            else:
+                nm = "unknown"
+                warnings.warn("ForceLogger potential has no attribute __qualname__,"+\
+                              " will be logged as unknown name")
+            h5File.attrs.create("potential",nm)
             
             h5File.attrs.create("target_func",self.classInst.target_func.__qualname__)
             h5File.attrs.create("target_func_grad",self.classInst.target_func_grad.__qualname__)
@@ -67,7 +75,14 @@ class ForceLogger:
                 if self.classInst.mass is None:
                     massNm = "constant"
                 else:
-                    massNm = self.classInst.mass.__qualname__
+                    if hasattr(self.classInst.mass,"__qualname__"):
+                        massNm = self.classInst.mass.__qualname__
+                    elif hasattr(type(self.classInst.mass),"__qualname__"):
+                        massNm = type(self.classInst.mass).__qualname__
+                    else:
+                        warnings.warn("ForceLogger mass has no attribute __qualname__,"+\
+                                      " will be logged as unknown name")
+                        massNm = "unknown"
                     #TODO: to actually log the mass function, we need to make
                     #it a class, with a __call__ method
                     # if (isinstance(self.classInst.mass,np.ndarray)) and \
