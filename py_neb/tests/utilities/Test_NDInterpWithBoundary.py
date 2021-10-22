@@ -96,17 +96,17 @@ class _find_indices_(unittest.TestCase):
         #g(xi) transposes the points beforce calling g._find_indices. There, it
         #is expected that xi has shape (ndims,-), while calling g(xi) expects
         #xi to have shape (-,ndims)
-        point = np.array([0.2,0.4]).reshape((2,1))
+        point = np.array([0.2,0.6]).reshape((2,1))
         
         g = NDInterpWithBoundary((x,y),zz)
         
         indices, normDistances = g._find_indices(point)
         
-        correctIndices = 2*(np.array([10],dtype=int),)
-        correctDistances = np.array([[0.4],[0.8]])
+        correctIndices = (np.array([10],dtype=int),np.array([11],dtype=int))
+        correctDistances = np.array([[0.4],[0.2]])
         
         self.assertEqual(indices,correctIndices)
-        self.assertIsNone(np.testing.assert_array_equal(normDistances,correctDistances))
+        self.assertIsNone(np.testing.assert_allclose(normDistances,correctDistances))
         
         return None
     
@@ -161,20 +161,24 @@ class _exp_boundary_handler_(unittest.TestCase):
         
 class _call_nd_(unittest.TestCase):
     def test_in_bounds(self):
+        #Fixed error in NDInterpWithBoundary on Oct 22, 2021. Updated test
+        #to no longer be (completely) symmetric in x and y
         x = np.arange(-5,5.5,0.5)
         y = x.copy()
         
         xx, yy = np.meshgrid(x,y)
-        zz = xx**2 + yy**2
+        xx = xx.T
+        yy = yy.T
+        zz = xx**2 + yy**3
         
-        point = np.array([0.2,0.4]).reshape((2,1))
+        point = np.array([0.2,0.6]).reshape((2,1))
         
         g = NDInterpWithBoundary((x,y),zz)
         
         value = g._call_nd(point)
         
         #Verified via Mathematica
-        correctVal = 0.3
+        correctVal = 0.4
         
         #correctVal is off from expected value by ~floating point precision
         self.assertAlmostEqual(value,correctVal)

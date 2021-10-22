@@ -1083,13 +1083,22 @@ class NDInterpWithBoundary:
         
         self.symmExtend = symmExtend
         
-        defaultMeshgridShape = np.array([len(g) for g in gridPoints])
-        defaultMeshgridShape[[0,1]] = defaultMeshgridShape[[1,0]]
-        defaultMeshgridShape = tuple(defaultMeshgridShape)
+        defaultMeshgridShape = tuple([len(g) for g in gridPoints])
+        possibleOtherShape = np.array(defaultMeshgridShape)
+        possibleOtherShape[[1,0]] = possibleOtherShape[[0,1]]
+        possibleOtherShape = tuple(possibleOtherShape)
+        
+        if defaultMeshgridShape[0] == defaultMeshgridShape[1]:
+            warnings.warn("Grid is square; cannot check if data is transposed."+\
+                          " Note that gridVals should be of shape (x.size,y.size).")
         
         if gridVals.shape != defaultMeshgridShape:
-            raise ValueError("gridVals.shape does not match expected shape "+\
-                             str(defaultMeshgridShape))
+            if gridVals.shape == possibleOtherShape:
+                gridVals = np.swapaxes(gridVals,0,1)
+            else:
+                raise ValueError("gridVals.shape does not match expected shape "+\
+                                 str(defaultMeshgridShape)+" or possible shape "+\
+                                 str(possibleOtherShape))
         
         for i, p in enumerate(gridPoints):
             if not np.all(np.diff(p) > 0.):
@@ -1097,7 +1106,7 @@ class NDInterpWithBoundary:
                                  "ascending" % i)
         
         if self.nDims == 2:
-            self.rbv = RectBivariateSpline(*gridPoints,gridVals.T,**splKWargs)
+            self.rbv = RectBivariateSpline(*gridPoints,gridVals,**splKWargs)
             self._call = self._call_2d
         else:
             self._call = self._call_nd
