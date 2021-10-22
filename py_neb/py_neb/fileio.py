@@ -52,12 +52,12 @@ class ForceLogger:
             
             #For any nonzero logging level, we'll want these attributes. It's just
             #a question of which datasets we want to store
-            if isinstance(self.classInst.potential,NDInterpWithBoundary):
-                h5File.create_group("potential")
-                h5File["potential"].attrs.create("potential",self.classInst.potential.__qualname__)
-                #TODO: write potential settings here
-            else:
-                h5File.attrs.create("potential",self.classInst.potential.__qualname__)
+            # if isinstance(self.classInst.potential,NDInterpWithBoundary):
+            #     h5File.create_group("potential")
+            #     h5File["potential"].attrs.create("potential",self.classInst.potential.__qualname__)
+            #     #TODO: write potential settings here
+            # else:
+            h5File.attrs.create("potential",self.classInst.potential.__qualname__)
             
             h5File.attrs.create("target_func",self.classInst.target_func.__qualname__)
             h5File.attrs.create("target_func_grad",self.classInst.target_func_grad.__qualname__)
