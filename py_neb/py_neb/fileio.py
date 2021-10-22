@@ -9,7 +9,7 @@ import functools
 import inspect
 
 class ForceLogger:
-    def __init__(self,classInst,logLevel,loggerSettings):
+    def __init__(self,classInst,logLevel,loggerSettings,fileExt):
         self.loggerSettings = loggerSettings
         defaultSettings = {"writeFreq":50}
         for s in defaultSettings:
@@ -38,7 +38,7 @@ class ForceLogger:
                                           varShapes[self.logLevel]):
                 self.logDict[dsetNm] = np.zeros(dsetShape)
             
-            self.fileName = "logs/"+self.initTime+".frc"
+            self.fileName = "logs/"+self.initTime+fileExt
             
             #Creating attributes and initializing datasets
             h5File = h5py.File(self.fileName,"w")

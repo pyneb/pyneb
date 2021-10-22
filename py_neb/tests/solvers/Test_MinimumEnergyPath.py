@@ -14,7 +14,7 @@ class _compute_tangents_(unittest.TestCase):
         nPts = 4
         nDims = 2
         
-        mep = MinimumEnergyPath(pot,nPts,nDims)
+        mep = MinimumEnergyPath(pot,nPts,nDims,logLevel=0)
         
         points = np.stack(2*(np.arange(4),)).T
         enegs = np.arange(4)
@@ -38,7 +38,7 @@ class _compute_tangents_(unittest.TestCase):
         nPts = 4
         nDims = 2
         
-        mep = MinimumEnergyPath(pot,nPts,nDims)
+        mep = MinimumEnergyPath(pot,nPts,nDims,logLevel=0)
         
         points = np.stack(2*(np.arange(4),)).T
         enegs = np.arange(3,-1,-1)
@@ -66,7 +66,8 @@ class _spring_force_(unittest.TestCase):
         
         points = np.stack(2*(np.array([0,1,3]),)).T
         
-        mep = MinimumEnergyPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce)
+        mep = MinimumEnergyPath(pot,nPts,nDims,nebParams={"k":1},\
+                                endpointSpringForce=endpointSpringForce,logLevel=0)
         tangents = np.zeros((nPts,nDims))
         tangents[1] = np.sqrt(2)/2
         
@@ -89,7 +90,8 @@ class _spring_force_(unittest.TestCase):
         
         points = np.stack(2*(np.array([0,1,3]),)).T
         
-        mep = MinimumEnergyPath(pot,nPts,nDims,nebParams={"k":1},endpointSpringForce=endpointSpringForce)
+        mep = MinimumEnergyPath(pot,nPts,nDims,nebParams={"k":1},\
+                                endpointSpringForce=endpointSpringForce,logLevel=0)
         tangents = np.zeros((nPts,nDims))
         tangents[1] = np.sqrt(2)/2
         
@@ -112,7 +114,8 @@ class compute_force_(unittest.TestCase):
         
         points = np.stack(2*(np.array([0,1,3],dtype=float),)).T
         # use default target func and target func grad.
-        mep = MinimumEnergyPath(real_pot,nPts,nDims,auxFunc = auxFunc,nebParams={"k":1,"kappa":2})
+        mep = MinimumEnergyPath(real_pot,nPts,nDims,auxFunc = auxFunc,\
+                                nebParams={"k":1,"kappa":2},logLevel=0)
         
         netForce = mep.compute_force(points)
         #Computed by hand. the force turned out the same as no aux. Not expected.
@@ -130,7 +133,8 @@ class compute_force_(unittest.TestCase):
         
         points = np.stack(2*(np.array([0,1,3],dtype=float),)).T
         
-        mep = MinimumEnergyPath(real_pot,nPts,nDims,nebParams={"k":1,"kappa":2})
+        mep = MinimumEnergyPath(real_pot,nPts,nDims,nebParams={"k":1,"kappa":2},\
+                                logLevel=0)
         
         netForce = mep.compute_force(points)
         
