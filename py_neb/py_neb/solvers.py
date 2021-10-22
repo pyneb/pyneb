@@ -30,7 +30,7 @@ class LeastActionPath:
     """
     class documentation...?
     
-    Maintainer: Daniel
+    :Maintainer: Daniel
     """
     def __init__(self,potential,nPts,nDims,mass=None,endpointSpringForce=True,\
                  endpointHarmonicForce=True,target_func=TargetFunctions.action,\
@@ -257,7 +257,7 @@ class LeastActionPath:
 
 class MinimumEnergyPath:
     """
-    Maintainer: Eric
+    :Maintainer: Eric
     """
     def __init__(self,potential,nPts,nDims,endpointSpringForce=True,\
                  endpointHarmonicForce=True,auxFunc=None,\
@@ -468,7 +468,7 @@ class MinimumEnergyPath:
 #TODO: do we compute the action for all points after optimizing? or let someone else do that? 
 class VerletMinimization:
     """
-    Maintainer: Daniel
+    :Maintainer: Daniel
     """
     def __init__(self,nebObj,initialPoints):
         """
@@ -736,7 +736,7 @@ class VerletMinimization:
     
 class VerletMinimization_newAPI:
     """
-    Maintainer: Daniel
+    :Maintainer: Daniel
     """
     def __init__(self,nebObj,initialPoints,optimizer,optArgs={}):
         """
@@ -1004,7 +1004,7 @@ class VerletMinimization_newAPI:
     
 class EulerLagrangeSolver:
     """
-    Maintainer: Daniel
+    :Maintainer: Daniel
     """
     def __init__(self,initialPath,eneg_func,mass_func=None,grad_approx=midpoint_grad):
         self.initialPath = initialPath
@@ -1057,7 +1057,7 @@ class EulerLagrangeSolver:
     
 class EulerLagrangeVerification:
     """
-    Maintainer: Daniel
+    :Maintainer: Daniel
     """
     def __init__(self,path,enegOnPath,eneg_func,massOnPath=None,mass_func=None,\
                  grad_approx=midpoint_grad):
@@ -1139,7 +1139,7 @@ class EulerLagrangeVerification:
     
 class Dijkstra:
     """
-    Maintainer: Daniel
+    :Maintainer: Daniel
     """
     def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,\
                  target_func=TargetFunctions.action,allowedEndpoints=None,\

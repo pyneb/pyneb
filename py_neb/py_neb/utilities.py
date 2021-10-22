@@ -20,6 +20,7 @@ class TargetFunctions:
     @staticmethod
     def action(path,potential,masses=None):
         """
+        
         TODO: docs
         Allowed masses:
             -Constant mass; set masses = None
@@ -32,7 +33,7 @@ class TargetFunctions:
         Computes action as
             $ S = sum_{i=1}^{nPoints} sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
             
-        Maintainer: Daniel
+        :Maintainer: Daniel
         """
         nPoints, nDims = path.shape
         
@@ -73,6 +74,7 @@ class TargetFunctions:
     @staticmethod
     def term_in_action_sum(points,potential,masses=None):
         """
+        
         TODO: docs
         Allowed masses:
             -Constant mass; set masses = None
@@ -85,7 +87,7 @@ class TargetFunctions:
         Computes action as
             $ S = sum_{i=1}^{nPoints} sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
             
-        Maintainer: Daniel
+        :Maintainer: Daniel
         """
         nDims = points.shape[1]
         if points.shape[0] != 2:
@@ -133,6 +135,7 @@ class TargetFunctions:
     @staticmethod
     def action_squared(path,potential,masses=None):
         '''
+        
         Parameters
         ----------
         path : ndarray
@@ -161,7 +164,7 @@ class TargetFunctions:
         massArr : ndarray
             ndarray of shape (Nimgs,nDim,nDim) containing the mass tensors for each image in path.
             
-        Maintainer: Eric
+        :Maintainer: Eric
         '''
         """    
         Computes action as
@@ -202,6 +205,7 @@ class TargetFunctions:
     @staticmethod
     def mep_default(points,potential,auxFunc=None):
         '''
+        
         Essentially a wrapper function for the potential. Expected points to be 
         a (nPts,nDim) matrix. Potential should be a function capable of returning 
         a (nPts,nDim) matrix.
@@ -227,7 +231,7 @@ class TargetFunctions:
         auxEnergies : TYPE
             DESCRIPTION.
             
-        Maintainer: Eric
+        :Maintainer: Eric
         '''
         nPoints, nDim = points.shape
         if not isinstance(potential,np.ndarray):
@@ -250,6 +254,7 @@ class TargetFunctions:
 class GradientApproximations:
     def __init__(self):
         """
+        
         When calling a method of GradientApproximations, we always supply a
         target_func, such as TargetFunctions.action. However, sometimes we
         only want the gradient wrt one term in the sum that makes up target_func.
@@ -260,7 +265,7 @@ class GradientApproximations:
         -------
         None.
         
-        Maintainer: Daniel
+        :Maintainer: Daniel
         """
         self.targetFuncToComponentMap = \
             {"action":TargetFunctions.term_in_action_sum}
@@ -299,7 +304,7 @@ class GradientApproximations:
         gradOfAction : float array
             Gradient of action at point i
             
-        Maintainer: Kyle
+        :Maintainer: Kyle
         """
         eps = fdTol
         gradOfBeff = beff_grad(mass,path,dr,eps=eps)
@@ -319,7 +324,7 @@ class GradientApproximations:
         Performs discretized action gradient, needs numerical PES still
         
         
-        Maintainer: Kyle
+        :Maintainer: Kyle
         """
         eps = fdTol
         
@@ -355,7 +360,7 @@ class GradientApproximations:
         
         Performs discretized action gradient, needs numerical PES still
         
-        Maintainer: Kyle
+        :Maintainer: Kyle
         """
         eps = fdTol
         
@@ -399,7 +404,7 @@ class GradientApproximations:
         
         Performs discretized action gradient, needs numerical PES still
         
-        Maintainer: Kyle
+        :Maintainer: Kyle
         """
         eps = fdTol
         
@@ -457,7 +462,7 @@ class GradientApproximations:
         gradOfAction : ndarray
         gradOfPes : ndarray
         
-        Maintainer: Daniel
+        :Maintainer: Daniel
         """
         eps = fdTol
         
@@ -515,7 +520,7 @@ class GradientApproximations:
         gradOfAction : ndarray
         gradOfPes : ndarray
         
-        Maintainer: Daniel
+        :Maintainer: Daniel
         """
         targetFuncName = target_func.__name__
         tf_component = self.targetFuncToComponentMap[targetFuncName]
@@ -580,7 +585,7 @@ def potential_central_grad(points,potential,auxFunc=None):
     gradAux : TYPE
         DESCRIPTION.
     
-    Maintainer: Eric
+    :Maintainer: Eric
     '''
     h = 10**(-8)
     ## check if it is a scalar is done inside midpoint_grad
@@ -601,7 +606,7 @@ def midpoint_grad(func,points,eps=10**(-8)):
     Assumes func only depends on a single point (vs the action, which depends on
           all of the points)
     
-    Maintainer: Eric
+    :Maintainer: Eric
     """
     if len(points.shape) == 1:
         points = points.reshape((1,-1))
@@ -625,7 +630,7 @@ def beff_grad(func,points,dr,eps=10**(-8)):
     """
     Midpoint finite difference of B_eff mass.
     
-    Maintainer: Kyle
+    :Maintainer: Kyle
     """
     if len(points.shape) == 1:
         points = points.reshape((1,-1))
@@ -657,7 +662,7 @@ class SurfaceUtils:
     """
     Defined for namespace purposes
     
-    Maintainer: Daniel
+    :Maintainer: Daniel
     """
     @staticmethod
     def find_all_local_minimum(arr):
@@ -975,7 +980,7 @@ def shift_func(func_in,shift=10**(-4)):
     func_out : function
         The shifted function
     
-    Maintainer: Daniel
+    :Maintainer: Daniel
     """
     def func_out(coords):
         return func_in(coords) - shift
@@ -983,7 +988,7 @@ def shift_func(func_in,shift=10**(-4)):
 
 class RectBivariateSplineWrapper(RectBivariateSpline):
     """
-    Maintainer: Daniel
+    :Maintainer: Daniel
     """
     def __init__(self,*args,**kwargs):
         warnings.warn("Deprecating RectBivariateSplineWrapper in favor of "\
@@ -1005,7 +1010,7 @@ class NDInterpWithBoundary:
     Interpolates a grid in D dimensions, with extra handling for points outside
     of the grid. The D>2 case is based on scipy.interpolate.RegularGridInterpolator
     
-    Maintainer: Daniel
+    :Maintainer: Daniel
     """
     def __init__(self,gridPoints,gridVals,boundaryHandler="exponential",symmExtend=None,\
                  splKWargs={}):
@@ -1349,7 +1354,7 @@ def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
     func_out : function
         The inertia tensor. Can be called as func_out(coords).
         
-    Maintainer: Daniel
+    :Maintainer: Daniel
     """
     nDims = len(uniqueKeys)
     pairedKeys = np.array([c1+c2 for c1 in uniqueKeys for c2 in uniqueKeys]).reshape(2*(nDims,))
@@ -1390,7 +1395,7 @@ def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
 
 class InterpolatedPath:
     """
-    Maintainer: Daniel
+    :Maintainer: Daniel
     """
     def __init__(self,discretePath,kwargs={}):
         """
