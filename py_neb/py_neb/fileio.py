@@ -9,9 +9,13 @@ import functools
 import inspect
 
 class ForceLogger:
+    #TODO: log interpolators better/at all. Want to allow a link to the dataset(s)
+    #interpolated, in case we just use the default data; otherwise, dump the data
+    #to the file. Better yet - just make the user link it, in a separate method
+    #TODO: allow for custom file names
     def __init__(self,classInst,logLevel,loggerSettings,fileExt):
         self.loggerSettings = loggerSettings
-        defaultSettings = {"writeFreq":50}
+        defaultSettings = {"writeFreq":50,"logName":None,"writeInterpData":False}
         for s in defaultSettings:
             if s not in self.loggerSettings:
                 self.loggerSettings[s] = defaultSettings[s]
@@ -38,14 +42,23 @@ class ForceLogger:
                                           varShapes[self.logLevel]):
                 self.logDict[dsetNm] = np.zeros(dsetShape)
             
-            self.fileName = "logs/"+self.initTime+fileExt
+            if self.loggerSettings["logName"] is None:
+                self.fileName = "logs/"+self.initTime+fileExt
+            else:
+                self.fileName = self.loggerSettings["logName"]
             
             #Creating attributes and initializing datasets
             h5File = h5py.File(self.fileName,"w")
             
             #For any nonzero logging level, we'll want these attributes. It's just
             #a question of which datasets we want to store
-            h5File.attrs.create("potential",self.classInst.potential.__qualname__)
+            if isinstance(self.classInst.potential,NDInterpWithBoundary):
+                h5File.create_group("potential")
+                h5File["potential"].attrs.create("potential",self.classInst.potential.__qualname__)
+                #TODO: write potential settings here
+            else:
+                h5File.attrs.create("potential",self.classInst.potential.__qualname__)
+            
             h5File.attrs.create("target_func",self.classInst.target_func.__qualname__)
             h5File.attrs.create("target_func_grad",self.classInst.target_func_grad.__qualname__)
             
@@ -55,6 +68,10 @@ class ForceLogger:
                     massNm = "constant"
                 else:
                     massNm = self.classInst.mass.__qualname__
+                    #TODO: to actually log the mass function, we need to make
+                    #it a class, with a __call__ method
+                    # if (isinstance(self.classInst.mass,np.ndarray)) and \
+                    #     isinstance(self.classInst.mass)
             else:
                 massNm = "constant"
             h5File.attrs.create("mass",massNm)
@@ -121,8 +138,10 @@ class ForceLogger:
     
 class LoadForceLog:
     def __init__(self,file):
-        if not file.endswith(".frc"):
-            raise TypeError("File "+str(file)+" does not have extension .frc")
+        allowedExtensions = [".lap",".mep"]
+        fileExt = file[-4:]
+        if fileExt not in allowedExtensions:
+            raise TypeError("File "+str(file)+" has unrecognized extension "+fileExt)
             
         scalarAttrs = ["potential","target_func","target_func_grad","mass"]
         arrayAttrs = ["endpointSpringForce","endpointHarmonicForce"]
