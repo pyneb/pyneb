@@ -152,7 +152,7 @@ class LoadForceLog:
             if attr in scalarAttrs:
                 setattr(self,attr,h5File.attrs[attr])
             elif attr in arrayAttrs:
-                setattr(self,attr,np.array(h5File.attrs[attrs]))
+                setattr(self,attr,np.array(h5File.attrs[attr]))
             else:
                 warnings.warn("Attribute "+attr+" not recognized; will not be loaded")
         
@@ -171,6 +171,12 @@ class VerletLogger:
         if self.logLevel not in [0,1]:
             raise ValueError("VerletLogger logLevel "+str(self.logLevel)+\
                              " not allowed.")
+                
+class NDInterpLogger:
+    def __init__(self):
+        print("asdf")
+        #TODO: add logger when the class is instantiated. Then, e.g. ForceLogger
+        #can point to these files
 
 class DijkstraLogger:
     def __init__(self,djkInst,logLevel=1):
