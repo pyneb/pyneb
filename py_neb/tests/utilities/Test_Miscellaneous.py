@@ -8,9 +8,25 @@ print("\nRunning "+os.path.relpath(__file__,pyNebDir))
 
 """
 Tests:
+    -shift_func
     -mass_funcs_to_array_func
-
 """
+class shift_func_(unittest.TestCase):
+    def test_function(self):
+        def func(arr):
+            return arr[:,0]
+        
+        shifted_func = shift_func(func,shift=1)
+        
+        inputs = np.arange(32).reshape((-1,2))
+        outputs = shifted_func(inputs)
+        correctOutputs = np.arange(-1,30,2)
+        
+        self.assertIsNone(np.testing.assert_array_equal(outputs,correctOutputs))
+        
+        return None
+
+
 class mass_funcs_to_array_func_(unittest.TestCase):
     def test_allowed_keys(self):
         def dummy_func(idx):

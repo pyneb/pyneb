@@ -960,7 +960,9 @@ class SurfaceUtils:
 
 def shift_func(func_in,shift=10**(-4)):
     """
-    Shifts function by shift
+    Shifts func_in output down by shift. Especially for use with interpolators 
+    where the minimum of the interpolator may be a bit lower than the minimum of
+    the array.
 
     Parameters
     ----------
@@ -997,234 +999,69 @@ class RectBivariateSplineWrapper(RectBivariateSpline):
             res = self.__call__(coords[:,0],coords[:,1],grid=False)
             return res
         return func_out
-    
+  
 class NDInterpWithBoundary:
     """
-    Based on scipy.interpolate.RegularGridInterpolator
+    Interpolates a grid in D dimensions, with extra handling for points outside
+    of the grid. The D>2 case is based on scipy.interpolate.RegularGridInterpolator
     
     Maintainer: Daniel
     """
-    def __init__(self, points, values, boundaryHandler="exponential",minVal=0):
-        if len(points) < 3:
-            warnings.warn("Using ND linear interpolator with "+str(len(points))\
-                          +" dimensions. Consider using spline interpolator instead.")
-        
-        if boundaryHandler not in ["exponential"]:
-            raise ValueError("boundaryHandler '%s' is not defined" % boundaryHandler)
-        
-        if not hasattr(values, 'ndim'):
-            #In case "values" is not an array
-            values = np.asarray(values)
-            
-        if len(points) > values.ndim:
-            raise ValueError("There are %d point arrays, but values has %d "
-                             "dimensions" % (len(points), values.ndim))
-            
-        if hasattr(values, 'dtype') and hasattr(values, 'astype'):
-            if not np.issubdtype(values.dtype, np.inexact):
-                values = values.astype(float)
-                
-        for i, p in enumerate(points):
-            if not np.all(np.diff(p) > 0.):
-                raise ValueError("The points in dimension %d must be strictly "
-                                 "ascending" % i)
-            if not np.asarray(p).ndim == 1:
-                raise ValueError("The points in dimension %d must be "
-                                 "1-dimensional" % i)
-            if not values.shape[i] == len(p):
-                raise ValueError("There are %d points and %d values in "
-                                 "dimension %d" % (len(p), values.shape[i], i))
-        
-        self.grid = tuple([np.asarray(p) for p in points])
-        self.values = values
-        self.boundaryHandler = boundaryHandler
-        self.minVal = minVal #To be used later, perhaps
-
-    def __call__(self, xi):
-        """
-        Interpolation at coordinates
-        Parameters
-        ----------
-        xi : ndarray of shape (..., ndim)
-            The coordinates to sample the gridded data at
-        """
-        ndim = len(self.grid)
-        
-        #Don't really understand what this does
-        xi = interpnd._ndim_coords_from_arrays(xi, ndim=ndim)
-        if xi.shape[-1] != len(self.grid):
-            raise ValueError("The requested sample points xi have dimension "
-                              "%d, but this RegularGridInterpolator has "
-                              "dimension %d" % (xi.shape[1], ndim))
-        
-        #Checking if each point is acceptable, and interpolating individual points.
-        #Might as well just make the user deal with reshaping, unless I find I need
-        #to do so repeatedly
-        nPoints = int(xi.size/len(self.grid))
-        result = np.zeros(nPoints)
-        
-        for (ptIter, point) in enumerate(xi):
-            isInBounds = np.zeros((2,ndim),dtype=bool)
-            isInBounds[0] = (np.array([g[0] for g in self.grid]) <= point)
-            isInBounds[1] = (point <= np.array([g[-1] for g in self.grid]))
-            
-            if np.count_nonzero(~isInBounds) == 0:
-                indices, normDistances = self._find_indices(np.expand_dims(point,1))
-                result[ptIter] = self._evaluate_linear(indices, normDistances)
-            else:
-                if self.boundaryHandler == "exponential":
-                    result[ptIter] = self._exp_boundary_handler(point,isInBounds)
-                
-        return result
-    
-    def _find_indices(self, xi):
-        """
-        Finds indices of nearest gridpoint (utilizing the regularity of the grid).
-        Also computes how far in each coordinate dimension every point is from
-        the previous gridpoint (not the nearest), normalized such that the next 
-        gridpoint (in a particular dimension) is distance 1 from the nearest gridpoint.
-        The distance is normed to make the interpolation simpler.
-        
-        As an example, returned indices of [[2,3],[1,7],[3,2]] indicates that the
-        first point has nearest grid index (2,1,3), and the second has nearest
-        grid index (3,7,2).
-        
-        Note that, if the nearest edge is the outermost edge in a given coordinate,
-        the inner edge is return instead. For this reason, this is a custom method
-        here, despite similar logic being used elsewhere.
-        Parameters
-        ----------
-        xi : Numpy array
-            Array of coordinate(s) to evaluate at. Of dimension (ndims,_)
-        Returns
-        -------
-        indices : Tuple of numpy arrays
-            The indices of the nearest gridpoint for all points of xi. Can
-            be used as indices of a numpy array
-        normDistances : List of numpy arrays
-            The distance along each dimension to the nearest gridpoint
-        """
-        
-        indices = []
-        # compute distance to lower edge in unity units
-        normDistances = []
-        # iterate through dimensions
-        for x, grid in zip(xi, self.grid):
-            #This is why the grid must be sorted - this search is now quick. All
-            #this does is find the index in which to place x such that the list
-            #self.grid[coordIter] remains sorted.
-            i = np.searchsorted(grid, x) - 1
-            
-            #If x would be the new first element, index it as zero
-            i[i < 0] = 0
-            #If x would be the last element, make it not so. However, the way
-            #the interpolation scheme is set up, we need the nearest gridpoint
-            #that is not the outermost gridpoint. See below with grid[i+1]
-            i[i > grid.size - 2] = grid.size - 2
-            
-            indices.append(i)
-            normDistances.append((x - grid[i]) / (grid[i + 1] - grid[i]))
-            
-        return tuple(indices), normDistances
-
-    def _evaluate_linear(self, indices, normDistances):
-        """
-        A complicated way of implementing repeated linear interpolation. See
-        e.g. https://en.wikipedia.org/wiki/Bilinear_interpolation#Weighted_mean
-        for the 2D case. Note that the weights simplify because of the normed
-        distance that's returned from self._find_indices
-        Parameters
-        ----------
-        indices : TYPE
-            DESCRIPTION.
-        normDistances : TYPE
-            DESCRIPTION.
-        Returns
-        -------
-        values : TYPE
-            DESCRIPTION.
-        """
-        #TODO: remove extra dimension handling
-        # slice for broadcasting over trailing dimensions in self.values.
-        vslice = (slice(None),) + (None,)*(self.values.ndim - len(indices))
-        
-        # find relevant values
-        # each i and i+1 represents a edge
-        edges = itertools.product(*[[i, i + 1] for i in indices])
-        values = 0.
-        for edge_indices in edges:
-            weight = 1.
-            for ei, i, yi in zip(edge_indices, indices, normDistances):
-                weight *= np.where(ei == i, 1 - yi, yi)
-            values += np.asarray(self.values[edge_indices]) * weight[vslice]
-        return values
-    
-    def _exp_boundary_handler(self,point,isInBounds):
-        nearestAllowed = np.zeros(point.shape)
-        
-        for dimIter in range(point.size):
-            if np.all(isInBounds[:,dimIter]):
-                nearestAllowed[dimIter] = point[dimIter]
-            else:
-                #To convert from tuple -> numpy array -> int
-                failedInd = np.nonzero(isInBounds[:,dimIter]==False)[0].item()
-                if failedInd == 1:
-                    failedInd = -1
-                nearestAllowed[dimIter] = self.grid[dimIter][failedInd]
-        
-        #Evaluating the nearest allowed point on the boundary of the allowed region
-        indices, normDist = self._find_indices(np.expand_dims(nearestAllowed,1))
-        valAtNearest = self._evaluate_linear(indices,normDist)
-        
-        dist = np.linalg.norm(nearestAllowed-point)
-        
-        #Yes, I mean to take an additional square root here
-        result = valAtNearest*np.exp(np.sqrt(dist))
-        return result
-    
-class NDInterpWithBoundary_experimental:
-    """
-    Based on scipy.interpolate.RegularGridInterpolator
-    
-    Maintainer: Daniel
-    """
-    def __init__(self, gridPoints, gridVals, boundaryHandler="exponential", symmExtend=None,\
+    def __init__(self,gridPoints,gridVals,boundaryHandler="exponential",symmExtend=None,\
                  splKWargs={}):
         """
-        
+        Initializes the class instance. Carries out basic error checking on inputs.
+        Defines self._call as the method to evaluate a point that's within the
+        grid boundaries. It is also used in the boundary handlers, to evaluate
+        e.g. the nearest allowed point once it is found.
 
         Parameters
         ----------
-        gridPoints : TYPE
-            DESCRIPTION.
-        gridVals : TYPE
-            DESCRIPTION.
+        gridPoints : tuple of ndarrays
+            The unique grid points. Each array must be sorted in ascending order.
+        gridVals : ndarray
+            The grid values to be interpolated. Expected to be of shape (N2,N1,N3,...),
+            as in the output of np.meshgrid.
         boundaryHandler : str, optional
-            How points outside of the interpolation region are handled. Is assumed
-            to be the same for all dimensions, because I can't think of a reasonable
-            way to allow for different handling for different dimensions. I also see
-            no reason why one would want to treat the dimensions differently.
-            The default is 'exponential'.
-        symmExtend : TYPE, optional
-            DESCRIPTION. The default is None.
-        splKWargs : TYPE, optional
-            DESCRIPTION. The default is None.
-
-        Raises
-        ------
-        ValueError
-            DESCRIPTION.
+            How points outside of the interpolation region are handled. The 
+            default is 'exponential'.
+        symmExtend : bool or ndarray of bools, optional
+            Whether to symmetrically extend gridVals when evaluating. See notes.
+            The default is None.
+        splKWargs : dict, optional
+            Extra arguments for spline interpolation, in the 2D case. The default
+            is {}.
 
         Returns
         -------
         None.
+        
+        Notes
+        -----
+        The boundary handler is assumed to be the same for all dimensions, because
+        I can't think of a reasonable way to allow for different handling for
+        different dimensions. I also see no reason why one would want to treat 
+        the dimensions differently.
+        
+        Our use case is density functional theory, and our grid points are the
+        multipole moments Qi in a constrained DFT calculation. It does not
+        always make sense to symmetrically extend a potential energy surface:
+        for Q30, it does, while for Q20, it does not. It also does not make sense
+        to symmetrically extend the PES at the maximum value. So, symmExtend by
+        default assumes Q30 is the second coordinate, and should only be extended
+        symmetrically near Q30 = 0; otherwise, everything else is not extended at
+        all.
+        
+        Also assumes for symmetric extension that the lowest value is 0.
 
         """
         self.nDims = len(gridPoints)
+        if self.nDims < 2:
+            raise NotImplementedError("Expected nDims >= 2")
         
         bdyHandlerFuncs = {"exponential":self._exp_boundary_handler}
         if boundaryHandler not in bdyHandlerFuncs.keys():
-            raise ValueError("boundaryHandler '%s' is not defined" % b)
+            raise ValueError("boundaryHandler '%s' is not defined" % boundaryHandler)
         
         self.boundaryHandler = bdyHandlerFuncs[boundaryHandler]
         
@@ -1233,7 +1070,7 @@ class NDInterpWithBoundary_experimental:
         elif not isinstance(symmExtend,np.ndarray):
             warnings.warn("Using symmetric extension "+str(symmExtend)+\
                           " for all dimensions. Make sure this is intended.")
-            symmExtend = symmExtend * np.ones(len(points),dtype=bool)
+            symmExtend = symmExtend * np.ones(len(gridPoints),dtype=bool)
             
         if symmExtend.shape != (self.nDims,):
             raise ValueError("symmExtend.shape '"+str(symmExtend.shape)+\
@@ -1241,50 +1078,48 @@ class NDInterpWithBoundary_experimental:
         
         self.symmExtend = symmExtend
         
+        defaultMeshgridShape = np.array([len(g) for g in gridPoints])
+        defaultMeshgridShape[[0,1]] = defaultMeshgridShape[[1,0]]
+        defaultMeshgridShape = tuple(defaultMeshgridShape)
+        
+        if gridVals.shape != defaultMeshgridShape:
+            raise ValueError("gridVals.shape does not match expected shape "+\
+                             str(defaultMeshgridShape))
+        
+        for i, p in enumerate(gridPoints):
+            if not np.all(np.diff(p) > 0.):
+                raise ValueError("The points in dimension %d must be strictly "
+                                 "ascending" % i)
+        
         if self.nDims == 2:
-            expectedShape = tuple([len(g) for g in gridPoints])
-            if gridVals.shape == expectedShape:
-                self.rbv = RectBivariateSpline(*gridPoints,gridVals,**splKWargs)
-            elif gridVals.T.shape == expectedShape:
-                self.rbv = RectBivariateSpline(*gridPoints,gridVals.T,**splKWargs)
-            else:
-                raise ValueError("gridVals.shape does not match expected shape "+\
-                                 str(expectedShape))
+            self.rbv = RectBivariateSpline(*gridPoints,gridVals.T,**splKWargs)
             self._call = self._call_2d
         else:
             self._call = self._call_nd
-        # if len(points) > values.ndim:
-        #     raise ValueError("There are %d point arrays, but values has %d "
-        #                      "dimensions" % (len(points), values.ndim))
-            
-        # if hasattr(values, 'dtype') and hasattr(values, 'astype'):
-        #     if not np.issubdtype(values.dtype, np.inexact):
-        #         values = values.astype(float)
-                
-        # for i, p in enumerate(points):
-        #     if not np.all(np.diff(p) > 0.):
-        #         raise ValueError("The points in dimension %d must be strictly "
-        #                          "ascending" % i)
-        #     if not np.asarray(p).ndim == 1:
-        #         raise ValueError("The points in dimension %d must be "
-        #                          "1-dimensional" % i)
-        #     if not values.shape[i] == len(p):
-        #         raise ValueError("There are %d points and %d values in "
-        #                          "dimension %d" % (len(p), values.shape[i], i))
                 
         self.gridPoints = tuple([np.asarray(p) for p in gridPoints])
         self.gridVals = gridVals
-        # self.minVal = minVal #To be used later, perhaps
 
-    def __call__(self, points):
+    def __call__(self,points):
         """
-        Interpolation at coordinates
+        Interpolation at coordinates.
+        
         Parameters
         ----------
-        points : np.ndarray of shape (-, self.nDims)
-            The coordinates to sample the gridded data at
+        points : ndarray
+            The coordinates to sample the gridded data at. Can be more than 2D,
+            as in points.shape == complexShape + (self.nDims,).
+            
+        Returns
+        -------
+        result : ndarray
+            The interpolated function evaluated at points. Is of shape complexShape.
+        
         """
         originalShape = points.shape[:-1]
+        if originalShape == ():
+            originalShape = (1,)
+        
         if points.shape[-1] != self.nDims:
             raise ValueError("The requested sample points have dimension "
                              "%d, but this NDInterpWithBoundary expects "
@@ -1309,38 +1144,55 @@ class NDInterpWithBoundary_experimental:
                 result[ptIter] = self._call(point)
             else:
                 result[ptIter] = self.boundaryHandler(point,isInBounds)
-                
-        return result.reshape(originalShape)
+        
+        result = result.reshape(originalShape) 
+        
+        return result
     
     def _call_2d(self,point):
+        """
+        Evaluates the RectBivariateSpline instance at a single point. Defined
+        as a wrapper here so that self._call has the same calling signature
+        regardless of dimension.
+
+        Parameters
+        ----------
+        point : ndarray
+            Of shape (2,). A single point to evaluate at.
+
+        Returns
+        -------
+        ndarray of floats
+            The RectBivariateSpline evaluation. Of shape (1,).
+
+        """
         return self.rbv(point[0],point[1],grid=False)
     
     def _call_nd(self,point):
         """
-        A complicated way of implementing repeated linear interpolation. See
-        e.g. https://en.wikipedia.org/wiki/Bilinear_interpolation#Weighted_mean
-        for the 2D case. Note that the weights simplify because of the normed
-        distance that's returned from self._find_indices
+        Repeated linear interpolation. For the 2D case, see e.g.
+        https://en.wikipedia.org/wiki/Bilinear_interpolation#Weighted_mean
 
         Parameters
         ----------
-        indices : TYPE
-            DESCRIPTION.
-        normDistances : TYPE
-            DESCRIPTION.
+        point : ndarray
+            The point to evaluate at. Of shape (self.nDims,)
 
         Returns
         -------
-        values : TYPE
-            DESCRIPTION.
+        value : float
+            The linear interpolated value.
+            
+        Notes
+        -----
+        Original implementation, taken from scipy.interpolate.RegularGridInterpolator,
+        handled multiple points at a time. I've trimmed things down here so that
+        it only handles a single point at a time, since the loop in self.__call__
+        has to check every point individually anyways.
 
         """
         indices, normDistances = self._find_indices(np.expand_dims(point,1))
-        
-        #TODO: remove extra dimension handling
-        # slice for broadcasting over trailing dimensions in self.values.
-        vslice = (slice(None),) + (None,)*(self.nDims - len(indices))
-        
+                
         # find relevant values
         # each i and i+1 represents a edge
         edges = itertools.product(*[[i, i + 1] for i in indices])
@@ -1348,47 +1200,55 @@ class NDInterpWithBoundary_experimental:
         for edge_indices in edges:
             weight = 1.
             for ei, i, yi in zip(edge_indices, indices, normDistances):
-                weight *= np.where(ei == i, 1 - yi, yi)
-            value += np.asarray(self.gridVals[edge_indices]) * weight[vslice]
+                weight *= np.where(ei == i, 1 - yi, yi).item()
+            value += weight * self.gridVals[edge_indices].item()
         
         return value
     
-    def _find_indices(self, xi):
+    def _find_indices(self,points):
         """
-        Finds indices of nearest gridpoint (utilizing the regularity of the grid).
+        Finds indices of nearest gridpoint, utilizing the regularity of the grid.
         Also computes how far in each coordinate dimension every point is from
         the previous gridpoint (not the nearest), normalized such that the next 
-        gridpoint (in a particular dimension) is distance 1 from the nearest gridpoint.
-        The distance is normed to make the interpolation simpler.
+        gridpoint (in a particular dimension) is distance 1 from the nearest gridpoint
+        (called unity units). The distance is normed to make the interpolation 
+        simpler.
         
-        As an example, returned indices of [[2,3],[1,7],[3,2]] indicates that the
-        first point has nearest grid index (2,1,3), and the second has nearest
-        grid index (3,7,2).
-        
-        Note that, if the nearest edge is the outermost edge in a given coordinate,
-        the inner edge is return instead. For this reason, this is a custom method
-        here, despite similar logic being used elsewhere.
+        Taken from scipy.interpolate.RegularGridInterpolator.
 
         Parameters
         ----------
-        xi : Numpy array
-            Array of coordinate(s) to evaluate at. Of dimension (ndims,_)
+        points : Numpy array
+            Array of coordinate(s) to evaluate at. Of shape (ndims,_)
 
         Returns
         -------
-        indices : Tuple of numpy arrays
-            The indices of the nearest gridpoint for all points of xi. Can
+        indices : Tuple of ndarrays
+            The indices of the nearest gridpoint for all points of points. Can
             be used as indices of a numpy array
-        normDistances : List of numpy arrays
-            The distance along each dimension to the nearest gridpoint
+        normDistances : ndarray
+            The distance along each dimension to the nearest gridpoint. Of shape
+            points.shape
 
-        """
+        Example
+        -------
+        Returned indices of ([2,3],[1,7],[3,2]) indicates that the first point 
+        has nearest grid index (2,1,3), and the second has nearest grid index 
+        (3,7,2).
         
+        Notes
+        -----
+        If the nearest edge is the outermost edge in a given coordinate, the inner 
+        edge is return instead.
+        
+        Requires points to have first dimension equal to self.nDims so that
+        this can zip points and self.gridPoints
+        
+        """
         indices = []
-        # compute distance to lower edge in unity units
-        normDistances = []
-        # iterate through dimensions
-        for x, grid in zip(xi, self.grid):
+        normDistances = np.zeros(points.shape)
+        
+        for (coordIter,x,grid) in zip(np.arange(self.nDims),points,self.gridPoints):
             #This is why the grid must be sorted - this search is now quick. All
             #this does is find the index in which to place x such that the list
             #self.grid[coordIter] remains sorted.
@@ -1402,11 +1262,42 @@ class NDInterpWithBoundary_experimental:
             i[i > grid.size - 2] = grid.size - 2
             
             indices.append(i)
-            normDistances.append((x - grid[i]) / (grid[i + 1] - grid[i]))
+            normDistances[coordIter] = (x - grid[i]) / (grid[i + 1] - grid[i])
             
         return tuple(indices), normDistances
     
     def _exp_boundary_handler(self,point,isInBounds):
+        """
+        Given a point that's out of the grid region, computes the nearest point
+        in the region, evaluates there, and multiplies the result by an exponential
+        scaling factor. This should smoothly continue the surface, in an effort
+        to push force-based solvers back into the interpolated region.
+
+        Parameters
+        ----------
+        point : ndarray
+            The point that's out of bounds. Of shape (self.nDims,).
+        isInBounds : ndarray of bools
+            Array detailing where the point fails. Of shape (2,self.nDims).
+            isInBounds[0] deals with the lower bound; isInBounds[1] deals with
+            the upper bound. False means the point is out of bounds in that dimension,
+            in that position.
+            
+
+        Returns
+        -------
+        result : float
+            The scaled result.
+            
+        Notes
+        -----
+        Does not allow for evaluation of multiple points at a time.
+        
+        For the i'th coordinate, both isInBounds[0,i] and isInBounds[1,i] should
+        not be False - a point cannot be less than a minimum value and greater
+        than a maximum value.
+
+        """
         nearestAllowed = np.zeros(point.shape)
         
         for dimIter in range(point.size):
@@ -1417,7 +1308,7 @@ class NDInterpWithBoundary_experimental:
                 failedInd = np.nonzero(isInBounds[:,dimIter]==False)[0].item()
                 if failedInd == 1:
                     failedInd = -1
-                nearestAllowed[dimIter] = self.grid[dimIter][failedInd]
+                nearestAllowed[dimIter] = self.gridPoints[dimIter][failedInd]
         
         #Evaluating the nearest allowed point on the boundary of the allowed region
         valAtNearest = self._call(point)
