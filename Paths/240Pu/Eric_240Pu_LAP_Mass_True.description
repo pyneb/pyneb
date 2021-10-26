@@ -1,0 +1,11 @@
+title: Eric_240Pu_LAP_Mass_True
+Created_by: Eric
+Created_on: Oct-18-2021
+method: NEB-LAP-Numerical
+method_description: {'k': 1.0, 'kappa': 2.0, 'NImages': 66, 'Iterations': 40000, 'dt': 0.1, 'optimization': 'Local FIRE', 'HarmonicForceEnds': (False, True), 'SpringForceEnds': (False, False)}
+masses: True
+E_gs: [0.]
+action: 16.62300308062791
+run_time: 22386.222410202026
+initial_start_point: [86.  0.  0.]
+initial_end_point: (185, 17, 1)

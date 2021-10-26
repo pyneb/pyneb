@@ -11,16 +11,10 @@ PyNEB robust and extensible package etc etc for all action minimization purposes
 
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 3
    :caption: Contents:
 
-.. automodule:: py_neb   
-   :members:
-
-.. autoclass:: py_neb.LeastActionPath
-   :members:
-   
-   .. automethod:: __init__
+   py_neb
 
 Indices and tables
 ==================

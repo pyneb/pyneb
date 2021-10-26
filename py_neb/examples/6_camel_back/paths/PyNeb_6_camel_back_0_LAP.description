@@ -1,0 +1,11 @@
+title: PyNeb_6_camel_back_0_LAP
+Created_by: Eric
+Created_on: Oct-04-2021
+method: NEB-LAP
+method_description: {'k': 1.0, 'kappa': 1.0, 'NImages': 32, 'Iterations': 1000, 'dt': 0.5, 'optimization': 'QM Verlet', 'HarmonicForceEnds': (False, False), 'SpringForceEnds': (False, False)}
+masses: None
+E_gs: [-1.03154883]
+action: 5.545634394412359
+run_time: 17.703086137771606
+initial_start_point: [ 1.70568562 -0.79849498]
+initial_end_point: [-1.70568562  0.79849498]

@@ -118,7 +118,6 @@ def main(nuc):
             
         ax.legend(loc="upper left")
         fig.savefig(os.getcwd()+"/"+nuc+"/"+nuc+".pdf")
-        
         for (mIter,key) in enumerate(massDict.keys()):
             massFig, massAx = plt.subplots()
             cf = massAx.contourf(*cmeshTuple,massDict[key].reshape(gridShape))
@@ -126,22 +125,21 @@ def main(nuc):
             for c in allConts.allsegs[0]:
                 massAx.plot(c[:,0],c[:,1],color="black")
             massAx.set(xlabel=r"$Q_{20}$ (b)",ylabel=r"$Q_{30}$ (b${}^{3/2}$)")
-            
+
             for pathKey in paths.keys():
                 if paths[pathKey].shape[0] > 50:
                     ls = None
                 else:
                     ls = "."
                 massAx.plot(paths[pathKey][:,0],paths[pathKey][:,1],marker=ls,label=pathKey)
-                
+
             massAx.set(title=nuc+" "+key)
             if len(paths.keys()) > 6:
                 massFig.savefig(os.getcwd()+"/"+nuc+"/"+nuc+"_"+key+"_no_legend.pdf")
                 print("Warning: making legend with "+str(len(paths.keys()))+" keys")
-                
+
             massAx.legend(loc="upper left")
             massFig.savefig(os.getcwd()+"/"+nuc+"/"+nuc+"_"+key+".pdf")
-        
     else:
         sys.exit("Err: requested PES with "+str(len(coordDict.keys()))+\
                  " coordinates; code only set up to handle 2 coordinates")

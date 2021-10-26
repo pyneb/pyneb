@@ -14,8 +14,8 @@ if __name__ == "__main__":
     today = date.today()
     #p = mp.Pool(mp.cpu_count())
     ### Define surface here
-    nucleus = "252U"
-    data_path = f"../PES/{nucleus}_PES.h5"
+    nucleus = "232U"
+    data_path = f"../PES/{nucleus}.h5"
     data = h5py.File(data_path, 'r')
 
     #wanted_keys = ['Q20','Q30','PES'] # keys for 240Pu

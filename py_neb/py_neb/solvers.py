@@ -4,16 +4,18 @@ import numpy as np
 from scipy.ndimage import filters, morphology #For minimum finding
 
 #For ND interpolation
-from scipy.interpolate import interpnd, RectBivariateSpline
+# from scipy.interpolate import interpnd, RectBivariateSpline
 import itertools
 
 from scipy.integrate import solve_bvp
 
 import h5py
 import sys
+import time
 import warnings
 
 from utilities import *
+from fileio import *
 
 """
 CONVENTIONS:
@@ -23,459 +25,17 @@ CONVENTIONS:
     -Similarly, functions (e.g. the action) that take in many points should also
         assume the first index iterates over the points
 """
-
-"""
-Other functions we want:
-    -Class for least action path and minimum energy path
-    -Method(s) for finding starting points for a D-dimensional grid.
-        -Would want this to be robust. Ideally, it would select the outer turning
-            (D-1)-dimensional hypersurface. Simple idea is just to select *any* point
-            with the same energy as the ground state, and see what happens. This brings
-            up another point: is there a way to show we're at the outer turning line,
-            without looking at the surface?
-"""
-
-"""
-TODO:
-    -Unclear how we want to handle errors (currently just using sys.exit)
-
-"""
-
-global fdTol
-fdTol = 10**(-8)
-
-def find_local_minimum(arr):
-    """
-    Returns the indices corresponding to the local minimum values. Taken 
-    directly from https://stackoverflow.com/a/3986876
     
-    Parameters
-    ----------
-    arr : Numpy array
-        A D-dimensional array.
-
-    Returns
-    -------
-    minIndsOut : Tuple of numpy arrays
-        D arrays of length k, for k minima found
-
-    """
-    neighborhood = morphology.generate_binary_structure(len(arr.shape),1)
-    local_min = (filters.minimum_filter(arr, footprint=neighborhood,\
-                                        mode="nearest")==arr)
-    
-    background = (arr==0)
-    #Not sure this is necessary - it doesn't seem to do much on the test
-        #data I defined.
-    eroded_background = morphology.binary_erosion(background,\
-                                                  structure=neighborhood,\
-                                                  border_value=1)
-        
-    detected_minima = local_min ^ eroded_background
-    allMinInds = np.vstack(local_min.nonzero())
-    minIndsOut = tuple([allMinInds[coordIter,:] for \
-                        coordIter in range(allMinInds.shape[0])])
-    return minIndsOut
-
-def midpoint_grad(func,points,eps=10**(-8)):
-    """
-    TODO: allow for arbitrary shaped outputs, for use with inertia tensor
-    
-    Midpoint finite difference. Probably best if not used with actual DFT calculations,
-        vs a forwards/reverse finite difference
-    Assumes func only depends on a single point (vs the action, which depends on
-         all of the points)
-    """
-    if len(points.shape) == 1:
-        points = points.reshape((1,-1))
-    nPoints, nDims = points.shape
-    
-    gradOut = np.zeros((nPoints,nDims))
-    for dimIter in range(nDims):
-        step = np.zeros(nDims)
-        step[dimIter] = 1
-        
-        forwardStep = points + eps/2*step
-        backwardStep = points - eps/2*step
-        
-        forwardEval = func(forwardStep)
-        backwardEval = func(backwardStep)
-        
-        gradOut[:,dimIter] = (forwardEval-backwardEval)/eps
-    
-    return gradOut
-
-# def action(path,potential,masses=None):
-#     """
-#     Allowed masses:
-#         -Constant mass; set masses = None
-#         -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
-#         -A function; set masses to a function
-#     Allowed potential:
-#         -Array of values; set potential to a numpy array of shape (nPoints,)
-#         -A function; set masses to a function
-        
-#     Computes action as
-#         $ S = \sum_{i=1}^{nPoints} \sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
-#     """
-#     nPoints, nDims = path.shape
-    
-#     if masses is None:
-#         massArr = np.full((nPoints,nDims,nDims),np.identity(nDims))
-#     elif not isinstance(masses,np.ndarray):
-#         massArr = masses(path)
-#     else:
-#         massArr = masses
-        
-#     massDim = (nPoints, nDims, nDims)
-#     if massArr.shape != massDim:
-#         raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
-#                          "; required shape is "+str(massDim)+". See action function.")
-    
-#     if not isinstance(potential,np.ndarray):
-#         potArr = potential(path)
-#     else:
-#         potArr = potential
-    
-#     potShape = (nPoints,)
-#     if potArr.shape != potShape:
-#         raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
-#                          "; required shape is "+str(potShape)+". See action function.")
-    
-#     for ptIter in range(nPoints):
-#         if potArr[ptIter] < 0:
-#             potArr[ptIter] = 0.01
-    
-#     # if np.any(potArr[1:-2]<0):
-#     #     print("Path: ")
-#     #     print(path)
-#     #     print("Potential: ")
-#     #     print(potArr)
-#     #     raise ValueError("Encountered energy E < 0; stopping.")
-        
-#     #Actual calculation
-#     actOut = 0
-#     for ptIter in range(1,nPoints):
-#         coordDiff = path[ptIter] - path[ptIter - 1]
-#         dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
-#         actOut += np.sqrt(2*potArr[ptIter]*dist)
-    
-#     return actOut, potArr, massArr
-
-def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
-                        target_func):
-    """
-    potential and mass are as allowed in "action" func; will let that do the error
-    checking (for now...?)
-    
-    Takes forwards finite difference approx of any action-like function
-    
-    Does not return the gradient of the mass function, as that's not used elsewhere
-    in the algorithm
-    
-    Maybe put this + action inside of LeastActionPath? not sure how we want to structure that part
-    """
-    eps = fdTol#10**(-8)
-    
-    gradOfPes = np.zeros(path.shape)
-    gradOfAction = np.zeros(path.shape)
-    
-    nPts, nDims = path.shape
-    
-    actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
-    
-    for ptIter in range(nPts):
-        for dimIter in range(nDims):
-            steps = path.copy()
-            steps[ptIter,dimIter] += eps
-            actionAtStep, potAtStep, massAtStep = target_func(steps,potential,mass)
-            
-            gradOfPes[ptIter,dimIter] = (potAtStep[ptIter] - potentialOnPath[ptIter])/eps
-            gradOfAction[ptIter,dimIter] = (actionAtStep - actionOnPath)/eps
-    
-    return gradOfAction, gradOfPes
-
-def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
-    """
-    Formats a collection of functions for use in computing the inertia tensor.
-    Assumes the inertia tensor is symmetric.
-    
-    Parameters
-    ----------
-    dictOfFuncs : dict
-        Contains functions for each component of the inertia tensor
-        
-    uniqueKeys : list
-        Labels the unique coordinates of the inertia tensor, in the order they
-        are used in the inertia. For instance, if one uses (q20, q30) as the 
-        coordinates in this order, one should feed in ['20','30'], and the
-        inertia will be reshaped as
-        
-                    [[M_{20,20}, M_{20,30}]
-                     [M_{30,20}, M_{30,30}]].
-                    
-        Contrast this with feeding in ['30','20'], in which the inertia will
-        be reshaped as
-        
-                    [[M_{30,30}, M_{30,20}]
-                     [M_{20,30}, M_{20,20}]].
-
-    Returns
-    -------
-    func_out : function
-        The inertia tensor. Can be called as func_out(coords).
-
-    """
-    nDims = len(uniqueKeys)
-    pairedKeys = np.array([c1+c2 for c1 in uniqueKeys for c2 in uniqueKeys]).reshape(2*(nDims,))
-    dictKeys = np.zeros(pairedKeys.shape,dtype=object)
-    
-    for (idx, key) in np.ndenumerate(pairedKeys):
-        for dictKey in dictOfFuncs.keys():
-            if key in dictKey:
-                dictKeys[idx] = dictKey
-                
-    nFilledKeys = np.count_nonzero(dictKeys)
-    nExpectedFilledKeys = nDims*(nDims+1)/2
-    if nFilledKeys != nExpectedFilledKeys:
-        raise ValueError("Expected "+str(nExpectedFilledKeys)+" but found "+\
-                         str(nFilledKeys)+" instead. dictKeys = "+str(dictKeys))
-    
-    def func_out(coords):
-        if len(coords.shape) == 1:
-            coords = coords.reshape((1,nDims))
-        elif len(coords.shape) > 2:
-            raise ValueError("coords.shape = "+str(coords.shape)+\
-                             "; coords.shape must have length <= 2")
-        
-        nPoints = coords.shape[0]
-        outVals = np.zeros((nPoints,)+2*(nDims,))
-        
-        #Mass array is always 2D
-        for iIter in range(nDims):
-            for jIter in np.arange(iIter,nDims):
-                key = dictKeys[iIter,jIter]
-                fEvals = dictOfFuncs[key](coords)
-                
-                outVals[:,iIter,jIter] = fEvals
-                outVals[:,jIter,iIter] = fEvals
-                
-        return outVals
-    return func_out
-
-def auxiliary_potential(func_in,shift=10**(-4)):
-    def func_out(coords):
-        return func_in(coords) + shift
-    return func_out
-
-class RectBivariateSplineWrapper(RectBivariateSpline):
-    def __init__(self,*args,**kwargs):
-        super(RectBivariateSplineWrapper,self).__init__(*args,**kwargs)
-        self.function = self.func_wrapper()
-        
-    def func_wrapper(self):
-        def func_out(coords):
-            if coords.shape == (2,):
-                coords = coords.reshape((1,2))
-                
-            res = self.__call__(coords[:,0],coords[:,1],grid=False)
-            return res
-        return func_out
-
-class NDInterpWithBoundary:
-    """
-    Based on scipy.interpolate.RegularGridInterpolator
-    """
-    def __init__(self, points, values, boundaryHandler="exponential",minVal=0):
-        if len(points) < 3:
-            warnings.warn("Using ND linear interpolator with "+str(len(points))\
-                          +" dimensions. Consider using spline interpolator instead.")
-        
-        if boundaryHandler not in ["exponential"]:
-            raise ValueError("boundaryHandler '%s' is not defined" % boundaryHandler)
-        
-        if not hasattr(values, 'ndim'):
-            #In case "values" is not an array
-            values = np.asarray(values)
-            
-        if len(points) > values.ndim:
-            raise ValueError("There are %d point arrays, but values has %d "
-                             "dimensions" % (len(points), values.ndim))
-            
-        if hasattr(values, 'dtype') and hasattr(values, 'astype'):
-            if not np.issubdtype(values.dtype, np.inexact):
-                values = values.astype(float)
-                
-        for i, p in enumerate(points):
-            if not np.all(np.diff(p) > 0.):
-                raise ValueError("The points in dimension %d must be strictly "
-                                 "ascending" % i)
-            if not np.asarray(p).ndim == 1:
-                raise ValueError("The points in dimension %d must be "
-                                 "1-dimensional" % i)
-            if not values.shape[i] == len(p):
-                raise ValueError("There are %d points and %d values in "
-                                 "dimension %d" % (len(p), values.shape[i], i))
-        
-        self.grid = tuple([np.asarray(p) for p in points])
-        self.values = values
-        self.boundaryHandler = boundaryHandler
-        self.minVal = minVal #To be used later, perhaps
-
-    def __call__(self, xi):
-        """
-        Interpolation at coordinates
-        Parameters
-        ----------
-        xi : ndarray of shape (..., ndim)
-            The coordinates to sample the gridded data at
-        """
-        ndim = len(self.grid)
-        
-        #Don't really understand what this does
-        xi = interpnd._ndim_coords_from_arrays(xi, ndim=ndim)
-        if xi.shape[-1] != len(self.grid):
-            raise ValueError("The requested sample points xi have dimension "
-                              "%d, but this RegularGridInterpolator has "
-                              "dimension %d" % (xi.shape[1], ndim))
-        
-        #Checking if each point is acceptable, and interpolating individual points.
-        #Might as well just make the user deal with reshaping, unless I find I need
-        #to do so repeatedly
-        nPoints = int(xi.size/len(self.grid))
-        result = np.zeros(nPoints)
-        
-        for (ptIter, point) in enumerate(xi):
-            isInBounds = np.zeros((2,ndim),dtype=bool)
-            isInBounds[0] = (np.array([g[0] for g in self.grid]) <= point)
-            isInBounds[1] = (point <= np.array([g[-1] for g in self.grid]))
-            
-            if np.count_nonzero(~isInBounds) == 0:
-                indices, normDistances = self._find_indices(np.expand_dims(point,1))
-                result[ptIter] = self._evaluate_linear(indices, normDistances)
-            else:
-                if self.boundaryHandler == "exponential":
-                    result[ptIter] = self._exp_boundary_handler(point,isInBounds)
-                
-        return result
-    
-    def _find_indices(self, xi):
-        """
-        Finds indices of nearest gridpoint (utilizing the regularity of the grid).
-        Also computes how far in each coordinate dimension every point is from
-        the previous gridpoint (not the nearest), normalized such that the next 
-        gridpoint (in a particular dimension) is distance 1 from the nearest gridpoint.
-        The distance is normed to make the interpolation simpler.
-        
-        As an example, returned indices of [[2,3],[1,7],[3,2]] indicates that the
-        first point has nearest grid index (2,1,3), and the second has nearest
-        grid index (3,7,2).
-        
-        Note that, if the nearest edge is the outermost edge in a given coordinate,
-        the inner edge is return instead.
-
-        Parameters
-        ----------
-        xi : Numpy array
-            Array of coordinate(s) to evaluate at. Of dimension (ndims,_)
-
-        Returns
-        -------
-        indices : Tuple of numpy arrays
-            The indices of the nearest gridpoint for all points of xi. Can
-            be used as indices of a numpy array
-        normDistances : List of numpy arrays
-            The distance along each dimension to the nearest gridpoint
-
-        """
-        
-        indices = []
-        # compute distance to lower edge in unity units
-        normDistances = []
-        # iterate through dimensions
-        for x, grid in zip(xi, self.grid):
-            #This is why the grid must be sorted - this search is now quick. All
-            #this does is find the index in which to place x such that the list
-            #self.grid[coordIter] remains sorted.
-            i = np.searchsorted(grid, x) - 1
-            
-            #If x would be the new first element, index it as zero
-            i[i < 0] = 0
-            #If x would be the last element, make it not so. However, the way
-            #the interpolation scheme is set up, we need the nearest gridpoint
-            #that is not the outermost gridpoint. See below with grid[i+1]
-            i[i > grid.size - 2] = grid.size - 2
-            
-            indices.append(i)
-            normDistances.append((x - grid[i]) / (grid[i + 1] - grid[i]))
-            
-        return tuple(indices), normDistances
-
-    def _evaluate_linear(self, indices, normDistances):
-        """
-        A complicated way of implementing repeated linear interpolation. See
-        e.g. https://en.wikipedia.org/wiki/Bilinear_interpolation#Weighted_mean
-        for the 2D case. Note that the weights simplify because of the normed
-        distance that's returned from self._find_indices
-
-        Parameters
-        ----------
-        indices : TYPE
-            DESCRIPTION.
-        normDistances : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        values : TYPE
-            DESCRIPTION.
-
-        """
-        #TODO: remove extra dimension handling
-        # slice for broadcasting over trailing dimensions in self.values.
-        vslice = (slice(None),) + (None,)*(self.values.ndim - len(indices))
-        
-        # find relevant values
-        # each i and i+1 represents a edge
-        edges = itertools.product(*[[i, i + 1] for i in indices])
-        values = 0.
-        for edge_indices in edges:
-            weight = 1.
-            for ei, i, yi in zip(edge_indices, indices, normDistances):
-                weight *= np.where(ei == i, 1 - yi, yi)
-            values += np.asarray(self.values[edge_indices]) * weight[vslice]
-        return values
-    
-    def _exp_boundary_handler(self,point,isInBounds):
-        nearestAllowed = np.zeros(point.shape)
-        
-        for dimIter in range(point.size):
-            if np.all(isInBounds[:,dimIter]):
-                nearestAllowed[dimIter] = point[dimIter]
-            else:
-                #To convert from tuple -> numpy array -> int
-                failedInd = np.nonzero(isInBounds[:,dimIter]==False)[0].item()
-                if failedInd == 1:
-                    failedInd = -1
-                nearestAllowed[dimIter] = self.grid[dimIter][failedInd]
-        
-        #Evaluating the nearest allowed point on the boundary of the allowed region
-        indices, normDist = self._find_indices(np.expand_dims(nearestAllowed,1))
-        valAtNearest = self._evaluate_linear(indices,normDist)
-        
-        dist = np.linalg.norm(nearestAllowed-point)
-        
-        #Yes, I mean to take an additional square root here
-        result = valAtNearest*np.exp(np.sqrt(dist))
-        return result
-
 class LeastActionPath:
     """
     class documentation...?
+    
+    :Maintainer: Daniel
     """
     def __init__(self,potential,nPts,nDims,mass=None,endpointSpringForce=True,\
-                 endpointHarmonicForce=True,target_func=action,\
-                 target_func_grad=forward_action_grad,nebParams={}):
+                 endpointHarmonicForce=True,target_func=TargetFunctions.action,\
+                 target_func_grad=GradientApproximations().forward_action_grad,\
+                 nebParams={},logLevel=1,loggerSettings={}):
         """
         asdf
 
@@ -523,8 +83,11 @@ class LeastActionPath:
             if key not in nebParams:
                 nebParams[key] = defaultNebParams[key]
         
+        #Not sure why I did things this way...
         for key in nebParams.keys():
             setattr(self,key,nebParams[key])
+        #For compatibility with the logger
+        self.nebParams = nebParams
             
         if isinstance(endpointSpringForce,bool):
             endpointSpringForce = 2*(endpointSpringForce,)
@@ -546,6 +109,8 @@ class LeastActionPath:
         self.nDims = nDims
         self.target_func = target_func
         self.target_func_grad = target_func_grad
+        
+        self.logger = ForceLogger(self,logLevel,loggerSettings,".lap")
     
     def _compute_tangents(self,points,energies):
         """
@@ -635,8 +200,8 @@ class LeastActionPath:
                          " does not match expected shape in LeastActionPath")
         
         integVal, energies, masses = self.target_func(points,self.potential,self.mass)
-        
         tangents = self._compute_tangents(points,energies)
+        
         gradOfAction, gradOfPes = \
             self.target_func_grad(points,self.potential,energies,self.mass,masses,\
                                   self.target_func)
@@ -684,12 +249,258 @@ class LeastActionPath:
         else:
             netForce[-1] = springForce[-1]
         
+        variablesDict = {"points":points,"tangents":tangents,"springForce":springForce,\
+                         "netForce":netForce}
+        self.logger.log(variablesDict)
+        
         return netForce
 
-#TODO: maybe rename something like ForceMinimization?   
+class MinimumEnergyPath:
+    """
+    :Maintainer: Eric
+    """
+    def __init__(self,potential,nPts,nDims,endpointSpringForce=True,\
+                 endpointHarmonicForce=True,auxFunc=None,\
+                 target_func=TargetFunctions.mep_default,\
+                 target_func_grad=potential_central_grad,nebParams={},\
+                 logLevel=1,loggerSettings={}):
+        """
+        Parameters
+        ----------
+        potential : Function
+            To be called as potential(path). This is the PES function. 
+            Is passed to "target_func".
+        endpointSpringForce : Bool or tuple of bools
+            If a single bool, behavior is applied to both endpoints. If is a tuple
+            of bools, the first stands for the index 0 on the path; the second stands
+            for the index -1 on the path. TODO: possibly allow for a complicated
+            function that returns a bool?
+        nPts : Int
+            Number of points on the band, including endpoints.
+        nDims : Int
+            Number of dimensions of the collective coordinates. For instance,
+            when working with (Q20,Q30), nDims = 2.
+        
+        target_func : Function, optional
+            The function to take the gradient of. Should take as arguments
+            (path, potential, AuxFunc). AuxFunc is used to add an optional potential to
+            modify the existing potential surface. This function should return 
+            (potentialAtPath,AuxFuncAtPath). If no Aux function is needed, 
+            input None for the argument and AuxFuncAtPath will be None. The default 
+            is the PES potential (ie it just evaluates the potential).
+        target_func_grad : Function, optional
+            Approximate derivative of the target function evaluated at every point.
+            Should take as arguments points,potential,auxFunc)
+            where target_func is a potential target function . Should return 
+            (gradOfPes, gradOfAux). If auxFunc is None, gradOfAux returns None
+        nebParams : Dict, optional
+            Keyword arguments for the nudged elastic band (NEB) method. Controls
+            the spring force and the harmonic oscillator potential. Default
+            parameters are controlled by a dictionary in the __init__ method.
+            The default is {}.
+
+        Returns
+        -------
+        None.
+
+        """
+        defaultNebParams = {"k":10,"kappa":20,"constraintEneg":0}
+        for key in defaultNebParams.keys():
+            if key not in nebParams:
+                nebParams[key] = defaultNebParams[key]
+        
+        for key in nebParams.keys():
+            setattr(self,key,nebParams[key])
+        self.nebParams = nebParams
+            
+        if isinstance(endpointSpringForce,bool):
+            endpointSpringForce = 2*(endpointSpringForce,)
+        if not isinstance(endpointSpringForce,tuple):
+            raise ValueError("Unknown value "+str(endpointSpringForce)+\
+                             " for endpointSpringForce")
+                
+        if isinstance(endpointHarmonicForce,bool):
+            endpointHarmonicForce = 2*(endpointHarmonicForce,)
+        if not isinstance(endpointHarmonicForce,tuple):
+            raise ValueError("Unknown value "+str(endpointHarmonicForce)+\
+                             " for endpointSpringForce")
+        
+        self.potential = potential
+        self.auxFunc = auxFunc
+        self.endpointSpringForce = endpointSpringForce
+        self.endpointHarmonicForce = endpointHarmonicForce
+        self.nPts = nPts
+        self.nDims = nDims
+        self.target_func = target_func
+        self.target_func_grad = target_func_grad
+        
+        self.logger = ForceLogger(self,logLevel,loggerSettings,".mep")
+    
+    def _compute_tangents(self,points,energies):
+        """
+        Here for testing sphinx autodoc
+        
+        Parameters
+        ----------
+        points : TYPE
+            DESCRIPTION.
+        energies : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        tangents : TYPE
+            DESCRIPTION.
+
+        """
+        tangents = np.zeros((self.nPts,self.nDims))
+        
+        #Range selected to exclude endpoints. Tangents on the endpoints do not
+        #appear in the formulas.
+        for ptIter in range(1,self.nPts-1):
+            tp = points[ptIter+1] - points[ptIter]
+            tm = points[ptIter] - points[ptIter-1]
+            dVMax = np.max(np.absolute([energies[ptIter+1]-energies[ptIter],\
+                                        energies[ptIter-1]-energies[ptIter]]))
+            dVMin = np.min(np.absolute([energies[ptIter+1]-energies[ptIter],\
+                                        energies[ptIter-1]-energies[ptIter]]))
+                
+            if (energies[ptIter+1] > energies[ptIter]) and \
+                (energies[ptIter] > energies[ptIter-1]):
+                tangents[ptIter] = tp
+            elif (energies[ptIter+1] < energies[ptIter]) and \
+                (energies[ptIter] < energies[ptIter-1]):
+                tangents[ptIter] = tm
+            elif energies[ptIter+1] > energies[ptIter-1]:
+                tangents[ptIter] = tp*dVMax + tm*dVMin
+            else:
+                tangents[ptIter] = tp*dVMin + tm*dVMax
+                
+            #Normalizing vectors, without throwing errors about zero tangent vector
+            if not np.array_equal(tangents[ptIter],np.zeros(self.nDims)):
+                tangents[ptIter] = tangents[ptIter]/np.linalg.norm(tangents[ptIter])
+        
+        return tangents
+    
+    def _spring_force(self,points,tangents):
+        """
+        Spring force taken from https://doi.org/10.1063/1.5007180 eqns 20-22
+
+        Parameters
+        ----------
+        points : TYPE
+            DESCRIPTION.
+        tangents : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        springForce : TYPE
+            DESCRIPTION.
+
+        """
+        springForce = np.zeros((self.nPts,self.nDims))
+        for i in range(1,self.nPts-1):
+            forwardDist = np.linalg.norm(points[i+1] - points[i])
+            backwardsDist = np.linalg.norm(points[i] - points[i-1])
+            springForce[i] = self.k*(forwardDist - backwardsDist)*tangents[i]
+            
+        if self.endpointSpringForce[0]:
+            springForce[0] = self.k*(points[1] - points[0])
+        
+        if self.endpointSpringForce[1]:
+            springForce[-1] = self.k*(points[self.nPts-2] - points[self.nPts-1])
+        
+        return springForce
+    
+    def compute_force(self,points):
+        expectedShape = (self.nPts,self.nDims)
+        if points.shape != expectedShape:
+            if (points.T).shape == expectedShape:
+                warnings.warn("Transposing points; (points.T).shape == expectedShape")
+                points = points.T
+            else:
+                sys.exit("Err: points "+str(points)+\
+                         " does not match expected shape in MinimumEnergyPath")
+        PESEnergies, auxEnergies = self.target_func(points,self.potential,self.auxFunc)
+        tangents = self._compute_tangents(points,PESEnergies)
+        gradOfPES, gradOfAux = \
+            self.target_func_grad(points,self.potential,self.auxFunc)
+        trueForce = -gradOfPES
+        if gradOfAux is not None:
+            negAuxGrad = -gradOfAux
+            gradForce = trueForce + negAuxGrad
+        else:
+            gradForce = trueForce
+        projection = np.array([np.dot(gradForce[i],tangents[i]) \
+                               for i in range(self.nPts)])
+        parallelForce = np.array([projection[i]*tangents[i] for i in range(self.nPts)])
+        perpForce =  gradForce - parallelForce
+        springForce = self._spring_force(points,tangents)
+        #Computing optimal tunneling path force
+        netForce = np.zeros(points.shape)
+        
+        for i in range(1,self.nPts-1):
+            netForce[i] = perpForce[i] + springForce[i]
+        #Avoids throwing divide-by-zero errors, but also deals with points with
+            #gradient within the finite-difference error from 0. Simplest example
+            #is V(x,y) = x^2+y^2, at the origin. There, the gradient is the finite
+            #difference value fdTol, in both directions, and so normalizing the
+            #force artificially creates a force that should not be present
+        if not np.allclose(gradForce[0],np.zeros(self.nDims),atol=fdTol):
+            normForce = gradForce[0]/np.linalg.norm(gradForce[0])
+        else:
+            normForce = np.zeros(self.nDims)
+        
+        if self.endpointHarmonicForce[0]:
+            netForce[0] = springForce[0] - (np.dot(springForce[0],normForce)-\
+                                            self.kappa*(PESEnergies[0]-self.constraintEneg))*normForce
+        else:
+            netForce[0] = springForce[0]
+        
+        if not np.allclose(gradForce[-1],np.zeros(self.nDims),atol=fdTol):
+            normForce = gradForce[-1]/np.linalg.norm(gradForce[-1])
+        else:
+            normForce = np.zeros(self.nDims)
+        if self.endpointHarmonicForce[1]:
+            netForce[-1] = springForce[-1] - (np.dot(springForce[-1],normForce)-\
+                                              self.kappa*(PESEnergies[-1]-self.constraintEneg))*normForce
+        else:
+            netForce[-1] = springForce[-1]
+            
+        variablesDict = {"points":points,"tangents":tangents,"springForce":springForce,\
+                         "netForce":netForce}
+        self.logger.log(variablesDict)
+            
+        return netForce
+    
 #TODO: do we compute the action for all points after optimizing? or let someone else do that? 
 class VerletMinimization:
+    """
+    :Maintainer: Daniel
+    """
     def __init__(self,nebObj,initialPoints):
+        """
+        
+
+        Parameters
+        ----------
+        nebObj : TYPE
+            DESCRIPTION.
+        initialPoints : TYPE
+            DESCRIPTION.
+
+        Raises
+        ------
+        AttributeError
+            DESCRIPTION.
+        ValueError
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+        """
         #It'll probably do this automatically, but whatever
         if not hasattr(nebObj,"compute_force"):
             raise AttributeError("Object "+str(nebObj)+" has no attribute compute_force")
@@ -732,7 +543,6 @@ class VerletMinimization:
             DESCRIPTION.
         allForces : TYPE
             DESCRIPTION.
-
         """
         #allPts is longer by 1 than the velocities/forces, because the last 
         #velocity/force computed should be used to update the points one 
@@ -801,11 +611,10 @@ class VerletMinimization:
         Returns
         -------
         None.
-
         """
         
         defaultFireParams = \
-            {"dtMax":1.,"dtMin":0.1,"nAccel":10,"fInc":1.1,"fAlpha":0.99,\
+            {"dtMax":10.,"dtMin":0.001,"nAccel":10,"fInc":1.1,"fAlpha":0.99,\
              "fDecel":0.5,"aStart":0.1}
             
         for key in fireParams.keys():
@@ -864,7 +673,6 @@ class VerletMinimization:
             tStepPrev*self.allVelocities[step-1] + \
             0.5*self.allForces[step-1]*tStepPrev**2
         self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
-        
         #What the Wikipedia article on velocity Verlet uses
         self.allVelocities[step] = \
             0.5*tStepPrev*(self.allForces[step]+self.allForces[step-1])
@@ -888,7 +696,8 @@ class VerletMinimization:
                 
                 stepsSinceReset[ptIter] += 1
             else:
-                tStepArr[step,ptIter] = tStepArr[step-1,ptIter]*fireParams["fDecel"]
+                tStepArr[step,ptIter] = \
+                    max(tStepArr[step-1,ptIter]*fireParams["fDecel"],fireParams["dtMin"])
                 alphaArr[step,ptIter] = fireParams["aStart"]
                 stepsSinceReset[ptIter] = 0
         
@@ -935,6 +744,9 @@ class VerletMinimization:
         return None
     
 class EulerLagrangeSolver:
+    """
+    :Maintainer: Daniel
+    """
     def __init__(self,initialPath,eneg_func,mass_func=None,grad_approx=midpoint_grad):
         self.initialPath = initialPath
         self.eneg_func = eneg_func
@@ -985,6 +797,9 @@ class EulerLagrangeSolver:
         return sol
     
 class EulerLagrangeVerification:
+    """
+    :Maintainer: Daniel
+    """
     def __init__(self,path,enegOnPath,eneg_func,massOnPath=None,mass_func=None,\
                  grad_approx=midpoint_grad):
         #TODO: major issue here when points aren't evenly spaced along the arc-length
@@ -1065,333 +880,280 @@ class EulerLagrangeVerification:
     
 class Dijkstra:
     """
-    Original Dijkstra implemented by Leo Neufcourt. Modified so that I can use it 
-    with my code.
+    :Maintainer: Daniel
     """
     def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,\
-                 target_func=action):
+                 target_func=TargetFunctions.action,allowedEndpoints=None,\
+                 trimVals=[10**(-4),None],logLevel=1):
+        """
+        Some indexing is done to deal with the default shape of np.meshgrid.
+        For D dimensions, the output is of shape (N2,N1,N3,...,ND), while the
+        way indices are generated expects a shape of (N1,...,ND). So, I swap
+        the first two indices by hand. See https://numpy.org/doc/stable/reference/generated/numpy.meshgrid.html
+        #TODO: error handling (try getting an index)(?)
+        
+        Note that indexing for Dijkstra *internal* functions are done in the
+        order (N2,N1,N3,...), for simplicity. The indexing that is returned
+        by self.__call__ is kept in this order by default.
+        
+        Note that the *value* of the array at a certain index is the same
+        regardless of the sort order of the indices, provided that the index
+        order matches that used when creating np.meshgrid
+
+        Parameters
+        ----------
+        initialPoint : TYPE
+            DESCRIPTION.
+        coordMeshTuple : TYPE
+            DESCRIPTION.
+        potArr : TYPE
+            DESCRIPTION.
+        inertArr : TYPE, optional
+            DESCRIPTION. The default is None.
+        target_func : TYPE, optional
+            DESCRIPTION. The default is action.
+        allowedEndpoints : TYPE, optional
+            DESCRIPTION. The default is None.
+        trimVals : TYPE, optional
+            DESCRIPTION. The default is [10**(-4),None].
+
+        Raises
+        ------
+        ValueError
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
         self.initialPoint = initialPoint
         self.coordMeshTuple = coordMeshTuple
+        self.uniqueCoords = [np.unique(c) for c in self.coordMeshTuple]
+        
+        expectedShape = np.array([len(c) for c in self.uniqueCoords])
+        expectedShape[[1,0]] = expectedShape[[0,1]]
+        expectedShape = tuple(expectedShape)
+        
+        tempCMesh = []
+        for c in self.coordMeshTuple:
+            if c.shape != expectedShape:
+                cNew = np.swapaxes(c,0,1)
+                if cNew.shape == expectedShape:
+                    tempCMesh.append(cNew)
+                else:
+                    raise ValueError("coordMeshTuple has wrong dimensions somehow")
+        if tempCMesh:
+            self.coordMeshTuple = tuple(tempCMesh)
+        
         self.target_func = target_func
         
         self.nDims = len(coordMeshTuple)
         
-        if potArr.shape != self.coordMeshTuple[0].shape:
-            raise ValueError("potArr.shape is "+str(potArr.shape)+\
-                             "; required shape is "+coordMeshTuple[0].shape)     
-        self.potArr = potArr
-        
+        if potArr.shape == expectedShape:
+            self.potArr = potArr
+        else:
+            potNew = np.swapaxes(potArr,0,1)
+            if potNew.shape == expectedShape:
+                self.potArr = potNew
+            else:
+                raise ValueError("potArr.shape is "+str(potArr.shape)+\
+                                 "; required shape is "+str(expectedShape)+\
+                                 " (or with swapped first two indices)")
+        #TODO: apply error checking above to inertArr
         if inertArr is not None:
-            inertArrRequiredShape = self.coordMeshTuple[0].shape + 2*(self.nDims,)
+            inertArrRequiredShape = self.potArr.shape + 2*(self.nDims,)
             if inertArr.shape != inertArrRequiredShape:
                 raise ValueError("inertArr.shape is "+str(inertArr.shape)+\
                                  "; required shape is "+inertArrRequiredShape)
-        self.inertArr = inertArr
+            self.inertArr = inertArr
+        else:
+            #Simplifies things in self._construct_path_dict if I set this to the 
+            #identity here
+            self.inertArr = np.full(self.potArr.shape+2*(self.nDims,),np.identity(self.nDims))
+        
+        if allowedEndpoints is None:
+            self.allowedEndpoints, self.endpointIndices \
+                = SurfaceUtils.find_endpoints_on_grid(self.coordMeshTuple,self.potArr)
+        else:
+            self.allowedEndpoints = allowedEndpoints
+            self.endpointIndices, _ = \
+                SurfaceUtils.round_points_to_grid(self.coordMeshTuple,allowedEndpoints)
+        
+        if self.allowedEndpoints.shape == (self.nDims,):
+            self.allowedEndpoints = self.allowedEndpoints.reshape((1,self.nDims))
+        
+        if self.allowedEndpoints.shape[1] != self.nDims:
+            raise ValueError("self.allowedEndpoints.shape == "+\
+                             str(self.allowedEndpoints.shape)+"; dimension 1 must be "\
+                             +str(self.nDims))
+        if self.endpointIndices.shape[1] != self.nDims:
+            raise ValueError("self.endpointIndices.shape == "+\
+                             str(self.endpointIndices.shape)+"; dimension 1 must be "\
+                             +str(self.nDims))
+        
+        #Flipping (N1,N2) -> (N2,N1) here. Expect all indices everywhere are
+        #handled in the normal order (N1,N2,...)
+        self.endpointIndices[:,[1,0]] = self.endpointIndices[:,[0,1]]
+        self.endpointIndices = [tuple(row) for row in self.endpointIndices]
+        
+        #Clip the potential to the min/max. Done after finding possible endpoints.
+        self.trimVals = trimVals
+        if self.trimVals != [None,None]:
+            self.potArr = self.potArr.clip(self.trimVals[0],self.trimVals[1])
+        
+        #Getting indices for self.initialPoint
+        self.initialInds = np.zeros(self.nDims,dtype=int)
+        for dimIter in range(self.nDims):
+            #More nuisances with floating-point precision. Should maybe find
+            #source of the issue, but this works for the basic test case.
+            self.initialInds[dimIter] = \
+                np.argwhere(np.isclose(self.uniqueCoords[dimIter],self.initialPoint[dimIter]))
+        
+        #Index swapping like mentioned above. Now, self.initialInds[0] <= Ny,
+        #and self.initialInds[1] <= Nx
+        self.initialInds[[1,0]] = self.initialInds[[0,1]]
+        self.initialInds = tuple(self.initialInds)
+        
+        self.djkLogger = DijkstraLogger(self,logLevel=logLevel)
     
-    def _dijkstra(self,maskedGrid,inertiaTensor,start,vMin="auto"):
+    def _construct_path_dict(self):
         """
-        For every point in the PES (?), determines the neighbor that has the
-            lowest energy cost to visit.
-        Doesn't return a path, or require an endpoint. Since we check every
-            point on the outer turning line, it is computationally efficient
-            to save the neighbor dictionary that's output below, and reuse it
-            for every endpoint that's checked
-        TODO: extend method to more than 2D
-        TODO: rewrite stuff like the start to be a keyword argument
-        """
-        if vMin == "auto":
-            vMin = 0
-            
-        #Points on the grid that are less than 0 are set
-            #to eps. In principle these points can be visited at no cost. This is
-            #avoided by not letting the same point be visited twice, and by starting
-            #near the ground state (I think). In principle, eGS = 0, but we can't
-            #clip at eGS if eGS < 0, else the path will benefit from traversing
-            #the E < E_GS region
-        V = maskedGrid.copy()
-        visitMask = V.mask.copy()
-        m = np.ones_like(V) * np.inf
-        connectivity = [(i, j) for i in [-1, 0, 1] for j in [-1, 0, 1] if \
-                        (not (i == j == 0))]
-        """
-        connectivity is used to select points as follows:
-            *    x    *
-            x    o    x
-            *    x    *
-            the "*" points are those with connectivity values (\pm 1, \pm 1),
-            the "x" points are those with one value of 0, and
-            "o" is the starting point. All except for "o" are considered to be
-            neighbors. 
-        """
-        cc = start #current coordinate (indices)
-        
-        m[cc] = 0
-        neighborVisitDict = {}
-        for _ in range(4 * V.size): #TODO: find out why we use 4 * V.size
-            neighbors = [tuple(e) for e in np.asarray(cc) - connectivity 
-                          if e[0] >= 0 and e[1] >= 0 and e[0] < V.shape[0] and \
-                              e[1] < V.shape[1]] #See diagram above
-            neighbors = [e for e in neighbors if not visitMask[e]]
-            
-            #Distance for each neighbor
-            tentativeDistance = []
-            ptList = np.zeros((2,2))
-            ptList[0,:] = tuple([cMesh[cc] for cMesh in self.coordMeshTuple])
-            for e in neighbors:
-                ptList[1,:] = tuple([cMesh[e] for cMesh in self.coordMeshTuple])
-                act = self._action(ptList,V[e],inertiaTensor)
-                tentativeDistance.append(act)
-            tentativeDistance = np.asarray(tentativeDistance)
-            
-            #Not clear exactly what this bit of code does
-            for (neIter, e) in enumerate(neighbors):
-                d = tentativeDistance[neIter] + m[cc]
-                if d < m[e]:
-                    m[e] = d
-                    neighborVisitDict[e] = cc
-            visitMask[cc] = True
-            mMask = np.ma.masked_array(m, visitMask)
-            cc = np.unravel_index(mMask.argmin(), m.shape)
-            
-        return m, neighborVisitDict
-    
-    def _find_gs_contours(self,pesGrid,zRange=(-5,30)):
-        """
-        Perhaps isn't completely general. For N deformation parameters 
-            (e.g. (q20,q30,q40)), I think the ground state "contours" will be
-            (N-1)D, and so contourf() fails.
-        """
-        levels = np.arange(zRange[0],zRange[1],0.25,dtype=float)
-        if 0 not in levels:
-            sys.exit("Err: vertical range in find_gs_contours() does not include\
-                         ground state")
-        
-        fig, ax = plt.subplots()
-        ax.contourf(pesGrid.clip(zRange[0],zRange[1]),levels=levels,\
-                    cmap="Spectral") #Colormap for debugging purposes only
-        
-        return ax.contour(pesGrid,levels=[0])
-    
-    def _shortest_path(self,start,end,neighborVisitDict):
-        """
-        Gives the overall path between two points, given the optimal paths
-            between any two points(?)
-        """
-        path = []
-        step = end
-        while True:
-            path.append(step)
-            if step == start: break
-            step = neighborVisitDict[step]
-        path.reverse()
-        return np.asarray(path)
-        
-    def _get_path(self,start,gsCont,maskedGrid,inertiaTensor,neighborVisitDict):
-        epsilon = 0.000001
-        
-        minLoss = 10000
-        pathOpt = None
-        endOpt = None
-        
-        #Outer turning line should be the longest segment (except in possible
-            #weird cases)
-        turningOps = [len(gsCont.allsegs[0][iter]) for iter in \
-                      range(len(gsCont.allsegs[0]))]
-        turningIter = turningOps.index(max(turningOps))
-        turningLine = gsCont.allsegs[0][turningIter]
-        
-        for point in turningLine:
-            #Have to round the endpoint to an actual grid point on the
-                #mesh, rather than the output from ax.contourf(). Also, for
-                #some reason (having to do with np.meshgrid()), the shape of
-                #all grids is (q30,q20), so these tuples must be adjusted as
-                #such as well
-            endPoint = tuple(np.round(point).astype(int))
-            endPoint = (endPoint[1],endPoint[0])
-            path = self._shortest_path(start,endPoint,neighborVisitDict)
-    
-            p1 = tuple(path[0])
-            loss = 0
-            for p2 in path[1:]:
-                p2 = tuple(p2)
-                nCoords = len(self.coordMeshTuple)
-                ptList = np.zeros((2,nCoords))
-                ptList[0,:] = tuple([cMesh[p1] for cMesh in self.coordMeshTuple])
-                ptList[1,:] = tuple([cMesh[p2] for cMesh in self.coordMeshTuple])
-                loss += self._action(ptList,maskedGrid[p2],inertiaTensor) #Must be masked array here
-                p1 = p2
-            if loss < minLoss - epsilon:
-                pathOpt = path
-                endOpt = endPoint
-                minLoss = loss
-        return endOpt, pathOpt, minLoss
-    
-    def _filter_segments(self,contourObj):
-        """
-        Takes a pyplot contourf object, with only the level at E = 0, and returns
-        the indices for the given mesh that describe the contour.
+        Uses Dijkstra's algorithm to determine the previous node visited
+        for every node in the PES. See e.g. 
+        https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm
 
-        Parameters
-        ----------
-        contourObj : TYPE
-            DESCRIPTION.
-
+        TODO: allow for non-grid PES, like if we trimmed off high-energy regions
+        Maybe fill to a grid, and set those guys to infinite energy so they're
+        never selected? Simplest to have a list of indices that are not allowed,
+        and set the mask to "visited" for those points, so that they are never
+        even considered.
+        
         Returns
         -------
         None.
 
         """
-        contourLengths = [len(ccp) for ccp in contourObj.allsegs[0]]
-        outerTurningIndex = np.argmax(contourLengths)
+        t0 = time.time()
         
-        outerContour = contourObj.allsegs[0][outerTurningIndex]
-        roundedContour = np.round(outerContour) #Round to int b/c returns indices, not grid points
+        suggestedMaxSize = 50000
+        if self.potArr.size >= suggestedMaxSize:
+            warnings.warn("Number of nodes is "+str(self.potArr.size)+\
+                          "; recommended maximum method to finish is "\
+                          +str(suggestedMaxSize))
         
-        return outerContour, roundedContour
-    
-    def otp_wrapper(self,pesVals,inertiaVals,reshapeOrder="F",debug=False):
-        """
-        Inherently assumes a constant moment of inertia.
-
-        Parameters
-        ----------
-        pesVals : TYPE
-            DESCRIPTION.
-        inertiaVals : TYPE, optional
-            DESCRIPTION. The default is None.
-        reshapeOrder : TYPE, optional
-            Updated 14/05/2021
-            WARNING: super funky. Needs to be "F" for NN outputs, but I don't know
-            how that treats things for cleaning purposes
+        #Use a masked array to both track the distance and the visited values
+        tentativeDistance = \
+            np.ma.masked_array(np.inf*np.ones(self.potArr.shape),np.zeros(self.potArr.shape))
+        
+        #For current indices, to get to a neighbor, subtract one tuple from
+        #relativeNeighborInds
+        relativeNeighborInds = list(itertools.product([-1,0,1],repeat=self.nDims))
+        relativeNeighborInds.remove(self.nDims*(0,))
+        
+        currentInds = self.initialInds
+        tentativeDistance[currentInds] = 0
+        
+        neighborsVisitDict = {}
+        endpointIndsList = self.endpointIndices.copy() #May need indices later
+        
+        #Index swapping like mentioned in self.__init__
+        maxInds = np.array([len(c) for c in self.uniqueCoords])
+        maxInds[[1,0]] = maxInds[[0,1]]
+        
+        #Ends when all endpoints have been reached, or it has iterated over every
+        #node. Latter should not be possible; is a check in case something goes wrong.
+        for i in range(self.potArr.size):
+            neighborInds = np.array(currentInds) - relativeNeighborInds
             
-            Not immediately clear how arrays are reshaped in NN output, but I
-            suspect they're flattened according to the "C" convention. So, the
-            default reshaping order follows this. The raw data obeys the "F"
-            convention, and is passed as such. The default is "C".
-        
-        Returns
-        -------
-        otpDict : TYPE
-            DESCRIPTION.
-        fpathDict : TYPE
-            DESCRIPTION.
-        outerContourDict : TYPE
-            Note that this contains the (smoothed) indices, not the actual grid
-            points.
-        
-        """
-        if isinstance(pesVals,dict):
-            pesArrDict = pesVals
-        elif isinstance(pesVals,np.ndarray):
-            pesArrDict = Outer_Turning_Point.pes_arr_to_dict(pesVals)
-        else:
-            sys.exit("Err: otp_wrapper received pesVals as unknown datatype "+type(pesVals))
-        
-        if isinstance(inertiaVals,dict):
-            inertiaDict = inertiaVals
-        elif isinstance(inertiaVals,np.ndarray):
-            inertiaDict = Outer_Turning_Point.inertia_arr_to_dict(inertiaVals)
-        else:
-            sys.exit("Err: otp_wrapper received pesVals as datatype "+type(inertiaVals))
+            #Removing indices that take us off-grid. See e.g.
+            #https://stackoverflow.com/a/20528566
+            isNegativeBool = [neighborInds[:,i] < 0 for i in range(self.nDims)]
+            neighborInds = \
+                neighborInds[np.logical_not(np.logical_or.reduce(isNegativeBool))]
+            isTooBigBool = [neighborInds[:,i] >= maxInds[i] for i in range(self.nDims)]
+            neighborInds = \
+                neighborInds[np.logical_not(np.logical_or.reduce(isTooBigBool))]
             
-        otpDict = {}
-        fpathDict = {}
-        outerContourDict = {}
-        roundedOCDict = {}
-        
-        eps = 0.01
-        
-        for nuc in pesArrDict.keys():
-            #WARNING: untested when cleaning data. Is super weird, b/c of coordMeshTuple.
-                #Basically, np.meshgrid returns an array whose shape is inverted:
-                #if you feed in np.meshgrid(x,y), where len(x) == 11 and len(y) == 7,
-                #what you get out is a tuple of arrays of shape (7,11), which is backwards
-                #from what we want. Is fixed in NN_Plot_Class by specifying that the reshaped
-                #size is (11,7), then taking a transpose. Is equivalent to reshaping
-                #with order "F"
-            pesGrid = pesArrDict[nuc].reshape(self.coordMeshTuple[0].shape,\
-                                              order=reshapeOrder)
+            #For feeding into self.target_func
+            coords = np.zeros((2,self.nDims))
+            coords[0] = np.array([c[currentInds] for c in self.coordMeshTuple])
             
-            #Common debugging location (at least ~twice so far)
-            if debug:
-                fig, ax = plt.subplots()
-                ax.contourf(self.coordMeshTuple[0],self.coordMeshTuple[1],pesGrid)
-                sys.exit("Breaking here")
+            enegs = np.zeros(2)
+            enegs[0] = self.potArr[currentInds]
+            
+            masses = np.zeros((2,)+2*(self.nDims,))
+            masses[0] = self.inertArr[currentInds]
+            
+            for (neighIter, neighbor) in enumerate(neighborInds):
+                n = tuple(neighbor)
+                coords[1] = [c[n] for c in self.coordMeshTuple]
+                enegs[1] = self.potArr[n]
+                masses[1] = self.inertArr[n]
                 
-            allLocalMinInds = ML_Helper_Functions.find_local_minimum(pesGrid)
+                #self.target_func returns the action (distance), plus energies and masses
+                distThroughCurrent = tentativeDistance[currentInds] + \
+                    self.target_func(coords,enegs,masses)[0]
+                if distThroughCurrent < tentativeDistance[n]:
+                    tentativeDistance[n] = distThroughCurrent
+                    neighborsVisitDict[n] = currentInds
             
+            tentativeDistance.mask[currentInds] = True
+            
+            #For checking when we want to stop
             try:
-                gsInds, _, _ = \
-                    ML_Helper_Functions.min_inds_to_defvals(pesGrid,self.coordMeshTuple,\
-                                                            allLocalMinInds,returnInds=True)
-                
-                #The weight in the action is the sqrt of the energy
-                weightedGrid = np.sqrt(np.ma.masked_array(pesGrid.copy().clip(0)+eps,mask=False))
-                m, neighborVisitDict = self._dijkstra(weightedGrid,inertiaDict[nuc],\
-                                                      gsInds)
-                    
-                gsContour = self._find_gs_contours(pesGrid)
-                endInds, pathInds, minLoss = self._get_path(gsInds,gsContour,weightedGrid,\
-                                                            inertiaDict[nuc],neighborVisitDict)
-                otpDict[nuc] = tuple([cMesh[endInds] for cMesh in self.coordMeshTuple])
-                fpathDict[nuc] = np.array([[cMesh[tuple(pathInd)] for cMesh in self.coordMeshTuple]\
-                                           for pathInd in pathInds])
-                
-                outerContourDict[nuc], roundedOCDict[nuc] = \
-                    self._filter_segments(gsContour)
-            except ValueError:
-                #For e.g. dev jobs, in which the NN PES isn't even close to realistic.
-                #There, no ground state is found. This is caught with a ValueError.
-                #I'd still like things to proceed, and hence I fill everything with dummy data
-                print("Warning: ground state not found for "+nuc)
-                otpDict[nuc] = [-1] * len(self.coordMeshTuple)
-                fpathDict[nuc] = [[-1] * len(self.coordMeshTuple)]
-                outerContourDict[nuc] = [[-1] * len(self.coordMeshTuple)]
-                roundedOCDict[nuc] = [[-1] * len(self.coordMeshTuple)]
-            plt.close("all")
-        return otpDict, fpathDict, outerContourDict, roundedOCDict
-    
-    @staticmethod
-    def reorder_points_dict(dictIn,outOrder=(1,0)):
-        """
-        Wrapper for swapping the order dictionaries like the fission path dictionary. 
-        Done here b/c I don't remember where (if ever) my code depends on having the
-        dictionaries stored in the wrong order
-
-        Parameters
-        ----------
-        dictIn : TYPE
-            DESCRIPTION.
-        outOrder : TYPE, optional
-            DESCRIPTION. The default is (1,0).
-
-        Returns
-        -------
-        dictOut : TYPE
-            DESCRIPTION.
-
-        """
-        dictOut = {}
-        for key in dictIn.keys():
-            dictOut[key] = dictIn[key][:,outOrder]
+                endpointIndsList.remove(currentInds)
+            except:
+                pass
             
-        return dictOut
+            currentInds = np.unravel_index(np.argmin(tentativeDistance),\
+                                           tentativeDistance.shape)
+            
+            #Will exit early if all of the endpoints have been visited
+            if not endpointIndsList:
+                break
+            
+        t1 = time.time()
+        runTime = t1 - t0
+            
+        var = (tentativeDistance,neighborsVisitDict,endpointIndsList,runTime)
+        nms = ("tentativeDistance","neighborsVisitDict","endpointIndsList","runTime")
+        
+        self.djkLogger.log(var,nms)
+        
+        return tentativeDistance, neighborsVisitDict, endpointIndsList
     
-    @staticmethod
-    def rescale_outline_dict(dictIn,rescaleValues):
+    def _get_paths(self,neighborsVisitDict):
+        allPathsIndsDict = {}
+        for endptInds in self.endpointIndices:
+            path = []
+            step = endptInds
+            while step != self.initialInds:
+                path.append(step)
+                step = neighborsVisitDict[step]
+            path.append(self.initialInds)
+            path.reverse()
+            
+            allPathsIndsDict[endptInds] = path
+        
+        var = (allPathsIndsDict,)
+        nms = ("allPathsIndsDict",)
+        
+        self.djkLogger.log(var,nms)
+        
+        return allPathsIndsDict
+    
+    def __call__(self,returnAll=False):
         """
-        Wrapper for rescaling e.g. the outer turning line, that is currently
-        output as indices, to the actual grid points. Don't rescale in the OTP
-        functions, b/c that messes with the path finding and I can't be bothered
-        to figure out why. Something to do with the available points that can be
-        visited being indices for the array, not points on a deformation mesh (so
-        maybe I don't want to change it there, anyways).
+        
 
         Parameters
         ----------
-        dictIn : TYPE
-            DESCRIPTION.
-        rescaleOrder : TYPE
+        
+
+        Raises
+        ------
+        ValueError
             DESCRIPTION.
 
         Returns
@@ -1399,13 +1161,47 @@ class Dijkstra:
         None.
 
         """
-        dictOut = {}
-        for key in dictIn.keys():
-            dictOut[key] = dictIn[key] * rescaleValues
+        tentativeDistance, neighborsVisitDict, endpointIndsList = \
+            self._construct_path_dict()
         
-        return dictOut
-    
+        #Warns if any endpoint isn't visited
+        if endpointIndsList:
+            warnings.warn("Endpoint indices\n"+str(endpointIndsList)+\
+                          "\nnot visited")
+        pathIndsDict = self._get_paths(neighborsVisitDict)
         
-
-
+        pathIndsDictRet = {} #Returns with the keys equal to the final point, not the index
+        pathArrDict = {}
+        distanceDict = {}
+        for finalInds in pathIndsDict.keys():
+            finalPt = np.array([c[finalInds] for c in self.coordMeshTuple])
+            actualPath = np.zeros((0,self.nDims))
+            for pathInd in pathIndsDict[finalInds]:
+                toAppend = \
+                    np.array([c[pathInd] for c in self.coordMeshTuple]).reshape((1,-1))
+                actualPath = np.append(actualPath,toAppend,axis=0)
+            
+            pathIndsDictRet[tuple(finalPt.tolist())] = pathIndsDict[finalInds]
+            pathArrDict[tuple(finalPt.tolist())] = actualPath
+            distanceDict[tuple(finalPt.tolist())] = tentativeDistance.data[finalInds]
+            
+        #Don't log pathIndsDictRet, as it's logged under pathIndsDict
+        #Don't log distanceDict, as it's logged under tentativeDistance
+        var = (pathArrDict,)
+        nms = ("pathArrDict",)
+        self.djkLogger.log(var,nms)
+        
+        if returnAll:
+            return pathIndsDictRet, pathArrDict, distanceDict
+        else:
+            endptOut = self.minimum_endpoint(distanceDict)
+            return pathIndsDictRet[endptOut], pathArrDict[endptOut], distanceDict[endptOut]
     
+    def minimum_endpoint(self,distanceDict):
+        minDist = np.inf
+        for (endpt, dist) in distanceDict.items():
+            if dist < minDist:
+                endptOut = endpt
+                minDist = dist
+        self.djkLogger.log((endptOut,),("endptOut",))
+        return endptOut

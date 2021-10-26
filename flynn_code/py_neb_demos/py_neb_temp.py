@@ -184,30 +184,68 @@ def forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,\
     return gradOfAction, gradOfPes
 
 
-def make_mass_tensor(uniq_coords,mass_grids,mass_keys):
-    print(len(mass_grids))
-    massFuncArr = np.array([GridInterpWithBoundary(uniq_coords,grid)\
-                                for grid in mass_grids],dtype=object).reshape((3,3))
-    nCoords = massFuncArr.shape[0]
-    if not massFuncArr.shape == (nCoords,nCoords):
-        raise ValueError("massFuncArr is not square; has shape "+str(massFuncArr.shape))
+def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
+    """
+    Formats a collection of functions for use in computing the inertia tensor.
+    Assumes the inertia tensor is symmetric.
+    
+    Parameters
+    ----------
+    dictOfFuncs : dict
+        Contains functions for each component of the inertia tensor
+        
+    uniqueKeys : list
+        Labels the unique coordinates of the inertia tensor, in the order they
+        are used in the inertia. For instance, if one uses (q20, q30) as the 
+        coordinates in this order, one should feed in ['20','30'], and the
+        inertia will be reshaped as
+        
+                    [[M_{20,20}, M_{20,30}]
+                     [M_{30,20}, M_{30,30}]].
+                    
+        Contrast this with feeding in ['30','20'], in which the inertia will
+        be reshaped as
+        
+                    [[M_{30,30}, M_{30,20}]
+                     [M_{20,30}, M_{20,20}]].
+
+    Returns
+    -------
+    func_out : function
+        The inertia tensor. Can be called as func_out(coords).
+
+    """
+    nDims = len(uniqueKeys)
+    pairedKeys = np.array([c1+c2 for c1 in uniqueKeys for c2 in uniqueKeys]).reshape(2*(nDims,))
+    dictKeys = np.zeros(pairedKeys.shape,dtype=object)
+    
+    for (idx, key) in np.ndenumerate(pairedKeys):
+        for dictKey in dictOfFuncs.keys():
+            if key in dictKey:
+                dictKeys[idx] = dictKey
+                
+    nFilledKeys = np.count_nonzero(dictKeys)
+    nExpectedFilledKeys = nDims*(nDims+1)/2
+    if nFilledKeys != nExpectedFilledKeys:
+        raise ValueError("Expected "+str(nExpectedFilledKeys)+" but found "+\
+                         str(nFilledKeys)+" instead. dictKeys = "+str(dictKeys))
+    
     def func_out(coords):
         if len(coords.shape) == 1:
-            coords = coords.reshape((nCoords,1))
-        if coords.shape[0] != nCoords:
-            if coords.shape[1] == nCoords:
-                warnings.warn("Transposing coords; coords.shape[0] != nCoords")
-                coords = coords.T
-            else:
-                raise ValueError("coords.shape "+str(coords.shape)+\
-                                 " does not match nCoords "+\
-                                 str(nCoords))
-        nPoints = coords.shape[1]
-        outVals = np.zeros((nPoints,nCoords,nCoords))
+            coords = coords.reshape((1,nDims))
+        elif len(coords.shape) > 2:
+            raise ValueError("coords.shape = "+str(coords.shape)+\
+                             "; coords.shape must have length <= 2")
+        
+        nPoints = coords.shape[0]
+        outVals = np.zeros((nPoints,)+2*(nDims,))
+        
         #Mass array is always 2D
-        for iIter in range(nCoords):
-            for jIter in np.arange(iIter,nCoords):
-                fEvals = massFuncArr[iIter,jIter](coords)
+        for iIter in range(nDims):
+            for jIter in np.arange(iIter,nDims):
+                key = dictKeys[iIter,jIter]
+                fEvals = dictOfFuncs[key](coords)
+                
                 outVals[:,iIter,jIter] = fEvals
                 outVals[:,jIter,iIter] = fEvals
                 
@@ -622,9 +660,38 @@ class VerletMinimization:
             raise AttributeError("Object "+str(nebObj)+" has no attribute compute_force")
             
         self.nebObj = nebObj
-    
-# class Minimum_energy_path_NEB():
 
-
-
+class MinimumEnergyPath:
+    def __init__(self,potential,nPts,nDims,mass=None,endpointSpringForce=True,\
+                 endpointHarmonicForce=True,target_func=action,\
+                 target_func_grad=forward_action_grad,nebParams={}):       
+        #TODO: consider not having NEB parameters as a dictionary. Could be confusing...?
+        defaultNebParams = {"k":10,"kappa":20,"constraintEneg":0}
+        for key in defaultNebParams.keys():
+            if key not in nebParams:
+                nebParams[key] = defaultNebParams[key]
+        
+        for key in nebParams.keys():
+            setattr(self,key,nebParams[key])
+            
+        if isinstance(endpointSpringForce,bool):
+            endpointSpringForce = 2*(endpointSpringForce,)
+        if not isinstance(endpointSpringForce,tuple):
+            raise ValueError("Unknown value "+str(endpointSpringForce)+\
+                             " for endpointSpringForce")
+                
+        if isinstance(endpointHarmonicForce,bool):
+            endpointHarmonicForce = 2*(endpointHarmonicForce,)
+        if not isinstance(endpointHarmonicForce,tuple):
+            raise ValueError("Unknown value "+str(endpointHarmonicForce)+\
+                             " for endpointSpringForce")
+        
+        self.potential = potential
+        self.mass = mass
+        self.endpointSpringForce = endpointSpringForce
+        self.endpointHarmonicForce = endpointHarmonicForce
+        self.nPts = nPts
+        self.nDims = nDims
+        self.target_func = target_func
+        self.target_func_grad = target_func_grad
     

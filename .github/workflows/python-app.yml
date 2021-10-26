@@ -28,4 +28,5 @@ jobs:
         if [ -f py_neb/requirements.txt ]; then pip install -r py_neb/requirements.txt; fi
     - name: Unit tests
       run: |
-        python py_neb/py_neb_tests.py
+        find py_neb/tests/ -type f -name "Test*" -exec python {} \;
+        #See https://stackoverflow.com/a/10523492
