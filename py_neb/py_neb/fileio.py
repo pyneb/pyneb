@@ -12,7 +12,6 @@ class ForceLogger:
     #TODO: log interpolators better/at all. Want to allow a link to the dataset(s)
     #interpolated, in case we just use the default data; otherwise, dump the data
     #to the file. Better yet - just make the user link it, in a separate method
-    #TODO: allow for custom file names
     def __init__(self,classInst,logLevel,loggerSettings,fileExt):
         self.loggerSettings = loggerSettings
         defaultSettings = {"writeFreq":50,"logName":None,"writeInterpData":False}
@@ -45,7 +44,7 @@ class ForceLogger:
             if self.loggerSettings["logName"] is None:
                 self.fileName = "logs/"+self.initTime+fileExt
             else:
-                self.fileName = self.loggerSettings["logName"]
+                self.fileName = "logs/"+self.loggerSettings["logName"]
             
             #Creating attributes and initializing datasets
             h5File = h5py.File(self.fileName,"w")
@@ -173,7 +172,7 @@ class LoadForceLog:
         
         self.nebParams = {}
         for attr in h5File["nebParams"].attrs:
-            self.nebParams[attr] = h5File["nebParams"][attr]
+            self.nebParams[attr] = h5File["nebParams"].attrs[attr]
             
         for dset in h5File.keys():
             setattr(self,dset,np.array(h5File[dset]))
@@ -254,6 +253,7 @@ class DijkstraLogger:
             #Unfortunately this doesn't seem to be abstractable, but perhaps I
             #don't need it to be
             if nm == "tentativeDistance":
+                print(var.shape)
                 #HDF5 files can store np.inf in an array just fine
                 dtype = np.dtype({"names":["data","mask"],"formats":[float,bool]})
                 arr = np.zeros(var.shape,dtype=dtype)
@@ -338,8 +338,8 @@ class LoadDijkstraLog:
             else:
                 h5File.close()
                 raise ValueError("Dataset "+d+" expected but not found")
-                
-        self.uniqueCoords = [np.array(c) for c in h5File["uniqueCoords"]]
+        
+        self.uniqueCoords = [np.array(h5File["uniqueCoords"][c]) for c in h5File["uniqueCoords"]]
         
         h5File.close()
         
@@ -362,7 +362,7 @@ class LoadDijkstraLog:
             
         self.pathArrDict = {}
         for (i,p) in enumerate(dsetsDict["pathArrDict"]):
-            self.allPathsIndsDict[tuple(p["finalPoint"])] = \
+            self.pathArrDict[tuple(p["finalPoint"])] = \
                 np.array(p["path"][:p["nPts"]])
                 
         self.potArr = dsetsDict["potArr"]

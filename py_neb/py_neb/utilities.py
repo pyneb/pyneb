@@ -854,9 +854,9 @@ class SurfaceUtils:
         Notes
         -----
         Has standard complication from np.meshgrid - indexing is (N2,N1,N3,...),
-        when the coordinates have lengths (N1,N2,N3,...). This assumes the default
-        indexing of np.meshgrid for coordMeshTuple, but the returned indices are
-        in order (N1,N2,N3,...) (at the moment). TODO: change this?
+        when the coordinates have lengths (N1,N2,N3,...). This returns the default
+        indexing of np.meshgrid for coordMeshTuple. See e.g. 
+        https://numpy.org/doc/stable/reference/generated/numpy.meshgrid.html
 
         """        
         nDims = len(coordMeshTuple)
@@ -895,16 +895,9 @@ class SurfaceUtils:
         gridValsOut = np.zeros((nPts,nDims))
         for ptIter in range(nPts):
             inds = indsOut[ptIter]
-            # Some indexing is done to deal with the default shape of np.meshgrid.
-            # For D dimensions, the output is of shape (N2,N1,N3,...,ND), while the
-            # way indices are generated expects a shape of (N1,...,ND). So, I swap
-            # the first two indices by hand. See https://numpy.org/doc/stable/reference/generated/numpy.meshgrid.html
             inds[[0,1]] = inds[[1,0]]
             inds = tuple(inds)
             gridValsOut[ptIter] = np.array([c[inds] for c in coordMeshTuple])
-            
-        #Expect columns of returned indices to be in order (N1,N2,N3,...,ND)
-        indsOut[:,[0,1]] = indsOut[:,[1,0]]
         
         return indsOut, gridValsOut
     
@@ -957,10 +950,10 @@ class SurfaceUtils:
                     np.concatenate((allowedEndpoints,gridContOnLevel[outerIndex]),axis=0)
                 allowedIndices = \
                     np.concatenate((allowedIndices,gridIndsOnLevel[outerIndex]),axis=0)
-            
+        
         allowedEndpoints = np.unique(allowedEndpoints,axis=0)
         allowedIndices = np.unique(allowedIndices,axis=0)
-        
+                
         return allowedEndpoints, allowedIndices
 
 def shift_func(func_in,shift=10**(-4)):
