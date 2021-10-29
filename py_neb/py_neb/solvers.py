@@ -992,9 +992,6 @@ class Dijkstra:
                              str(self.endpointIndices.shape)+"; dimension 1 must be "\
                              +str(self.nDims))
         
-        #Flipping (N1,N2) -> (N2,N1) here. Expect all indices everywhere are
-        #handled in the normal order (N1,N2,...)
-        self.endpointIndices[:,[1,0]] = self.endpointIndices[:,[0,1]]
         self.endpointIndices = [tuple(row) for row in self.endpointIndices]
         
         #Clip the potential to the min/max. Done after finding possible endpoints.
@@ -1065,7 +1062,6 @@ class Dijkstra:
         #node. Latter should not be possible; is a check in case something goes wrong.
         for i in range(self.potArr.size):
             neighborInds = np.array(currentInds) - relativeNeighborInds
-            
             #Removing indices that take us off-grid. See e.g.
             #https://stackoverflow.com/a/20528566
             isNegativeBool = [neighborInds[:,i] < 0 for i in range(self.nDims)]

@@ -124,7 +124,7 @@ class round_points_to_grid_(unittest.TestCase):
         
         indsOut, gridValsOut = SurfaceUtils.round_points_to_grid(coordMeshTuple,ptsToCheck)
         
-        correctInds = np.array([[3,1],[2,1],[1,0]],dtype=int)
+        correctInds = np.array([[1,3],[1,2],[0,1]],dtype=int)
         correctVals = np.array([[3,1],[2,1],[1,0]],dtype=float)
         
         self.assertIsNone(np.testing.assert_array_equal(correctInds,indsOut))
@@ -175,12 +175,15 @@ class find_endpoints_on_grid_(unittest.TestCase):
         otherEndpoints = np.array([[1.9,0.],[2.,-0.1],[2.,0.]])
         correctEndpoints = np.concatenate((lineEndpoints,otherEndpoints))
         
-        lineIndices = np.array([[31,i] for i in range(len(y))],dtype=int)
-        otherIndices = np.array([[69,20],[70,19],[70,20]],dtype=int)
+        lineIndices = np.array([[i,31] for i in range(len(y))],dtype=int)
+        otherIndices = np.array([[20,69],[19,70],[20,70]],dtype=int)
+        
         correctIndices = np.concatenate((lineIndices,otherIndices))
         
         self.assertIsNone(np.testing.assert_allclose(allowedEndpoints,correctEndpoints,atol=10**(-13)))
-        self.assertIsNone(np.testing.assert_array_equal(endpointIndices,correctIndices))
+        #Sometimes the rows end up out of order
+        self.assertIsNone(np.testing.assert_array_equal(np.sort(endpointIndices,axis=0),\
+                                                        np.sort(correctIndices,axis=0)))
         
         # #Left in because I kept deleting it and re-adding it
         # fig, ax = plt.subplots()
@@ -211,7 +214,7 @@ class find_endpoints_on_grid_(unittest.TestCase):
         #Same test as test_2d_return_all_points, but the only points to be returned
         #are the line, as those are the largest set
         correctEndpoints = np.array([[-1.9,i] for i in y])
-        correctIndices = np.array([[31,i] for i in range(len(y))],dtype=int)
+        correctIndices = np.array([[i,31] for i in range(len(y))],dtype=int)
         
         self.assertIsNone(np.testing.assert_allclose(allowedEndpoints,correctEndpoints,atol=10**(-13)))
         self.assertIsNone(np.testing.assert_array_equal(endpointIndices,correctIndices))
