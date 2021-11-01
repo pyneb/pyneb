@@ -796,57 +796,59 @@ class EulerLagrangeSolver:
             
         return sol
     
-class EulerLagrangeVerification:
+class EulerLagrangeVerifier:
     """
     :Maintainer: Daniel
     """
-    def __init__(self,path,enegOnPath,eneg_func,massOnPath=None,mass_func=None,\
-                 grad_approx=midpoint_grad):
-        #TODO: major issue here when points aren't evenly spaced along the arc-length
-        #of the path. For instance, a straight line of 3 nodes, on a V = constant
-        #PES, will not pass this if the nodes aren't spaced evenly
-        self.nPts, self.nDims = path.shape
-        self.ds = 1/(self.nPts-1)
+    def __init__(self,path,eneg_func,mass_func=None,grad_approx=midpoint_grad):
+        """
         
-        massShape = (self.nPts,self.nDims,self.nDims)
-        if massOnPath is None:
-            self.massIsIdentity = True
-            massOnPath = np.full(massShape,np.identity(self.nDims))
+
+        Parameters
+        ----------
+        path : TYPE
+            DESCRIPTION.
+        eneg_func : TYPE
+            DESCRIPTION.
+        mass_func : TYPE, optional
+            DESCRIPTION. The default is None.
+        grad_approx : Function, optional
+            For computing gradients of the potential and inertia tensor. 
+            The default is midpoint_grad.
+
+        Raises
+        ------
+        TypeError
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        if isinstance(path,np.ndarray):
+            self.interpPath = InterpolatedPath(path)
+        elif callable(interpPath):
+            self.interpPath = path
         else:
-            self.massIsIdentity = False
-            
-        if enegOnPath.shape != (self.nPts,):
-            raise ValueError("Invalid shape for enegOnPath. Expected "+str((self.nPts,))+\
-                             ", received "+str(enegOnPath.shape))
-        if massOnPath.shape != massShape:
-            raise ValueError("Invalid shape for massOnPath. Expected "+str(massShape)+\
-                             ", received "+str(massOnPath.shape))
-                
-        #Note that these are padded, for simplified indexing
-        self.xDot = np.zeros((self.nPts,self.nDims))
-        self.xDot[1:] = np.array([path[i]-path[i-1] for i in range(1,self.nPts)])/self.ds
-        self.xDotDot = np.zeros((self.nPts,self.nDims))
-        self.xDotDot[1:-1] = \
-            np.array([path[i+1]-2*path[i]+path[i-1] for i in range(1,self.nPts-1)])/self.ds**2
-            
-        self.path = path
-        self.enegOnPath = enegOnPath
+            raise TypeError("path is neither an ndarray, nor callable")
+        
+        self.nPts, self.nDims = self.interpPath.path.shape
+        
         self.eneg_func = eneg_func
-        self.massOnPath = massOnPath
         self.mass_func = mass_func
         self.grad_approx = grad_approx
     
-    def _compare_lagrangian_id_inertia(self):
-        enegGrad = self.grad_approx(self.eneg_func,self.path)
-        
+    def _compare_lagrangian_id_inertia(self,x,dx,ddx):
         lhs = np.zeros((self.nPts,self.nDims))
         rhs = np.zeros((self.nPts,self.nDims))
         
-        for ptIter in range(1,self.nPts):
-            lhs[ptIter] = 2*self.enegOnPath[ptIter]*self.xDotDot[ptIter]
+        for ptIter in range(1,self.nPts-1):
+            lhs[ptIter] = 2*self.eneg_func(x[ptIter])*ddx[ptIter]
+            enegGrad = self.grad_approx(self.eneg_func,x[ptIter])
             
-            term1 = enegGrad[ptIter] * np.dot(self.xDot[ptIter],self.xDot[ptIter])
-            term2 = -self.xDot[ptIter] * np.dot(enegGrad[ptIter],self.xDot[ptIter])
+            term1 = enegGrad * np.dot(dx[ptIter],dx[ptIter])
+            term2 = -dx[ptIter] * np.dot(enegGrad,dx[ptIter])
             
             rhs[ptIter] = term1 + term2
             
@@ -865,9 +867,24 @@ class EulerLagrangeVerification:
         
         return diff[1:-1] #Removing excess padding
     
-    def compare_lagrangian(self):
-        if self.massIsIdentity:
-            elDiff = self._compare_lagrangian_id_inertia()
+    def compare_lagrangian(self,nPts):
+        t = np.linspace(0,1,nPts)
+        x = self.interpPath(t)
+        
+        dx = np.zeros((self.nPts,self.nDims))
+        for ptIter in range(1,self.nPts-1):
+            tPlus = t[ptIter] + fdTol/2
+            tMinus = t[ptIter] - fdTol/2
+            dx[ptIter] = (self.interpPath(tPlus) - self.interpPath(tMinus))/(2*fdTol)
+            
+        ddx = np.zeros((self.nPts,self.nDims))
+        for ptIter in range(1,self.nPts-1):
+            tPlus = t[ptIter] + fdTol
+            tMinus = t[ptIter] - fdTol
+            ddx[ptIter] = (self.interpPath(tPlus) - 2*x[ptIter] + self.interpPath(tMinus))/fdTol
+        
+        if self.mass_func is None:
+            elDiff = self._compare_lagrangian_id_inertia(x,dx,ddx)
         else:
             elDiff = self._compare_lagrangian_var_inertia()
             
@@ -884,7 +901,7 @@ class Dijkstra:
     """
     def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,\
                  target_func=TargetFunctions.action,allowedEndpoints=None,\
-                 trimVals=[10**(-4),None],logLevel=1):
+                 trimVals=[10**(-4),None],logLevel=1,fName=None):
         """
         Some indexing is done to deal with the default shape of np.meshgrid.
         For D dimensions, the output is of shape (N2,N1,N3,...,ND), while the
@@ -1012,7 +1029,7 @@ class Dijkstra:
         self.initialInds[[1,0]] = self.initialInds[[0,1]]
         self.initialInds = tuple(self.initialInds)
         
-        self.djkLogger = DijkstraLogger(self,logLevel=logLevel)
+        self.djkLogger = DijkstraLogger(self,logLevel=logLevel,fName=fName)
     
     def _construct_path_dict(self):
         """
@@ -1070,6 +1087,8 @@ class Dijkstra:
             isTooBigBool = [neighborInds[:,i] >= maxInds[i] for i in range(self.nDims)]
             neighborInds = \
                 neighborInds[np.logical_not(np.logical_or.reduce(isTooBigBool))]
+            #Removing visited indices
+            neighborInds = [tuple(n) for n in neighborInds if not tentativeDistance.mask[tuple(n)]]
             
             #For feeding into self.target_func
             coords = np.zeros((2,self.nDims))
@@ -1081,8 +1100,7 @@ class Dijkstra:
             masses = np.zeros((2,)+2*(self.nDims,))
             masses[0] = self.inertArr[currentInds]
             
-            for (neighIter, neighbor) in enumerate(neighborInds):
-                n = tuple(neighbor)
+            for (neighIter, n) in enumerate(neighborInds):
                 coords[1] = [c[n] for c in self.coordMeshTuple]
                 enegs[1] = self.potArr[n]
                 masses[1] = self.inertArr[n]
@@ -1090,10 +1108,10 @@ class Dijkstra:
                 #self.target_func returns the action (distance), plus energies and masses
                 distThroughCurrent = tentativeDistance[currentInds] + \
                     self.target_func(coords,enegs,masses)[0]
+                
                 if distThroughCurrent < tentativeDistance[n]:
                     tentativeDistance[n] = distThroughCurrent
                     neighborsVisitDict[n] = currentInds
-            
             tentativeDistance.mask[currentInds] = True
             
             #For checking when we want to stop
@@ -1102,6 +1120,14 @@ class Dijkstra:
             except:
                 pass
             
+            if self.djkLogger.logLevel == 2:
+                print(50*"*")
+                print("Current inds: ",currentInds)
+                print("Neighbor inds:\n",neighborInds)
+                with np.printoptions(precision=2):
+                    print("Updated data:\n",tentativeDistance.data)
+                    print("Mask:\n",tentativeDistance.mask)
+                
             currentInds = np.unravel_index(np.argmin(tentativeDistance),\
                                            tentativeDistance.shape)
             

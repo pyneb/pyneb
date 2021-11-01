@@ -1446,6 +1446,6 @@ class InterpolatedPath:
     def compute_along_path(self,target_func,nImages,tfArgs=[],tfKWargs={}):
         t = np.linspace(0,1,nImages)
         path = np.array(self.__call__(t)).T
-        
         tfOut = target_func(path,*tfArgs,**tfKWargs)
+        
         return path, tfOut
