@@ -199,7 +199,7 @@ class LeastActionPath:
                 sys.exit("Err: points "+str(points)+\
                          " does not match expected shape in LeastActionPath")
         
-        integVal, energies, masses = self.target_func(points,self.potential,self.mass)
+        integVal, energies, masses = TargetFunctions.action(points,self.potential,self.mass)
         tangents = self._compute_tangents(points,energies)
         
         gradOfAction, gradOfPes = \
@@ -668,11 +668,15 @@ class VerletMinimization:
     
     def _local_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
         tStepPrev = tStepArr[step-1].reshape((-1,1)) #For multiplication below
-        
-        self.allPts[step] = self.allPts[step-1] + \
-            tStepPrev*self.allVelocities[step-1] + \
-            0.5*self.allForces[step-1]*tStepPrev**2
+        shift = tStepPrev*self.allVelocities[step-1] + \
+                0.5*self.allForces[step-1]*tStepPrev**2
+        maxmove = 1.0
+        for ptIter in range(self.nPts):
+            if(np.linalg.norm(shift[ptIter])>maxmove):
+                shift[ptIter] = maxmove * shift[ptIter]/np.linalg.norm(shift[ptIter])
+        self.allPts[step] = self.allPts[step-1] + shift
         self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
+
         #What the Wikipedia article on velocity Verlet uses
         self.allVelocities[step] = \
             0.5*tStepPrev*(self.allForces[step]+self.allForces[step-1])
