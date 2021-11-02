@@ -193,7 +193,7 @@ class NDInterpLogger:
         #can point to these files
 
 class DijkstraLogger:
-    def __init__(self,djkInst,logLevel=1):
+    def __init__(self,djkInst,logLevel=1,fName=None):
         self.logLevel = logLevel
         if self.logLevel not in [0,1]:
             raise ValueError("DijkstraLogger logLevel "+str(self.logLevel)+\
@@ -204,7 +204,10 @@ class DijkstraLogger:
         os.makedirs("logs",exist_ok=True)
         
         if self.logLevel == 1:
-            self.fileName = "logs/"+self.initTime+".djk"
+            if fName is None:
+                self.fileName = "logs/"+self.initTime+".djk"
+            else:
+                self.fileName = "logs/"+fName+".djk"
             
             h5File = h5py.File(self.fileName,"w")
             
@@ -316,7 +319,7 @@ class LoadDijkstraLog:
             raise TypeError("File "+str(file)+" does not have extension .djk")
         
         scalarAttrs = ["runTime","target_func"]
-        tupleAttrs = ["initialInds","initialPoint"]
+        tupleAttrs = ["initialInds","initialPoint","minimalEndpt"]
         expectedDSets = ["allPathsIndsDict","allowedEndpoints","endpointIndices",\
                          "inertArr","neighborsVisitDict","pathArrDict","potArr",\
                          "tentativeDistance"]
