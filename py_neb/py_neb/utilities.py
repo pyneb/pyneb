@@ -384,7 +384,7 @@ class GradientApproximations:
 
             gradOfBeff[ptIter] = beff_grad(mass,path[ptIter],dr[ptIter],eps=eps)
 
-            beff[ptIter+1] = np.dot(np.dot(massOnPath[ptIter+1],dr[ptIter+1]),dr[ptIter+1])/np.sum(dr[ptIter,:]**2)
+            beff[ptIter+1] = np.dot(np.dot(massOnPath[ptIter+1],dr[ptIter+1]),dr[ptIter+1])/np.sum(dr[ptIter+1,:]**2)
             
             dnorm=np.linalg.norm(dr[ptIter])
             dnormP1=np.linalg.norm(dr[ptIter+1])
