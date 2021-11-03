@@ -658,8 +658,16 @@ class VerletMinimization:
         
         if useLocal:
             tStepFinal = tStepArr[-1].reshape((-1,1))
-            self.allPts[-1] = self.allPts[-2] + tStepFinal*self.allVelocities[-1] + \
+            shift = tStepFinal*self.allVelocities[-1] + \
                 0.5*self.allForces[-1]*tStepFinal**2
+
+            for ptIter in range(self.nPts):
+                for dimIter in range(self.nDims):
+                    if(abs(shift[ptIter,dimIter])>fireParams["maxmove"][dimIter]):
+                        shift[ptIter] = shift[ptIter] * \
+                            fireParams["maxmove"][dimIter]/abs(shift[ptIter,dimIter])
+
+            self.allPts[-1] = self.allPts[-2] + shift
         else:
             self.allPts[-1] = self.allPts[-2] + tStepArr[-1]*self.allVelocities[-1] + \
                 0.5*self.allForces[-1]*tStepArr[-1]**2
