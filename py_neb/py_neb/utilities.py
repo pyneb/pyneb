@@ -309,9 +309,9 @@ class GradientApproximations:
         eps = fdTol
         gradOfBeff = beff_grad(mass,path,dr,eps=eps)
         dnorm=np.linalg.norm(dr)
-        dnormP1=np.linalg.norm(dr)
+        dnormP1=np.linalg.norm(drp1)
         dhat = dr/dnorm
-        dhatP1 = dr/dnormP1
+        dhatP1 = drp1/dnormP1
         gradOfAction = 0.5*(\
             (beff*pot + beffm1*potm1)*dhat-\
             (beff*pot + beffp1*potp1)*dhatP1+\
@@ -351,7 +351,9 @@ class GradientApproximations:
                 gradOfPes[1:nPts-1],dr[1:nPts-1,:], dr[2:nPts,:], \
                 beff[1:nPts-1], beff[2:nPts], beff[0:nPts-2], \
                 potentialOnPath[1:nPts-1], potentialOnPath[2:nPts], potentialOnPath[0:nPts-2])
-        gradOfAction[1:nPts-1,:] = np.array(mapOut[:][0][:])
+        mapped = np.array(mapOut)
+
+        gradOfAction[1:nPts-1,:] = mapped[:,0,:]
         return gradOfAction, gradOfPes
     
     def discrete_sqr_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\

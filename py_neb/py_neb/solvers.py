@@ -580,7 +580,7 @@ class VerletMinimization:
             
         return allPts, allVelocities, allForces
     
-    def fire(self,tStep,maxIters,fireParams={},useLocal=False):
+    def fire(self,tStep,maxIters,fireParams={},useLocal=True):
         """
         Wrapper for fast inertial relaxation engine.
         FIRE step taken from http://dx.doi.org/10.1103/PhysRevLett.97.170201
@@ -615,7 +615,7 @@ class VerletMinimization:
         
         defaultFireParams = \
             {"dtMax":10.,"dtMin":0.001,"nAccel":10,"fInc":1.1,"fAlpha":0.99,\
-             "fDecel":0.5,"aStart":0.1}
+             "fDecel":0.5,"aStart":0.1,"maxmove":np.full(self.nDims,1.0)}
             
         for key in fireParams.keys():
             if key not in defaultFireParams.keys():
@@ -628,7 +628,7 @@ class VerletMinimization:
         self.allPts = np.zeros((maxIters+2,self.nPts,self.nDims))
         self.allVelocities = np.zeros((maxIters+1,self.nPts,self.nDims))
         self.allForces = np.zeros((maxIters+1,self.nPts,self.nDims))
-        
+
         self.allPts[0] = self.initialPoints
         self.allForces[0] = self.nebObj.compute_force(self.allPts[0])
         
@@ -658,8 +658,16 @@ class VerletMinimization:
         
         if useLocal:
             tStepFinal = tStepArr[-1].reshape((-1,1))
-            self.allPts[-1] = self.allPts[-2] + tStepFinal*self.allVelocities[-1] + \
+            shift = tStepFinal*self.allVelocities[-1] + \
                 0.5*self.allForces[-1]*tStepFinal**2
+
+            for ptIter in range(self.nPts):
+                for dimIter in range(self.nDims):
+                    if(abs(shift[ptIter,dimIter])>fireParams["maxmove"][dimIter]):
+                        shift[ptIter] = shift[ptIter] * \
+                            fireParams["maxmove"][dimIter]/abs(shift[ptIter,dimIter])
+
+            self.allPts[-1] = self.allPts[-2] + shift
         else:
             self.allPts[-1] = self.allPts[-2] + tStepArr[-1]*self.allVelocities[-1] + \
                 0.5*self.allForces[-1]*tStepArr[-1]**2
@@ -669,9 +677,17 @@ class VerletMinimization:
     def _local_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
         tStepPrev = tStepArr[step-1].reshape((-1,1)) #For multiplication below
         
-        self.allPts[step] = self.allPts[step-1] + \
-            tStepPrev*self.allVelocities[step-1] + \
-            0.5*self.allForces[step-1]*tStepPrev**2
+        shift = tStepPrev*self.allVelocities[step-1] + \
+                0.5*self.allForces[step-1]*tStepPrev**2
+
+        for ptIter in range(self.nPts):
+            for dimIter in range(self.nDims):
+                if(abs(shift[ptIter,dimIter])>fireParams["maxmove"][dimIter]):
+                    shift[ptIter] = shift[ptIter] * \
+                        fireParams["maxmove"][dimIter]/abs(shift[ptIter,dimIter])
+
+        self.allPts[step] = self.allPts[step-1] + shift
+        
         self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
         #What the Wikipedia article on velocity Verlet uses
         self.allVelocities[step] = \
