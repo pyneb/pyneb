@@ -1090,6 +1090,16 @@ class Dijkstra:
             #Removing visited indices
             neighborInds = [tuple(n) for n in neighborInds if not tentativeDistance.mask[tuple(n)]]
             
+            if self.djkLogger.logLevel == 2:
+                print(50*"*")
+                print("Current inds: ",currentInds)
+                print("Current point: ",np.array([c[currentInds] for c in self.coordMeshTuple]))
+                print("Neighbor inds:\n",neighborInds)
+                if self.potArr.size <= 50: #Any larger is too big to be useful
+                    with np.printoptions(precision=2):
+                        print("Updated data:\n",tentativeDistance.data)
+                        print("Mask:\n",tentativeDistance.mask)
+            
             #For feeding into self.target_func
             coords = np.zeros((2,self.nDims))
             coords[0] = np.array([c[currentInds] for c in self.coordMeshTuple])
@@ -1108,6 +1118,13 @@ class Dijkstra:
                 #self.target_func returns the action (distance), plus energies and masses
                 distThroughCurrent = tentativeDistance[currentInds] + \
                     self.target_func(coords,enegs,masses)[0]
+                    
+                if self.djkLogger.logLevel == 2:
+                    print("Neighbor inds: ",n)
+                    print("Neighbor point: ",coords[1])
+                    print("Current distance: ",tentativeDistance[n])
+                    print("Dist through current: ",distThroughCurrent)
+                    print("Updating neighbor: ",distThroughCurrent<tentativeDistance[n])
                 
                 if distThroughCurrent < tentativeDistance[n]:
                     tentativeDistance[n] = distThroughCurrent
@@ -1119,14 +1136,6 @@ class Dijkstra:
                 endpointIndsList.remove(currentInds)
             except:
                 pass
-            
-            if self.djkLogger.logLevel == 2:
-                print(50*"*")
-                print("Current inds: ",currentInds)
-                print("Neighbor inds:\n",neighborInds)
-                with np.printoptions(precision=2):
-                    print("Updated data:\n",tentativeDistance.data)
-                    print("Mask:\n",tentativeDistance.mask)
                 
             currentInds = np.unravel_index(np.argmin(tentativeDistance),\
                                            tentativeDistance.shape)
