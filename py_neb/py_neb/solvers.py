@@ -580,7 +580,7 @@ class VerletMinimization:
             
         return allPts, allVelocities, allForces
     
-    def fire(self,tStep,maxIters,fireParams={},useLocal=False):
+    def fire(self,tStep,maxIters,fireParams={},useLocal=True):
         """
         Wrapper for fast inertial relaxation engine.
         FIRE step taken from http://dx.doi.org/10.1103/PhysRevLett.97.170201
@@ -615,7 +615,7 @@ class VerletMinimization:
         
         defaultFireParams = \
             {"dtMax":10.,"dtMin":0.001,"nAccel":10,"fInc":1.1,"fAlpha":0.99,\
-             "fDecel":0.5,"aStart":0.1}
+             "fDecel":0.5,"aStart":0.1,"maxmove":np.full(self.nDims,1.0)}
             
         for key in fireParams.keys():
             if key not in defaultFireParams.keys():
@@ -628,7 +628,7 @@ class VerletMinimization:
         self.allPts = np.zeros((maxIters+2,self.nPts,self.nDims))
         self.allVelocities = np.zeros((maxIters+1,self.nPts,self.nDims))
         self.allForces = np.zeros((maxIters+1,self.nPts,self.nDims))
-        
+
         self.allPts[0] = self.initialPoints
         self.allForces[0] = self.nebObj.compute_force(self.allPts[0])
         
@@ -658,8 +658,16 @@ class VerletMinimization:
         
         if useLocal:
             tStepFinal = tStepArr[-1].reshape((-1,1))
-            self.allPts[-1] = self.allPts[-2] + tStepFinal*self.allVelocities[-1] + \
+            shift = tStepFinal*self.allVelocities[-1] + \
                 0.5*self.allForces[-1]*tStepFinal**2
+
+            for ptIter in range(self.nPts):
+                for dimIter in range(self.nDims):
+                    if(abs(shift[ptIter,dimIter])>fireParams["maxmove"][dimIter]):
+                        shift[ptIter] = shift[ptIter] * \
+                            fireParams["maxmove"][dimIter]/abs(shift[ptIter,dimIter])
+
+            self.allPts[-1] = self.allPts[-2] + shift
         else:
             self.allPts[-1] = self.allPts[-2] + tStepArr[-1]*self.allVelocities[-1] + \
                 0.5*self.allForces[-1]*tStepArr[-1]**2
@@ -669,9 +677,17 @@ class VerletMinimization:
     def _local_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
         tStepPrev = tStepArr[step-1].reshape((-1,1)) #For multiplication below
         
-        self.allPts[step] = self.allPts[step-1] + \
-            tStepPrev*self.allVelocities[step-1] + \
-            0.5*self.allForces[step-1]*tStepPrev**2
+        shift = tStepPrev*self.allVelocities[step-1] + \
+                0.5*self.allForces[step-1]*tStepPrev**2
+
+        for ptIter in range(self.nPts):
+            for dimIter in range(self.nDims):
+                if(abs(shift[ptIter,dimIter])>fireParams["maxmove"][dimIter]):
+                    shift[ptIter] = shift[ptIter] * \
+                        fireParams["maxmove"][dimIter]/abs(shift[ptIter,dimIter])
+
+        self.allPts[step] = self.allPts[step-1] + shift
+        
         self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
         #What the Wikipedia article on velocity Verlet uses
         self.allVelocities[step] = \
@@ -1090,6 +1106,16 @@ class Dijkstra:
             #Removing visited indices
             neighborInds = [tuple(n) for n in neighborInds if not tentativeDistance.mask[tuple(n)]]
             
+            if self.djkLogger.logLevel == 2:
+                print(50*"*")
+                print("Current inds: ",currentInds)
+                print("Current point: ",np.array([c[currentInds] for c in self.coordMeshTuple]))
+                print("Neighbor inds:\n",neighborInds)
+                if self.potArr.size <= 50: #Any larger is too big to be useful
+                    with np.printoptions(precision=2):
+                        print("Updated data:\n",tentativeDistance.data)
+                        print("Mask:\n",tentativeDistance.mask)
+            
             #For feeding into self.target_func
             coords = np.zeros((2,self.nDims))
             coords[0] = np.array([c[currentInds] for c in self.coordMeshTuple])
@@ -1108,6 +1134,13 @@ class Dijkstra:
                 #self.target_func returns the action (distance), plus energies and masses
                 distThroughCurrent = tentativeDistance[currentInds] + \
                     self.target_func(coords,enegs,masses)[0]
+                    
+                if self.djkLogger.logLevel == 2:
+                    print("Neighbor inds: ",n)
+                    print("Neighbor point: ",coords[1])
+                    print("Current distance: ",tentativeDistance[n])
+                    print("Dist through current: ",distThroughCurrent)
+                    print("Updating neighbor: ",distThroughCurrent<tentativeDistance[n])
                 
                 if distThroughCurrent < tentativeDistance[n]:
                     tentativeDistance[n] = distThroughCurrent
@@ -1119,14 +1152,6 @@ class Dijkstra:
                 endpointIndsList.remove(currentInds)
             except:
                 pass
-            
-            if self.djkLogger.logLevel == 2:
-                print(50*"*")
-                print("Current inds: ",currentInds)
-                print("Neighbor inds:\n",neighborInds)
-                with np.printoptions(precision=2):
-                    print("Updated data:\n",tentativeDistance.data)
-                    print("Mask:\n",tentativeDistance.mask)
                 
             currentInds = np.unravel_index(np.argmin(tentativeDistance),\
                                            tentativeDistance.shape)
@@ -1227,3 +1252,181 @@ class Dijkstra:
                 minDist = dist
         self.djkLogger.log((endptOut,),("endptOut",))
         return endptOut
+
+class DynamicProgramming:
+    def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,\
+                 target_func=TargetFunctions.action,allowedEndpoints=None,\
+                 trimVals=[10**(-4),None],logLevel=1,fName=None):
+        warnings.warn("DynamicProgramming class is still under development")
+        self.initialPoint = initialPoint
+        self.coordMeshTuple = coordMeshTuple
+        self.uniqueCoords = [np.unique(c) for c in self.coordMeshTuple]
+        
+        expectedShape = np.array([len(c) for c in self.uniqueCoords])
+        expectedShape[[1,0]] = expectedShape[[0,1]]
+        expectedShape = tuple(expectedShape)
+        
+        tempCMesh = []
+        for c in self.coordMeshTuple:
+            if c.shape != expectedShape:
+                cNew = np.swapaxes(c,0,1)
+                if cNew.shape == expectedShape:
+                    tempCMesh.append(cNew)
+                else:
+                    raise ValueError("coordMeshTuple has wrong dimensions somehow")
+        if tempCMesh:
+            self.coordMeshTuple = tuple(tempCMesh)
+        
+        self.target_func = target_func
+        
+        self.nDims = len(coordMeshTuple)
+        
+        if potArr.shape == expectedShape:
+            self.potArr = potArr
+        else:
+            potNew = np.swapaxes(potArr,0,1)
+            if potNew.shape == expectedShape:
+                self.potArr = potNew
+            else:
+                raise ValueError("potArr.shape is "+str(potArr.shape)+\
+                                 "; required shape is "+str(expectedShape)+\
+                                 " (or with swapped first two indices)")
+        #TODO: apply error checking above to inertArr
+        if inertArr is not None:
+            inertArrRequiredShape = self.potArr.shape + 2*(self.nDims,)
+            if inertArr.shape != inertArrRequiredShape:
+                raise ValueError("inertArr.shape is "+str(inertArr.shape)+\
+                                 "; required shape is "+inertArrRequiredShape)
+            self.inertArr = inertArr
+        else:
+            #Simplifies things if I set this to the identity here
+            self.inertArr = np.full(self.potArr.shape+2*(self.nDims,),np.identity(self.nDims))
+        
+        if allowedEndpoints is None:
+            self.allowedEndpoints, self.endpointIndices \
+                = SurfaceUtils.find_endpoints_on_grid(self.coordMeshTuple,self.potArr)
+        else:
+            self.allowedEndpoints = allowedEndpoints
+            self.endpointIndices, _ = \
+                SurfaceUtils.round_points_to_grid(self.coordMeshTuple,allowedEndpoints)
+        
+        if self.allowedEndpoints.shape == (self.nDims,):
+            self.allowedEndpoints = self.allowedEndpoints.reshape((1,self.nDims))
+        
+        if self.allowedEndpoints.shape[1] != self.nDims:
+            raise ValueError("self.allowedEndpoints.shape == "+\
+                             str(self.allowedEndpoints.shape)+"; dimension 1 must be "\
+                             +str(self.nDims))
+        if self.endpointIndices.shape[1] != self.nDims:
+            raise ValueError("self.endpointIndices.shape == "+\
+                             str(self.endpointIndices.shape)+"; dimension 1 must be "\
+                             +str(self.nDims))
+        
+        self.endpointIndices = [tuple(row) for row in self.endpointIndices]
+        
+        #Clip the potential to the min/max. Done after finding possible endpoints.
+        self.trimVals = trimVals
+        if self.trimVals != [None,None]:
+            self.potArr = self.potArr.clip(self.trimVals[0],self.trimVals[1])
+        
+        #Getting indices for self.initialPoint
+        self.initialInds = np.zeros(self.nDims,dtype=int)
+        for dimIter in range(self.nDims):
+            #More nuisances with floating-point precision. Should maybe find
+            #source of the issue, but this works for the basic test case.
+            self.initialInds[dimIter] = \
+                np.argwhere(np.isclose(self.uniqueCoords[dimIter],self.initialPoint[dimIter]))
+        
+        #Index swapping like mentioned above. Now, self.initialInds[0] <= Ny,
+        #and self.initialInds[1] <= Nx
+        self.initialInds[[1,0]] = self.initialInds[[0,1]]
+        self.initialInds = tuple(self.initialInds)
+        
+        # self.djkLogger = DijkstraLogger(self,logLevel=logLevel,fName=fName)
+        
+    def _select_next_point(self,currentInds,relativeNeighborInds,maxInds):
+        indsToCheck = np.array(currentInds) - relativeNeighborInds
+        
+        #Removing indices that take us off-grid. See e.g.
+        #https://stackoverflow.com/a/20528566
+        isNegativeBool = [indsToCheck[:,i] < 0 for i in range(self.nDims)]
+        indsToCheck = \
+            indsToCheck[np.logical_not(np.logical_or.reduce(isNegativeBool))]
+        isTooBigBool = [indsToCheck[:,i] >= maxInds[i] for i in range(self.nDims)]
+        indsToCheck = \
+            indsToCheck[np.logical_not(np.logical_or.reduce(isTooBigBool))]
+            
+        indsToCheck = [tuple(i) for i in indsToCheck]
+        
+        coords = np.zeros((2,self.nDims))
+        coords[0] = np.array([c[currentInds] for c in self.coordMeshTuple])
+        
+        enegs = np.zeros(2)
+        enegs[0] = self.potArr[currentInds]
+        
+        inertArr = np.zeros((2,self.nDims,self.nDims))
+        inertArr[0] = self.inertArr[currentInds]
+        
+        minDist = np.inf
+        minInds = None
+        for inds in indsToCheck:
+            coords[1] = np.array([c[inds] for c in self.coordMeshTuple])
+            enegs[1] = self.potArr[inds]
+            inertArr[1] = self.inertArr[inds]
+            
+            newDist = self.target_func(coords,enegs,inertArr)[0]
+            if newDist < minDist:
+                minDist = newDist
+                minInds = inds
+        
+        return minInds, minDist
+        
+    def __call__(self,nNeighbors):
+        #Allows for variable number of neighbors
+        if not isinstance(nNeighbors,np.ndarray):
+            nNeighbors = nNeighbors*np.ones(self.nDims-1)
+            
+        if nNeighbors.shape != (self.nDims-1,):
+            raise ValueError("nNeighbors.shape "+str(nNeighbors.shape)+\
+                             " does not match expected shape ("+str(self.nDims-1)+",)")
+        
+        listOfRelativeInds = [np.arange(-nNeighbors[0],nNeighbors[0]+1)]
+        listOfRelativeInds.append([0])
+        for n in nNeighbors[1:]:
+            listOfRelativeInds.append(np.arange(-n,n+1))
+        relativeNeighborInds = list(itertools.product(*listOfRelativeInds))
+        
+        relativeNeighborInds.remove(self.nDims*(0,))
+        
+        maxInds = np.array([len(c) for c in self.uniqueCoords])
+        maxInds[[1,0]] = maxInds[[0,1]]
+        
+        pathIndsDict = {}
+        pathDistsDict = {}
+        for endInds in self.endpointIndices:
+            pathIndsDict[endInds] = [self.initialInds]
+            pathDistsDict[endInds] = 0
+            
+            #Searches from left to right, according to the first coordinate
+            #(the second index). The final point is fixed to endInds.
+            nIters = endInds[1] - self.initialInds[1] - 1
+            
+            currentInds = self.initialInds
+            for i in range(nIters):
+                minInds, minDist = self._select_next_point(currentInds,relativeNeighborInds,\
+                                                           maxInds)
+                pathIndsDict[endInds].append(minInds)
+                pathDistsDict[endInds] += minDist
+                currentInds = minInds
+                
+            pathIndsDict[endInds].append(endInds)
+            #Finalizing the action
+            coords = np.array([[c[currentInds] for c in self.coordMeshTuple],\
+                               [c[endInds] for c in self.coordMeshTuple]])
+            enegs = np.array([self.potArr[currentInds],self.potArr[endInds]])
+            inertArr = np.array([self.inertArr[currentInds],self.inertArr[endInds]])
+            
+            pathDistsDict[endInds] += self.target_func(coords,enegs,inertArr)[0]
+        
+        return pathIndsDict, pathDistsDict
+        

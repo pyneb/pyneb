@@ -309,9 +309,9 @@ class GradientApproximations:
         eps = fdTol
         gradOfBeff = beff_grad(mass,path,dr,eps=eps)
         dnorm=np.linalg.norm(dr)
-        dnormP1=np.linalg.norm(dr)
+        dnormP1=np.linalg.norm(drp1)
         dhat = dr/dnorm
-        dhatP1 = dr/dnormP1
+        dhatP1 = drp1/dnormP1
         gradOfAction = 0.5*(\
             (beff*pot + beffm1*potm1)*dhat-\
             (beff*pot + beffp1*potp1)*dhatP1+\
@@ -351,7 +351,9 @@ class GradientApproximations:
                 gradOfPes[1:nPts-1],dr[1:nPts-1,:], dr[2:nPts,:], \
                 beff[1:nPts-1], beff[2:nPts], beff[0:nPts-2], \
                 potentialOnPath[1:nPts-1], potentialOnPath[2:nPts], potentialOnPath[0:nPts-2])
-        gradOfAction[1:nPts-1,:] = np.array(mapOut[:][0][:])
+        mapped = np.array(mapOut)
+
+        gradOfAction[1:nPts-1,:] = mapped[:,0,:]
         return gradOfAction, gradOfPes
     
     def discrete_sqr_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
@@ -384,7 +386,7 @@ class GradientApproximations:
 
             gradOfBeff[ptIter] = beff_grad(mass,path[ptIter],dr[ptIter],eps=eps)
 
-            beff[ptIter+1] = np.dot(np.dot(massOnPath[ptIter+1],dr[ptIter+1]),dr[ptIter+1])/np.sum(dr[ptIter,:]**2)
+            beff[ptIter+1] = np.dot(np.dot(massOnPath[ptIter+1],dr[ptIter+1]),dr[ptIter+1])/np.sum(dr[ptIter+1,:]**2)
             
             dnorm=np.linalg.norm(dr[ptIter])
             dnormP1=np.linalg.norm(dr[ptIter+1])
@@ -979,25 +981,6 @@ def shift_func(func_in,shift=10**(-4)):
         return func_in(coords) - shift
     return func_out
 
-class RectBivariateSplineWrapper(RectBivariateSpline):
-    """
-    :Maintainer: Daniel
-    """
-    def __init__(self,*args,**kwargs):
-        warnings.warn("Deprecating RectBivariateSplineWrapper in favor of "\
-                      +"2D method in NDInterpWithBoundary")
-        super(RectBivariateSplineWrapper,self).__init__(*args,**kwargs)
-        self.function = self.func_wrapper()
-        
-    def func_wrapper(self):
-        def func_out(coords):
-            if coords.shape == (2,):
-                coords = coords.reshape((1,2))
-                
-            res = self.__call__(coords[:,0],coords[:,1],grid=False)
-            return res
-        return func_out
-  
 class NDInterpWithBoundary:
     """
     Interpolates a grid in D dimensions, with extra handling for points outside
