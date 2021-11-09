@@ -36,11 +36,11 @@ EE = EE - E_gs_raw
 
 #Define potential function
 # note this interpolator only interpolates points or arrays of points, no grids.
-V_func = utilities.NDInterpWithBoundary(uniq_coords,EE,boundaryHandler='exponential',minVal=0)
+V_func = utilities.NDInterpWithBoundary(uniq_coords,EE,boundaryHandler='exponential',symmExtend=True)
 
 
 # Create dictionary of functions for each comp of the tensor
-mass_grids = {key: utilities.NDInterpWithBoundary(uniq_coords,mass_grids[key],boundaryHandler='exponential',minVal=0) \
+mass_grids = {key: utilities.NDInterpWithBoundary(uniq_coords,mass_grids[key],boundaryHandler='exponential',symmExtend=True) \
               for key in mass_keys}
 # function returns matrix of functions
 M_func = utilities.mass_funcs_to_array_func(mass_grids,mass_tensor_indicies)

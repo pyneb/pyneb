@@ -15,6 +15,7 @@ import utils
 today = date.today()
 ### Define nucleus data path (assumes our github structure)
 nucleus = "232U"
+use_mass = True
 data_path = f"../../PES/{nucleus}.h5"
 ### defines PES object from utils.py
 PES = utils.PES(data_path)
@@ -28,15 +29,17 @@ mass_tensor_indicies = ['20','30']
 
 #Define potential function
 # note this interpolator only interpolates points or arrays of points, no grids.
-V_func = utilities.NDInterpWithBoundary(uniq_coords,EE,boundaryHandler='exponential',minVal=0)
+V_func = utilities.NDInterpWithBoundary(uniq_coords,EE,boundaryHandler='exponential',symmExtend=[True,True])
 
 
 # Create dictionary of functions for each comp of the tensor
-#mass_grids = {key: py_neb.NDInterpWithBoundary(uniq_coords,mass_grids[key],boundaryHandler='exponential',minVal=0) \
-#              for key in mass_keys}
+if use_mass == True:
+    mass_grids = {key: utilities.NDInterpWithBoundary(uniq_coords,mass_grids[key],boundaryHandler='exponential',symmExtend=[True,True]) \
+                  for key in mass_keys}
 # function returns matrix of functions
-#M_func = py_neb.mass_funcs_to_array_func(mass_grids,mass_tensor_indicies)
-M_func = None # for LAP 
+    M_func = utilities.mass_funcs_to_array_func(mass_grids,mass_tensor_indicies)
+else:
+    M_func = None # for LAP 
 auxFunc = None # for MEP
 
 
@@ -48,17 +51,10 @@ E_gs = EE[gs_ind]
 #########
 E_gs = V_func(gs_coord)
 V_func_shift = V_func#utilities.shift_func(V_func,shift=-1.0*E_gs)
-'''
-fig, ax = plt.subplots(1,1,figsize = (12, 10))
-im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,15))
-ax.contour(grids[0],grids[1],EE,colors=['black'],levels=[E_gs])      
-plt.plot(gs_coord[0],gs_coord[1],'o',ms=12,color='black')
-cbar = fig.colorbar(im)
-plt.show()
-'''
-NImgs = 66
-k = 10.0
-kappa = 20.0
+
+NImgs = 102
+k = 8.0
+kappa = 10.0
 E_const = E_gs
 nDims = len(uniq_coords)
 force_R0 = False
@@ -70,12 +66,12 @@ springForceFix = (springR0,springRN)
 
 ### Optimization parameters 
 ## Velocity Verlet parameter set
-dt = .1
-NIterations = 100
+dt = .5
+NIterations = 5000
 
 ### define initial path
 R0 = gs_coord # NEB starting point
-RN = (298,30) # NEB end point
+RN = (295,32) # NEB end point
 init_path_constructor = utils.init_NEB_path(R0,RN,NImgs)
 init_path = init_path_constructor.linear_path()
 
@@ -84,13 +80,16 @@ neb_params ={'k':k,'kappa':kappa,'constraintEneg':E_const}
 method_dict = {'k':k,'kappa':kappa,'NImages': NImgs,'Iterations':NIterations,'dt':dt,'optimization':'QM Verlet','HarmonicForceEnds': endPointFix, \
                    'SpringForceEnds': springForceFix}
 
+
+
+
     
     
 #### Compute LAP
 # LAP function you want to minimize
 target_func_LAP = utilities.TargetFunctions.action_squared
 # LAP specialized function that takes the gradient of target function
-target_func_grad_LAP = solvers.forward_action_grad 
+target_func_grad_LAP = solvers.GradientApproximations().discrete_sqr_action_grad
 
 LAP_params = {'potential':V_func_shift,'nPts':NImgs,'nDims':nDims,'mass':M_func,'endpointSpringForce': springForceFix ,\
                  'endpointHarmonicForce':endPointFix,'target_func':target_func_LAP,\
@@ -119,7 +118,7 @@ action_array_LAP = np.zeros(NIterations+2)
 for i,path in enumerate(allPaths_LAP):
     action_array_LAP[i] = utilities.TargetFunctions.action(path, V_func_shift,M_func)[0]
 min_action_LAP = np.around(action_array_LAP[-1],2)
-title = 'Eric_'+nucleus+'_LAP'
+title = 'Eric_'+nucleus+'_LAP_Mass_'+str(use_mass)
 
 ### write run meta data to txt file.
 metadata = {'title':title,'Created_by': 'Eric','Created_on':today.strftime("%b-%d-%Y"),'method':'NEB-LAP','method_description':method_dict, \
@@ -133,13 +132,11 @@ np.savetxt(title+'_path.txt',final_path_LAP,comments='',delimiter=',',header="Q2
 
 
 
-
-'''
 #### Compute MEP
 # MEP function you want to minimize
-target_func_MEP = solvers.potential_target_func
+target_func_MEP = utilities.TargetFunctions.mep_default
 # MEP specialized function that takes the gradient of target function
-target_func_grad_MEP = solvers.potential_central_grad 
+target_func_grad_MEP = utilities.potential_central_grad 
 MEP_params = {'potential':V_func_shift,'nPts':NImgs,'nDims':nDims,'auxFunc':auxFunc,'endpointSpringForce': springForceFix ,\
                  'endpointHarmonicForce':endPointFix,'target_func':target_func_MEP,\
                  'target_func_grad':target_func_grad_MEP,'nebParams':neb_params}
@@ -152,7 +149,7 @@ allPaths_MEP = minObj_MEP.allPts
 t1 = time.time()
 total_time_MEP = t1 - t0
 final_path_MEP = allPaths_MEP[-1]
-title = 'Eric_'+nucleus+'_MEP'
+title = 'Eric_'+nucleus+'_MEP_Mass_'+str(use_mass)
 print('total_time MEP: ',total_time_MEP)
 
 ### Compute the action of each path in allPts_MEP
@@ -170,9 +167,6 @@ utils.make_metadata(metadata)
     ## model description {k: 10, kappa: 20, nPts: 22, nIterations: 750, optimization: velocity_verlet, endpointForce: on}
 np.savetxt(title+'_path.txt',final_path_MEP,comments='',delimiter=',',header="Q20,Q30")
 
-'''
-
-
 
 
 
@@ -184,7 +178,7 @@ im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=Max
 ax.contour(grids[0],grids[1],EE,colors=['black'],levels=[E_gs])              
 ax.plot(init_path[:, 0], init_path[:, 1], '.-', color = 'orange',ms=10,label='Initial Path')
 ax.plot(final_path_LAP[:, 0], final_path_LAP[:, 1], '.-',ms=10,label='LAP',color='purple')
-#ax.plot(final_path_MEP[:, 0], final_path_MEP[:, 1], '.-',ms=10,label='MEP',color='red')    
+ax.plot(final_path_MEP[:, 0], final_path_MEP[:, 1], '.-',ms=10,label='MEP',color='red')    
 ax.set_ylabel('$Q_{30}$',size=20)
 ax.set_xlabel('$Q_{20}$',size=20)
 ax.set_title('M = '+str(NIterations)+' N = '+str(NImgs)+' k='+str(k)+' kappa='+str(kappa))
@@ -192,13 +186,14 @@ ax.set_title('M = '+str(NIterations)+' N = '+str(NImgs)+' k='+str(k)+' kappa='+s
 
 ax.legend()
 cbar = fig.colorbar(im)
-#plt.savefig('M = '+str(NIterations)+' N = '+str(NImgs)+' k='+str(k)+' kappa='+str(kappa)+'.pdf')
+plt.savefig(nucleus+'_Mass_'+str(use_mass)+'_M_'+str(NIterations)+'_N_'+str(NImgs)+'k_'+str(k)+'kappa_'+str(kappa)+'_path.pdf')
 plt.show()  
 plt.clf()
 
 plt.plot(range(NIterations+2),action_array_LAP,label='LAP '+str(min_action_LAP))
-#plt.plot(range(NIterations+2),action_array_MEP,label='MEP '+str(min_action_MEP))
+plt.plot(range(NIterations+2),action_array_MEP,label='MEP '+str(min_action_MEP))
 plt.xlabel('Iterations')
 plt.ylabel('Action')
 plt.legend()
+plt.savefig(nucleus+'_Mass_'+str(use_mass)+'_M_'+str(NIterations)+'_N_'+str(NImgs)+'k_'+str(k)+'kappa_'+str(kappa)+'_action.pdf')
 plt.show()
