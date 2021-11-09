@@ -401,6 +401,54 @@ class GradientApproximations:
         return gradOfAction, gradOfPes
     
     def discrete_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
+                                 target_func):
+        """
+
+        Performs discretized action gradient, needs numerical PES still
+
+        :Maintainer: Kyle
+        """
+        eps = fdTol
+
+        gradOfPes = np.zeros(path.shape)
+        gradOfBeff = np.zeros(path.shape)
+        gradOfAction = np.zeros(path.shape)
+        dr = np.zeros(path.shape)
+        beff = np.zeros(potentialOnPath.shape)
+
+        nPts, nDims = path.shape
+
+        #Build grad of potential
+        gradOfPes = midpoint_grad(potential,path,eps=eps)
+
+        dr[1:,:] = np.array([path[ptIter] - path[ptIter-1] \
+                               for ptIter in range(1,nPts)])
+
+        beff[1] = np.dot(np.dot(massOnPath[1],dr[1]),dr[1])/np.sum(dr[1,:]**2)
+
+        for ptIter in range(1,nPts-1):
+
+            gradOfBeff[ptIter] = beff_grad(mass,path[ptIter],dr[ptIter],eps=eps)
+
+            beff[ptIter+1] = np.dot(np.dot(massOnPath[ptIter+1],dr[ptIter+1]),dr[ptIter+1])/np.sum(dr[ptIter+1,:]**2)
+
+            dnorm=np.linalg.norm(dr[ptIter])
+            dnormP1=np.linalg.norm(dr[ptIter+1])
+            dhat = dr[ptIter]/dnorm
+            dhatP1 = dr[ptIter+1]/dnormP1
+            bv_root = np.sqrt(2.0*beff[ptIter]*potentialOnPath[ptIter])
+            bv_rootm1 = np.sqrt(2.0*beff[ptIter-1]*potentialOnPath[ptIter-1])
+            bv_rootp1 = np.sqrt(2.0*beff[ptIter+1]*potentialOnPath[ptIter+1])
+            gradOfAction[ptIter] = 0.5*(\
+                (bv_root + bv_rootm1)*dhat-\
+                (bv_root + bv_rootp1)*dhatP1+\
+                (beff[ptIter]*gradOfPes[ptIter] + potentialOnPath[ptIter]*gradOfBeff[ptIter])*\
+                    (dnorm+dnormP1)/bv_root)
+
+        return gradOfAction, gradOfPes
+
+
+    def discrete_action_grad_const(self,path,potential,potentialOnPath,mass,massOnPath,\
                             target_func):
         """
         
