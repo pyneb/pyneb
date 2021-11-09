@@ -195,7 +195,7 @@ class NDInterpLogger:
 class DijkstraLogger:
     def __init__(self,djkInst,logLevel=1,fName=None):
         self.logLevel = logLevel
-        if self.logLevel not in [0,1]:
+        if self.logLevel not in [0,1,2]:
             raise ValueError("DijkstraLogger logLevel "+str(self.logLevel)+\
                              " not allowed.")
         
@@ -203,7 +203,7 @@ class DijkstraLogger:
         self.djkInst = djkInst
         os.makedirs("logs",exist_ok=True)
         
-        if self.logLevel == 1:
+        if self.logLevel in [1,2]:
             if fName is None:
                 self.fileName = "logs/"+self.initTime+".djk"
             else:
@@ -236,7 +236,7 @@ class DijkstraLogger:
     def log(self,variables,variableNames):
         if self.logLevel == 0:
             return None
-        elif self.logLevel == 1:
+        elif self.logLevel in [1,2]:
             self._write_level_1(variables,variableNames)
         
         return None
@@ -256,7 +256,6 @@ class DijkstraLogger:
             #Unfortunately this doesn't seem to be abstractable, but perhaps I
             #don't need it to be
             if nm == "tentativeDistance":
-                print(var.shape)
                 #HDF5 files can store np.inf in an array just fine
                 dtype = np.dtype({"names":["data","mask"],"formats":[float,bool]})
                 arr = np.zeros(var.shape,dtype=dtype)

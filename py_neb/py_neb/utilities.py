@@ -1029,25 +1029,6 @@ def shift_func(func_in,shift=10**(-4)):
         return func_in(coords) - shift
     return func_out
 
-class RectBivariateSplineWrapper(RectBivariateSpline):
-    """
-    :Maintainer: Daniel
-    """
-    def __init__(self,*args,**kwargs):
-        warnings.warn("Deprecating RectBivariateSplineWrapper in favor of "\
-                      +"2D method in NDInterpWithBoundary")
-        super(RectBivariateSplineWrapper,self).__init__(*args,**kwargs)
-        self.function = self.func_wrapper()
-        
-    def func_wrapper(self):
-        def func_out(coords):
-            if coords.shape == (2,):
-                coords = coords.reshape((1,2))
-                
-            res = self.__call__(coords[:,0],coords[:,1],grid=False)
-            return res
-        return func_out
-  
 class NDInterpWithBoundary:
     """
     Interpolates a grid in D dimensions, with extra handling for points outside
