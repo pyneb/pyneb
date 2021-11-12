@@ -374,3 +374,90 @@ class LoadDijkstraLog:
                                mask=dsetsDict["tentativeDistance"]["mask"])
             
         return None
+    
+class DPMLogger:
+    def __init__(self,classInst,logLevel=1,fName=None):
+        os.makedirs("logs",exist_ok=True)
+        
+        if fName is None:
+            fName = datetime.datetime.now().isoformat()
+        self.fName = "logs/"+fName+".dpm"
+        if logLevel not in [0,1]:
+            raise ValueError("logLevel "+str(logLevel)+" not allowed")
+        self.logLevel = logLevel
+        
+        self.classInst = classInst
+        self._initialize_log()
+        
+    def _initialize_log(self):
+        if self.logLevel == 1:
+            h5File = h5py.File(self.fName,"w")
+            
+            h5File.attrs.create("initialInds",np.array(self.classInst.initialInds))
+            h5File.attrs.create("initialPoint",np.array(self.classInst.initialPoint))
+            h5File.attrs.create("target_func",self.classInst.target_func.__qualname__)
+            
+            #TODO: allow for naming the coordinates
+            h5File.create_group("uniqueCoords")
+            for (cIter, coord) in enumerate(self.classInst.uniqueCoords):
+                h5File["uniqueCoords"].create_dataset("coord_"+str(cIter),\
+                                                      data=np.array(coord))
+            h5File.create_dataset("potArr",data=self.classInst.potArr)
+            if self.classInst.trimVals[0] is not None:
+                h5File["potArr"].attrs.create("minTrim",data=self.classInst.trimVals[0])
+            if self.classInst.trimVals[1] is not None:
+                h5File["potArr"].attrs.create("maxTrim",data=self.classInst.trimVals[1])
+                
+            h5File.create_dataset("inertArr",data=self.classInst.inertArr)
+            
+            h5File.create_dataset("endpointIndices",data=np.array(self.classInst.endpointIndices))
+            h5File.create_dataset("allowedEndpoints",data=self.classInst.allowedEndpoints)
+            
+            h5File.close()
+        
+        return None
+        
+    def truncated_log_init(self):
+        if self.logLevel == 1:
+            nEndpoints = len(self.classInst.endpointIndices)
+            self.padLen = len(str(nEndpoints))
+            
+            h5File = h5py.File(self.fName,"a")
+            
+            for (i,idx) in enumerate(self.classInst.endpointIndices):
+                gpNm = "endpoint_"+str(i).zfill(self.padLen)
+                h5File.create_group(gpNm)
+                h5File[gpNm].attrs.create("endpoint",[c[idx] for c in self.classInst.coordMeshTuple])
+                
+                maxIters = idx[1] - self.classInst.initialInds[1]
+                h5File[gpNm].create_dataset("pathInds",shape=(maxIters+1,self.classInst.nDims),\
+                                            dtype=int)
+                h5File[gpNm].create_dataset("path",shape=(maxIters+1,self.classInst.nDims),\
+                                            dtype=float)
+                h5File[gpNm].attrs.create("dist",0.)
+            
+            h5File.close()
+        
+        return None
+    
+    def log_truncated(self,endptIter,updateRange,pathInds,path,pathDist):
+        if self.logLevel == 1:
+            gpNm = "endpoint_"+str(endptIter).zfill(self.padLen)
+            slc = slice(updateRange[0],updateRange[1])
+            
+            h5File = h5py.File(self.fName,"a")
+            h5File[gpNm]["pathInds"][slc] = pathInds[slc]
+            h5File[gpNm]["path"][slc] = path[slc]
+            h5File[gpNm].attrs["dist"] = pathDist
+            
+            h5File.close()
+        
+        return None
+    
+    def truncated_log(self):
+        return None
+    
+class LoadDPMLogger:
+    def __init__(self):
+        sys.exit("asdf")
+        
