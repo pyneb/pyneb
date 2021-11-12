@@ -67,6 +67,11 @@ class TargetFunctions:
         for ptIter in range(1,nPoints):
             coordDiff = path[ptIter] - path[ptIter - 1]
             dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
+            if dist<0:
+                print(dist)
+                print(path)
+                print(potArr)
+                print(massArr)
             actOut += np.sqrt(2*potArr[ptIter]*dist)
         
         return actOut, potArr, massArr
@@ -381,11 +386,12 @@ class GradientApproximations:
                                for ptIter in range(1,nPts)])
 
         beff[1] = np.dot(np.dot(massOnPath[1],dr[1]),dr[1])/np.sum(dr[1,:]**2)
-
+        
+        if mass is not None:
+            for ptIter in range(1,nPts-1):
+                gradOfBeff[ptIter] = beff_grad(mass,path[ptIter],dr[ptIter],eps=eps)
+        
         for ptIter in range(1,nPts-1):
-
-            gradOfBeff[ptIter] = beff_grad(mass,path[ptIter],dr[ptIter],eps=eps)
-
             beff[ptIter+1] = np.dot(np.dot(massOnPath[ptIter+1],dr[ptIter+1]),dr[ptIter+1])/np.sum(dr[ptIter+1,:]**2)
             
             dnorm=np.linalg.norm(dr[ptIter])
