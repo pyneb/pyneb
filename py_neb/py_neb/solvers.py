@@ -1350,98 +1350,6 @@ class DynamicProgramming:
         
         self.logger = DPMLogger(self,logLevel=logLevel,fName=fName)
         self.logFreq = logFreq
-        
-    def _select_next_point(self,currentInds,relativeNeighborInds,currentDist):
-        indsToCheck = np.array(currentInds) + relativeNeighborInds
-        
-        #Removing indices that take us off-grid. See e.g.
-        #https://stackoverflow.com/a/20528566
-        isNegativeBool = [indsToCheck[:,i] < 0 for i in range(self.nDims)]
-        indsToCheck = \
-            indsToCheck[np.logical_not(np.logical_or.reduce(isNegativeBool))]
-        isTooBigBool = [indsToCheck[:,i] >= self.potArr.shape[i] for i in \
-                        range(self.nDims)]
-        indsToCheck = \
-            indsToCheck[np.logical_not(np.logical_or.reduce(isTooBigBool))]
-            
-        indsToCheck = [tuple(i) for i in indsToCheck]
-        
-        coords = np.zeros((2,self.nDims))
-        coords[0] = np.array([c[currentInds] for c in self.coordMeshTuple])
-        
-        enegs = np.zeros(2)
-        enegs[0] = self.potArr[currentInds]
-        
-        inertArr = np.zeros((2,self.nDims,self.nDims))
-        inertArr[0] = self.inertArr[currentInds]
-        
-        minDist = np.inf
-        minInds = None
-        
-        for inds in indsToCheck:
-            coords[1] = np.array([c[inds] for c in self.coordMeshTuple])
-            enegs[1] = self.potArr[inds]
-            inertArr[1] = self.inertArr[inds]
-            
-            newDist = self.target_func(coords,enegs,inertArr)[0] + currentDist
-            if newDist < minDist:
-                minDist = newDist
-                minInds = inds
-        
-        return minInds, minDist
-    
-    def _call_truncated(self,nNeighbors):
-        self.logger.truncated_log_init()
-        
-        listOfRelativeInds = [np.arange(-nNeighbors[0],nNeighbors[0]+1)]
-        listOfRelativeInds.append([1])
-        for n in nNeighbors[1:]:
-            listOfRelativeInds.append(np.arange(-n,n+1))
-        relativeNeighborInds = list(itertools.product(*listOfRelativeInds))
-        
-        pathIndsDict = {}
-        pathDistsDict = {}
-        pathPtsDict = {}
-        for (endIter,endInds) in enumerate(self.endpointIndices):
-            maxIters = endInds[1] - self.initialInds[1]
-            
-            key = tuple([c[endInds] for c in self.coordMeshTuple])
-            
-            pathIndsDict[key] = np.zeros((maxIters+1,self.nDims),dtype=int)
-            pathIndsDict[key][0] = self.initialInds
-            pathDistsDict[key] = 0
-            pathPtsDict[key] = np.zeros((maxIters+1,self.nDims))
-            pathPtsDict[key][0] = [c[self.initialInds] for c in self.coordMeshTuple]
-            
-            currentInds = self.initialInds
-            for idxIter in range(1,maxIters):
-                minInds, pathDistsDict[key] = \
-                    self._select_next_point(currentInds,relativeNeighborInds,\
-                                            pathDistsDict[key])
-                pathIndsDict[key][idxIter] = minInds
-                pathPtsDict[key][idxIter] = [c[minInds] for c in self.coordMeshTuple]
-                currentInds = minInds
-                
-                if idxIter % self.logFreq == 0:
-                    self.logger.log_truncated(endIter,(idxIter-self.logFreq,idxIter),\
-                                              pathIndsDict[key],pathPtsDict[key],\
-                                              pathPtsDict[key])
-            
-            pathIndsDict[key][maxIters] = endInds
-            #Finalizing the action
-            coords = np.array([[c[currentInds] for c in self.coordMeshTuple],\
-                               [c[endInds] for c in self.coordMeshTuple]])
-            enegs = np.array([self.potArr[currentInds],self.potArr[endInds]])
-            inertArr = np.array([self.inertArr[currentInds],self.inertArr[endInds]])
-            
-            pathDistsDict[key] += self.target_func(coords,enegs,inertArr)[0]
-            pathPtsDict[key][-1] = [c[endInds] for c in self.coordMeshTuple]
-            
-            self.logger.log_truncated(endIter,(int(maxIters/self.logFreq)*self.logFreq,maxIters+1),\
-                                      pathIndsDict[key],pathPtsDict[key],\
-                                      pathDistsDict[key])
-        
-        return pathIndsDict, pathPtsDict, pathDistsDict
     
     def _gen_slice_inds(self,constInd):
         sliceCopy = self.uniqueSliceInds.copy()
@@ -1475,7 +1383,7 @@ class DynamicProgramming:
         
         return previousIndsArr, distArr
     
-    def _call_full(self):
+    def __call__(self):
         previousIndsArr = -1*np.ones(self.potArr.shape+(self.nDims,),dtype=int)
         previousIndsArr[self.initialInds] = self.initialInds
         previousIndsArr[:,self.initialInds[1]+1] = self.initialInds
@@ -1496,10 +1404,10 @@ class DynamicProgramming:
         inertArr[0] = self.inertArr[self.initialInds]
         for idx in currentInds:
             coords[1] = [c[idx] for c in self.coordMeshTuple]
-            enegs[1] = self.potArr[idx]
+            potArr[1] = self.potArr[idx]
             inertArr[1] = self.inertArr[idx]
             
-            distArr[idx],_,_ = self.target_func(coords,enegs,inertArr)
+            distArr[idx],_,_ = self.target_func(coords,potArr,inertArr)
         
         #Main loop. Assumes truncation of PES, so that negative energies outside
         #the outer turning line are set to be small but positive.
@@ -1508,16 +1416,24 @@ class DynamicProgramming:
             previousIndsArr, distArr = \
                 self._select_prior_points(q2Idx,previousIndsArr,distArr)
                 
+            if q2Idx % self.logFreq == 0:
+                updateRange = (q2Idx-self.logFreq,q2Idx)
+                self.logger.log(previousIndsArr,distArr,updateRange)
+                
+        updateRange = (finalIdx-self.logFreq,finalIdx) #Some overlap here but whatever
+        self.logger.log(previousIndsArr,distArr,updateRange)
+        
         #Getting paths given previousIndsArr
         minPathDict = {}
         minIndsDict = {}
         distsDict = {}
         for endInds in self.endpointIndices:
+            key = tuple([c[endInds] for c in self.coordMeshTuple])
             allPreviousInds = self._gen_slice_inds(endInds[1]-1)
             
-            distsDict[endInds] = np.inf
+            distsDict[key] = np.inf
             for ind in allPreviousInds:
-                tentativePath = [endInds,ind]
+                tentativePath = [endInds]
                 while ind != self.initialInds:
                     tentativePath.append(ind)
                     ind = tuple(previousIndsArr[ind])
@@ -1529,28 +1445,16 @@ class DynamicProgramming:
                 enegs = np.array([self.potArr[i] for i in tentativePath])
                 inerts = np.array([self.inertArr[i] for i in tentativePath])
                 
+                print(coords)
+                print(enegs)
+                # print(inerts)
                 tentativeDist,_,_ = self.target_func(coords,enegs,inerts)
-                if tentativeDist < distsDict[endInds]:
-                    minPathDict[endInds] = tentativePath
-                    minIndsDict[endInds] = coords
-                    distsDict[endInds] = tentativeDist
+                print(tentativeDist)
+                if tentativeDist < distsDict[key]:
+                    minPathDict[key] = tentativePath
+                    minIndsDict[key] = coords
+                    distsDict[key] = tentativeDist
+        
+        self.logger.finalize(minPathDict,minIndsDict,distsDict)
         
         return minIndsDict, minPathDict, distsDict
-        
-    def __call__(self,nNeighbors=None):
-        if nNeighbors is None:
-            ret = self._call_full()
-        else:
-            #Allows for variable number of neighbors
-            if not isinstance(nNeighbors,np.ndarray):
-                nNeighbors = nNeighbors*np.ones(self.nDims-1,dtype=int)
-                
-            if nNeighbors.shape != (self.nDims-1,):
-                raise ValueError("nNeighbors.shape "+str(nNeighbors.shape)+\
-                                 " does not match expected shape ("+str(self.nDims-1)+",)")
-            if not np.issubdtype(nNeighbors.dtype,np.integer):
-                raise TypeError("nNeighbors must be an integer type")
-                
-            ret = self._call_truncated(nNeighbors)
-        
-        return ret

@@ -393,6 +393,7 @@ class DPMLogger:
         if self.logLevel == 1:
             h5File = h5py.File(self.fName,"w")
             
+            #Standard logging of the grid data, allowed endpoints, etc.
             h5File.attrs.create("initialInds",np.array(self.classInst.initialInds))
             h5File.attrs.create("initialPoint",np.array(self.classInst.initialPoint))
             h5File.attrs.create("target_func",self.classInst.target_func.__qualname__)
@@ -413,49 +414,86 @@ class DPMLogger:
             h5File.create_dataset("endpointIndices",data=np.array(self.classInst.endpointIndices))
             h5File.create_dataset("allowedEndpoints",data=self.classInst.allowedEndpoints)
             
+            #Initializing datasets
+            previousIndsArrInit = -1*np.ones(self.classInst.potArr.shape+(self.classInst.nDims,),\
+                                             dtype=int)
+            h5File.create_dataset("previousIndsArr",data=previousIndsArrInit)
+            distArrInit = np.inf*np.ones(self.classInst.potArr.shape)
+            h5File.create_dataset("distArr",data=distArrInit)
+            
             h5File.close()
         
         return None
-        
-    def truncated_log_init(self):
+    
+    def log(self,previousIndsArr,distArr,updateRange):
         if self.logLevel == 1:
+            h5File = h5py.File(self.fName,"a")
+            
+            #Honestly not sure if I need to do it this way, but whatever
+            slc = slice(*updateRange)
+            h5File["previousIndsArr"][slc] = previousIndsArr[slc]
+            h5File["distArr"][slc] = distArr[slc]
+            
+            h5File.close()
+        
+        return None
+    
+    def finalize(self,minPathDict,minIndsDict,distsDict):
+        if self.logLevel == 1:
+            h5File = h5py.File(self.fName,"a")
+            
             nEndpoints = len(self.classInst.endpointIndices)
-            self.padLen = len(str(nEndpoints))
+            padLen = len(str(nEndpoints))
             
-            h5File = h5py.File(self.fName,"a")
-            
-            for (i,idx) in enumerate(self.classInst.endpointIndices):
-                gpNm = "endpoint_"+str(i).zfill(self.padLen)
+            for (keyIter,key) in enumerate(distsDict.keys()):
+                gpNm = "endpoint_"+str(keyIter).zfill(padLen)
                 h5File.create_group(gpNm)
-                h5File[gpNm].attrs.create("endpoint",[c[idx] for c in self.classInst.coordMeshTuple])
+                h5File[gpNm].attrs.create("endpoint",key)
+                h5File[gpNm].create_dataset("inds",data=minIndsDict[key])
+                h5File[gpNm].create_dataset("points",data=minPathDict[key])
+            
+            h5File.close()
+        
+        return None
+    # def truncated_log_init(self):
+    #     if self.logLevel == 1:
+    #         nEndpoints = len(self.classInst.endpointIndices)
+    #         self.padLen = len(str(nEndpoints))
+            
+    #         h5File = h5py.File(self.fName,"a")
+            
+    #         for (i,idx) in enumerate(self.classInst.endpointIndices):
+    #             gpNm = "endpoint_"+str(i).zfill(self.padLen)
+    #             h5File.create_group(gpNm)
+    #             h5File[gpNm].attrs.create("endpoint",[c[idx] for c in self.classInst.coordMeshTuple])
                 
-                maxIters = idx[1] - self.classInst.initialInds[1]
-                h5File[gpNm].create_dataset("pathInds",shape=(maxIters+1,self.classInst.nDims),\
-                                            dtype=int)
-                h5File[gpNm].create_dataset("path",shape=(maxIters+1,self.classInst.nDims),\
-                                            dtype=float)
-                h5File[gpNm].attrs.create("dist",0.)
+    #             maxIters = idx[1] - self.classInst.initialInds[1]
+    #             h5File[gpNm].create_dataset("pathInds",shape=(maxIters+1,self.classInst.nDims),\
+    #                                         dtype=int)
+    #             h5File[gpNm].create_dataset("path",shape=(maxIters+1,self.classInst.nDims),\
+    #                                         dtype=float)
+    #             h5File[gpNm].attrs.create("dist",0.)
             
-            h5File.close()
+    #         h5File.close()
         
-        return None
+    #     return None
     
-    def log_truncated(self,endptIter,updateRange,pathInds,path,pathDist):
-        if self.logLevel == 1:
-            gpNm = "endpoint_"+str(endptIter).zfill(self.padLen)
-            slc = slice(updateRange[0],updateRange[1])
+    # def log_truncated(self,endptIter,updateRange,pathInds,path,pathDist):
+    #     if self.logLevel == 1:
+    #         gpNm = "endpoint_"+str(endptIter).zfill(self.padLen)
+    #         slc = slice(updateRange[0],updateRange[1])
             
-            h5File = h5py.File(self.fName,"a")
-            h5File[gpNm]["pathInds"][slc] = pathInds[slc]
-            h5File[gpNm]["path"][slc] = path[slc]
-            h5File[gpNm].attrs["dist"] = pathDist
+    #         h5File = h5py.File(self.fName,"a")
+    #         h5File[gpNm]["pathInds"][slc] = pathInds[slc]
+    #         h5File[gpNm]["path"][slc] = path[slc]
+    #         h5File[gpNm].attrs["dist"] = pathDist
             
-            h5File.close()
+    #         h5File.close()
         
-        return None
+    #     return None
     
-    def truncated_log(self):
-        return None
+    # def truncated_log(self):
+    #     return None
     
 class LoadDPMLogger:
     def __init__(self):
