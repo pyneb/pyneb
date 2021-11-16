@@ -1376,7 +1376,7 @@ class DynamicProgramming:
                 enegs[0] = self.potArr[p]
                 masses[0] = self.inertArr[p]
                 
-                tentDist, _, _ = self.target_func(coords,enegs,masses)
+                tentDist = distArr[p] + self.target_func(coords,enegs,masses)[0]
                 if tentDist < distArr[idx]: #distArr is initialized to infinity
                     previousIndsArr[idx] = p
                     distArr[idx] = tentDist
