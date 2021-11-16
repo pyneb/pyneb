@@ -1419,13 +1419,13 @@ class DynamicProgramming:
             if q2Idx % self.logFreq == 0:
                 updateRange = (q2Idx-self.logFreq,q2Idx)
                 self.logger.log(previousIndsArr,distArr,updateRange)
-                
+        
         updateRange = (finalIdx-self.logFreq,finalIdx) #Some overlap here but whatever
         self.logger.log(previousIndsArr,distArr,updateRange)
         
         #Getting paths given previousIndsArr
-        minPathDict = {}
         minIndsDict = {}
+        minPathDict = {}
         distsDict = {}
         for endInds in self.endpointIndices:
             key = tuple([c[endInds] for c in self.coordMeshTuple])
@@ -1445,14 +1445,10 @@ class DynamicProgramming:
                 enegs = np.array([self.potArr[i] for i in tentativePath])
                 inerts = np.array([self.inertArr[i] for i in tentativePath])
                 
-                print(coords)
-                print(enegs)
-                # print(inerts)
                 tentativeDist,_,_ = self.target_func(coords,enegs,inerts)
-                print(tentativeDist)
                 if tentativeDist < distsDict[key]:
-                    minPathDict[key] = tentativePath
-                    minIndsDict[key] = coords
+                    minIndsDict[key] = tentativePath
+                    minPathDict[key] = coords
                     distsDict[key] = tentativeDist
         
         self.logger.finalize(minPathDict,minIndsDict,distsDict)

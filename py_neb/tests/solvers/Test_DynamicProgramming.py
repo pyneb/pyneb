@@ -182,7 +182,11 @@ class _select_prior_points_(unittest.TestCase):
 class __call___(unittest.TestCase):
     def test_larger_grid(self):
         def dist_func(coords,enegs,masses):
-            return enegs[1]*np.linalg.norm(coords[1]-coords[0]), enegs, masses
+            val = 0
+            for ptIter in range(1,coords.shape[0]):
+                val += np.sqrt(enegs[ptIter])*np.linalg.norm(coords[ptIter]-coords[ptIter-1])
+            
+            return val, enegs, masses
         
         x1 = np.array([0.,0.3,0.6,1])
         x2 = np.array([0.,0.5,1])
@@ -193,10 +197,14 @@ class __call___(unittest.TestCase):
         finalPoint = np.array([1.,1])
         
         dp = DynamicProgramming(initialPoint,coordMeshTuple,zz,target_func=dist_func,\
-                                allowedEndpoints=finalPoint,logLevel=1)
+                                allowedEndpoints=finalPoint,logLevel=0)
             
         minIndsDict, minPathDict, distsDict = dp()
-        print(distsDict)
+        
+        allPaths = np.array([[[0,0]]+[[0.3,x2[i]]]+[[0.6,x2[j]]]+[[1,1]] for i in range(3) \
+                             for j in range(3)])
+        acts = [dist_func(p,p[:,0]+2*p[:,1],None)[0] for p in allPaths]
+        print(acts)
         
         return None
     
