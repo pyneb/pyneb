@@ -1457,7 +1457,7 @@ class InterpolatedPath:
         """
         self.path = discretePath
         
-        defaultKWargs = {"full_output":True,"s":0}
+        defaultKWargs = {"full_output":True,"s":0,"k":1}
         for arg in defaultKWargs:
             if arg not in kwargs:
                 kwargs[arg] = defaultKWargs[arg]
