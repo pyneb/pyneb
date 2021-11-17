@@ -1391,28 +1391,12 @@ class DynamicProgramming:
         distArr = np.inf*np.ones(self.potArr.shape)
         distArr[self.initialInds] = 0
         
-        #Initializing distance array to first visited points
-        currentInds = self._gen_slice_inds(self.initialInds[1]+1)
-        
-        coords = np.zeros((2,self.nDims))
-        coords[0] = [c[self.initialInds] for c in self.coordMeshTuple]
-        
-        potArr = np.zeros(2)
-        potArr[0] = self.potArr[self.initialInds]
-        
-        inertArr = np.zeros((2,self.nDims,self.nDims))
-        inertArr[0] = self.inertArr[self.initialInds]
-        for idx in currentInds:
-            coords[1] = [c[idx] for c in self.coordMeshTuple]
-            potArr[1] = self.potArr[idx]
-            inertArr[1] = self.inertArr[idx]
-            
-            distArr[idx],_,_ = self.target_func(coords,potArr,inertArr)
-        
         #Main loop. Assumes truncation of PES, so that negative energies outside
-        #the outer turning line are set to be small but positive.
+        #the outer turning line are set to be small but positive. Because 
+        #distArr is initialized to np.inf except at the origin, we don't have
+        #to initialize the first column separately.
         finalIdx = np.max(np.array(self.endpointIndices)[:,1])            
-        for q2Idx in range(self.initialInds[1]+2,finalIdx):
+        for q2Idx in range(self.initialInds[1]+1,finalIdx):
             previousIndsArr, distArr = \
                 self._select_prior_points(q2Idx,previousIndsArr,distArr)
                 
@@ -1445,6 +1429,7 @@ class DynamicProgramming:
                 enegs = np.array([self.potArr[i] for i in tentativePath])
                 inerts = np.array([self.inertArr[i] for i in tentativePath])
                 
+                #Not efficient given distArr, but also not super costly (I think)
                 tentativeDist,_,_ = self.target_func(coords,enegs,inerts)
                 if tentativeDist < distsDict[key]:
                     minIndsDict[key] = tentativePath
