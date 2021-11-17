@@ -155,7 +155,7 @@ class __call___(unittest.TestCase):
         
         #Verified in Mathematica to floating point precision
         correctDistDict = {tuple(finalPoints[0]):2.0109339744759227,\
-                           tuple(finalPoints[1]):1.6050435474272389}
+                            tuple(finalPoints[1]):1.6050435474272389}
         self.assertEqual(distsDict,correctDistDict)
         
         return None
