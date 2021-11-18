@@ -427,10 +427,10 @@ class DPMLogger:
     
     def log(self,previousIndsArr,distArr,updateRange):
         if self.logLevel == 1:
+            print("Logging slice ",updateRange)
             h5File = h5py.File(self.fName,"a")
             
-            #Honestly not sure if I need to do it this way, but whatever
-            slc = slice(*updateRange)
+            slc = (slice(None),slice(*updateRange))+(self.classInst.nDims-2)*(slice(None,),)
             h5File["previousIndsArr"][slc] = previousIndsArr[slc]
             h5File["distArr"][slc] = distArr[slc]
             
@@ -438,64 +438,74 @@ class DPMLogger:
         
         return None
     
-    def finalize(self,minPathDict,minIndsDict,distsDict):
+    def finalize(self,minPathDict,minIndsDict,distsDict,runTime):
+        distsDType = np.dtype({"names":["endpoint","dist","strLabel"],\
+                               "formats":[(float,(self.classInst.nDims,)),float,\
+                                          h5py.string_dtype("utf-8")]})
+        
         if self.logLevel == 1:
             h5File = h5py.File(self.fName,"a")
+            h5File.create_group("endpoints")
+            distsArr = np.zeros(len(distsDict),dtype=distsDType)
             
             nEndpoints = len(self.classInst.endpointIndices)
             padLen = len(str(nEndpoints))
             
             for (keyIter,key) in enumerate(distsDict.keys()):
-                gpNm = "endpoint_"+str(keyIter).zfill(padLen)
+                gpNm = "endpoints/"+str(keyIter).zfill(padLen)
                 h5File.create_group(gpNm)
                 h5File[gpNm].attrs.create("endpoint",key)
                 h5File[gpNm].create_dataset("inds",data=minIndsDict[key])
                 h5File[gpNm].create_dataset("points",data=minPathDict[key])
+                
+                distsArr[keyIter]["endpoint"] = key
+                distsArr[keyIter]["dist"] = distsDict[key]
+                distsArr[keyIter]["strLabel"] = str(keyIter).zfill(padLen)
+            
+            h5File.attrs.create("runTime",runTime)
+            h5File.create_dataset("dists",data=distsArr)
             
             h5File.close()
         
         return None
-    # def truncated_log_init(self):
-    #     if self.logLevel == 1:
-    #         nEndpoints = len(self.classInst.endpointIndices)
-    #         self.padLen = len(str(nEndpoints))
-            
-    #         h5File = h5py.File(self.fName,"a")
-            
-    #         for (i,idx) in enumerate(self.classInst.endpointIndices):
-    #             gpNm = "endpoint_"+str(i).zfill(self.padLen)
-    #             h5File.create_group(gpNm)
-    #             h5File[gpNm].attrs.create("endpoint",[c[idx] for c in self.classInst.coordMeshTuple])
-                
-    #             maxIters = idx[1] - self.classInst.initialInds[1]
-    #             h5File[gpNm].create_dataset("pathInds",shape=(maxIters+1,self.classInst.nDims),\
-    #                                         dtype=int)
-    #             h5File[gpNm].create_dataset("path",shape=(maxIters+1,self.classInst.nDims),\
-    #                                         dtype=float)
-    #             h5File[gpNm].attrs.create("dist",0.)
-            
-    #         h5File.close()
-        
-    #     return None
-    
-    # def log_truncated(self,endptIter,updateRange,pathInds,path,pathDist):
-    #     if self.logLevel == 1:
-    #         gpNm = "endpoint_"+str(endptIter).zfill(self.padLen)
-    #         slc = slice(updateRange[0],updateRange[1])
-            
-    #         h5File = h5py.File(self.fName,"a")
-    #         h5File[gpNm]["pathInds"][slc] = pathInds[slc]
-    #         h5File[gpNm]["path"][slc] = path[slc]
-    #         h5File[gpNm].attrs["dist"] = pathDist
-            
-    #         h5File.close()
-        
-    #     return None
-    
-    # def truncated_log(self):
-    #     return None
     
 class LoadDPMLogger:
-    def __init__(self):
-        sys.exit("asdf")
+    def __init__(self,fName):
+        if not fName.endswith(".dpm"):
+            raise TypeError("File "+str(fName)+" does not have extension .dpm")
+        
+        scalarAttrs = ["runTime","target_func"]
+        tupleAttrs = ["initialInds","initialPoint"]
+        expectedDSets = ["allowedEndpoints","distArr","potArr","previousIndsArr","dists"]
+        
+        dsetsDict = {}
+        
+        h5File = h5py.File(fName,"r")
+        
+        for attr in h5File.attrs:
+            if attr in scalarAttrs:
+                setattr(self,attr,h5File.attrs[attr])
+            elif attr in tupleAttrs:
+                setattr(self,attr,tuple(np.array(h5File.attrs[attr])))
+            else:
+                warnings.warn("Attribute "+attr+" not recognized; will not be loaded")
+                
+        for d in expectedDSets:
+            if d in h5File:
+                setattr(self,d,np.array(h5File[d]))
+            else:
+                h5File.close()
+                raise ValueError("Dataset "+d+" expected but not found")
+        
+        self.uniqueCoords = [np.array(h5File["uniqueCoords"][c]) for c in h5File["uniqueCoords"]]
+        
+        self.pathIndsDict = {}
+        self.pathDict = {}
+        
+        for gp in h5File["endpoints"]:
+            key = tuple(np.array(h5File["endpoints"][gp].attrs["endpoint"]))
+            self.pathIndsDict[key] = np.array(h5File["endpoints"][gp]["inds"])
+            self.pathDict[key] = np.array(h5File["endpoints"][gp]["points"])
+        
+        h5File.close()
         
