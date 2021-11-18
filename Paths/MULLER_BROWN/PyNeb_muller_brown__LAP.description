@@ -1,0 +1,11 @@
+title: PyNeb_muller_brown__LAP
+Created_by: Eric
+Created_on: Nov-17-2021
+method: NEB-LAP
+method_description: {'k': 2.0, 'kappa': 1.0, 'NImages': 52, 'Iterations': 2000, 'dt': 0.5, 'optimization': 'Local FIRE', 'HarmonicForceEnds': (False, False), 'SpringForceEnds': (False, False)}
+masses: None
+E_gs: [-1.08166464]
+action: 1.7887860488750884
+run_time: 105.53671884536743
+initial_start_point: [0.62374582 0.02842809]
+initial_end_point: [-0.58862876  1.41304348]

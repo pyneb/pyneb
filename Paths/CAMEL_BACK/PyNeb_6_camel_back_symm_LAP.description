@@ -1,11 +1,11 @@
 title: PyNeb_6_camel_back_symm_LAP
 Created_by: Eric
-Created_on: Nov-16-2021
+Created_on: Nov-17-2021
 method: NEB-LAP
-method_description: {'k': 2.0, 'kappa': 1.0, 'NImages': 102, 'Iterations': 8000, 'dt': 0.1, 'optimization': 'QM Verlet', 'HarmonicForceEnds': (False, False), 'SpringForceEnds': (False, False), 'logLevel': 0}
+method_description: {'k': 2.0, 'kappa': 1.0, 'NImages': 52, 'Iterations': 8000, 'dt': 0.2, 'optimization': 'Local FIRE', 'HarmonicForceEnds': (False, False), 'SpringForceEnds': (False, False), 'logLevel': 0}
 masses: None
 E_gs: [-1.03154883]
-action: 5.514439570832008
-run_time: 1197.6075131893158
+action: 5.503121566042452
+run_time: 381.12916707992554
 initial_start_point: [-1.7, 0.79]
 initial_end_point: [1.7, -0.79]

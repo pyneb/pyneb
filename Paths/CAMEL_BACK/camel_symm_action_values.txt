@@ -1,0 +1,4 @@
+camel_symm
+LAP: 5.519
+MEP: 5.523
+DP: 5.545
