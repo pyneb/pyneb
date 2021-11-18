@@ -82,22 +82,12 @@ E_gs = V_func(gs_coord)
 print('E_gs: ',E_gs)
 V_func_shift = utilities.shift_func(V_func,shift=E_gs)#shift by the ground state
 EE = V_func_shift(np.array([xx,yy]))
-'''
-gradx, grady = np.gradient(EE, 10**-6, 10**-6)
-gradx = -gradx/np.linalg.norm(gradx)
-grady = -grady/np.linalg.norm(grady)
 
-fig, ax = plt.subplots(1,1,figsize = (12, 10))
 
-im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,4))
-ax.contour(grids[0],grids[1],EE,colors=['black'],levels=MaxNLocator(nbins = 15).tick_values(0,4))  
-plt.quiver(xx, yy, gradx , grady,headwidth=5,linewidth=5,headlength=5)
-cbar = fig.colorbar(im)
-plt.savefig('grad_field.pdf')
-plt.show()
-'''
-#
-NImgs = 102 # number of images
+
+####
+
+NImgs = 52 # number of images
 k = 2.0 # spring constant for entire band
 kappa = 1.0 # harmonic force strength (only used if force_RN or force_R0 is True)
 E_const = E_gs # energy contour to constrain the end points to
@@ -112,12 +102,16 @@ springForceFix = (springR0,springRN)
 ### Optimization parameters 
 ## Velocity Verlet parameter set
 dt = .2
-NIterations = 1000
+NIterations = 8000
+
+
 ### define initial path
 #beginning point 
-R0 = [-1.700 ,0.760]# NEB starting point
+#R0 = [-1.700 ,0.790]# NEB starting point for symmetric case
+R0 = [1.700 ,-0.800]# NEB starting point for asymmetric case
 #end point
-RN =  [1.700 , -0.800]# NEB end point
+#RN =  [1.700 , -0.790]# NEB end point for symmetric case
+RN =  [-1.700 , 0.760]# NEB end point for asymmetric case
 print('R0: ',R0)
 print('RN: ',RN)
 init_path_constructor = utils.init_NEB_path(R0,RN,NImgs)
@@ -158,9 +152,6 @@ allPaths_LAP = minObj_LAP.allPts
 final_path_LAP = allPaths_LAP[-1]
 
 
-
-
-
 t1 = time.time()
 total_time_LAP = t1 - t0
 print('total_time LAP: ',total_time_LAP)
@@ -169,8 +160,9 @@ for i,path in enumerate(allPaths_LAP):
     action_array_LAP[i] = utilities.TargetFunctions.action(path, V_func_shift,M_func)[0]
 min_action_LAP = np.around(action_array_LAP[-1],4)
 
+## Save metadata
 title = 'PyNeb_'+surface_name+'_LAP'
-## Write metadata
+
 metadata = {'title':title,'Created_by': 'Eric','Created_on':today.strftime("%b-%d-%Y"),'method':'NEB-LAP','method_description':method_dict, \
                 'masses':None,'E_gs': str(E_gs),'action':action_array_LAP[-1],'run_time':total_time_LAP ,\
                     'initial_start_point': R0,'initial_end_point': RN}
@@ -178,7 +170,11 @@ utils.make_metadata(metadata)
 
 # write final path to txt.
 if save_data == True:
-    np.savetxt(title+'_path_.txt',final_path_LAP,comments='',delimiter=',',header="x,y")
+    np.savetxt(title+'_path.txt',final_path_LAP,comments='',delimiter=',',header="x,y")
+
+
+
+
 
 
 
@@ -207,6 +203,8 @@ for i,path in enumerate(allPaths_MEP):
     action_array_MEP[i] = utilities.TargetFunctions.action(path, V_func_shift ,None)[0]   # endPointFix = (force_R0,force_RN) springForceFix
 min_action_MEP =  np.around(action_array_MEP[-1],4)
 
+
+## Save metadata
 title = 'PyNeb_'+surface_name+'_MEP'
 
 metadata = {'title':title,'Created_by': 'Eric','Created_on':today.strftime("%b-%d-%Y"),'method':'NEB-MEP','method_description':method_dict, \
@@ -231,7 +229,7 @@ ax.set_xlabel('$x$',size=20)
 ax.set_title('M = '+str(NIterations)+' N = '+str(NImgs)+' k='+str(k)+' kappa='+str(kappa))
 
 
-ax.legend()
+ax.legend(frameon=True,fancybox=True)
 cbar = fig.colorbar(im)
 if save_data ==True:
     plt.savefig(surface_name+'_M='+str(NIterations)+'_N='+str(NImgs)+'_k='+str(k)+'_kappa='+str(kappa)+'.pdf')
@@ -242,7 +240,7 @@ plt.plot(range(NIterations+2),action_array_LAP,label='LAP '+str(min_action_LAP))
 plt.plot(range(NIterations+2),action_array_MEP,label='MEP '+str(min_action_MEP))
 plt.xlabel('Iterations')
 plt.ylabel('Action')
-plt.legend()
+plt.legend(frameon=True,fancybox=True)
 if save_data == True:
     plt.savefig(surface_name+'_M='+str(NIterations)+'_N='+str(NImgs)+'_k='+str(k)+'_kappa='+str(kappa)+'_action.pdf')
 plt.show()
