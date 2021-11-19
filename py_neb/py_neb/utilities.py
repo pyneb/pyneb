@@ -68,10 +68,11 @@ class TargetFunctions:
             coordDiff = path[ptIter] - path[ptIter - 1]
             dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
             if dist<0:
-                print(dist)
-                print(path)
-                print(potArr)
-                print(massArr)
+                dist = 0
+            #     print(dist)
+            #     print(path)
+            #     print(potArr)
+            #     print(massArr)
             actOut += np.sqrt(2*potArr[ptIter]*dist)
         
         return actOut, potArr, massArr
