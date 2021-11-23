@@ -80,9 +80,8 @@ neb_params ={'k':k,'kappa':kappa,'constraintEneg':E_const}
 method_dict = {'k':k,'kappa':kappa,'NImages': NImgs,'Iterations':NIterations,'dt':dt,'optimization':'QM Verlet','HarmonicForceEnds': endPointFix, \
                    'SpringForceEnds': springForceFix}
 
-
-
-
+FireParams = {"dtMax":10.,"dtMin":0.001,"nAccel":10,"fInc":1.1,"fAlpha":0.99,\
+     "fDecel":0.5,"aStart":0.1,"maxmove":np.array([1,.05,1])}
     
     
 #### Compute LAP
@@ -143,7 +142,7 @@ MEP_params = {'potential':V_func_shift,'nPts':NImgs,'nDims':nDims,'auxFunc':auxF
 t0 = time.time()
 mep = solvers.MinimumEnergyPath(**MEP_params)
 minObj_MEP = solvers.VerletMinimization(mep,initialPoints=init_path)
-tStepArr, alphaArr, stepsSinceReset = minObj_MEP.fire(dt,NIterations,useLocal=False)
+tStepArr, alphaArr, stepsSinceReset = minObj_MEP.fire(dt,NIterations,fireParams=FireParams,useLocal=False)
 allPaths_MEP = minObj_MEP.allPts
 #allPaths_MEP, allVelocities_MEP, allForces_MEP = minObj_MEP.velocity_verlet(dt,NIterations)
 t1 = time.time()

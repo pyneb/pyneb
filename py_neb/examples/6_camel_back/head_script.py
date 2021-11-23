@@ -217,8 +217,8 @@ if save_data == True:
 ### Plot the results.
 fig, ax = plt.subplots(1,1,figsize = (12, 10))
 
-im = ax.contourf(grids[0],grids[1],EE_0,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(-1,4))
-ax.contour(grids[0],grids[1],EE_0,colors=['black'],levels=MaxNLocator(nbins = 15).tick_values(-1,4))  
+im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,4))
+ax.contour(grids[0],grids[1],EE,colors=['black'],levels=MaxNLocator(nbins = 15).tick_values(0,4))  
 ax.plot(init_path[:, 0], init_path[:, 1], '.-', color = 'green',ms=10,label='Initial Path')
 ax.plot(final_path_LAP[:, 0], final_path_LAP[:, 1], '.-',ms=10,label='LAP',color='purple')
 ax.plot(final_path_MEP[:, 0], final_path_MEP[:, 1], '.-',ms=10,label='MEP',color='red')    
@@ -244,3 +244,4 @@ plt.legend(frameon=True,fancybox=True)
 if save_data == True:
     plt.savefig(surface_name+'_M='+str(NIterations)+'_N='+str(NImgs)+'_k='+str(k)+'_kappa='+str(kappa)+'_action.pdf')
 plt.show()
+print('completed Nimg= '+str(NImgs))
