@@ -1,0 +1,11 @@
+title: PyNeb_LEPSHO_MEP
+Created_by: Eric
+Created_on: Nov-22-2021
+method: NEB-MEP
+method_description: {'k': 2.0, 'kappa': 1.0, 'NImages': 62, 'Iterations': 5000, 'dt': 0.5, 'optimization': 'Local FIRE', 'HarmonicForceEnds': (False, False), 'SpringForceEnds': (False, False), 'logLevel': 0}
+masses: None
+E_gs: [-4.50915913]
+action: 7.430812190549268
+run_time: 31.109965085983276
+initial_start_point: [0.74, 1.3]
+initial_end_point: [3.0, -1.3]
