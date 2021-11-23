@@ -1,4 +1,0 @@
-camel_asymm
-LAP: 6.047
-MEP: 6.113
-DP: 6.123
