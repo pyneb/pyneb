@@ -201,7 +201,7 @@ class LeastActionPath:
         
         integVal, energies, masses = self.target_func(points,self.potential,self.mass)
         tangents = self._compute_tangents(points,energies)
-        
+        print("Action: ",integVal)
         gradOfAction, gradOfPes = \
             self.target_func_grad(points,self.potential,energies,self.mass,masses,\
                                   self.target_func)
@@ -633,10 +633,10 @@ class VerletMinimization:
         self.allForces[0] = self.nebObj.compute_force(self.allPts[0])
         
         if useLocal:
-            stepsSinceReset = np.zeros(self.nPts)
             tStepArr = np.zeros((maxIters+1,self.nPts))
+            tStepArr[:,:] = tStep
             alphaArr = np.zeros((maxIters+1,self.nPts))
-            stepsSinceReset = np.zeros(self.nPts)
+            stepsSinceReset = np.zeros((self.nPts))
         else:
             stepsSinceReset = 0
             tStepArr = np.zeros(maxIters+1)
@@ -674,7 +674,59 @@ class VerletMinimization:
         
         return tStepArr, alphaArr, stepsSinceReset
     
-    def _local_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
+    def _global_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
+        self.allForces[0] = self.nebObj.compute_force(self.allPts[step-1])
+        vdotf = 0.0
+        for ptIter in range(self.nPts):
+            vdotf += np.dot(self.allVelocities[0,ptIter],self.allForces[0,ptIter])
+
+        if(vdotf > 0.0):
+            vdotv = 0.0
+            fdotf = 0.0
+            for ptIter in range(self.nPts):
+                vdotv += np.dot(self.allVelocities[0,ptIter],self.allVelocities[0,ptIter])
+                fdotf += np.dot(self.allForces[0,ptIter],self.allForces[0,ptIter])
+            scale = 1.0 - alphaArr[0]
+            scale2= alphaArr[0]*np.sqrt(vdotv/fdotf)
+            if(fdotf <= 2e-20): scale2 = 0.0
+            if stepsSinceReset > fireParams["nAccel"]:
+                tStepArr[0] = \
+                    min(tStepArr[0]*fireParams["fInc"],fireParams["dtMax"])
+                alphaArr[0] = alphaArr[0]*fireParams["fAlpha"]
+            else:
+                tStepArr[0] = tStepArr[0]
+                
+            stepsSinceReset += 1
+        else:
+            if(step > 20):
+                alphaArr[0] = fireParams["aStart"]
+                tStepArr[0] = \
+                    max(tStepArr[0]*fireParams["fDecel"],fireParams["dtMin"])
+            self.allPts[step,:,:] = self.allPts[step-1] - 0.5*tStepArr[0]*self.allVelocities[0,:,:]
+            self.allVelocities[0,:,:] = 0.0
+            #v0 = True
+
+        #if (v0):
+        #    self.allVelocities[0,:,:] = tStepArr[0]*self.allForces[0,:,:]
+
+        self.allVelocities[0,:,:] += tStepArr[0]*self.allForces[0,:,:]
+        if(vdotf > 0.0):
+            self.allVelocities[0,:,:] = scale*self.allVelocities[0,:,:] + \
+                scale2*self.allForces[0,:,:]
+        shift = tStepArr[0]*self.allVelocities[0,:,:]
+
+        for ptIter in range(self.nPts):
+            for dimIter in range(self.nDims):
+                if(abs(shift[ptIter,dimIter])>fireParams["maxmove"][dimIter]):
+                    shift[ptIter] = shift[ptIter] * \
+                        fireParams["maxmove"][dimIter]/abs(shift[ptIter,dimIter])
+
+        self.allPts[step] = self.allPts[step-1] + shift
+
+        return tStepArr, alphaArr, stepsSinceReset
+
+
+    def _local_fire_iter_old(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
         tStepPrev = tStepArr[step-1].reshape((-1,1)) #For multiplication below
         
         shift = tStepPrev*self.allVelocities[step-1] + \
@@ -718,8 +770,9 @@ class VerletMinimization:
                 stepsSinceReset[ptIter] = 0
         
         return tStepArr, alphaArr, stepsSinceReset
-    
-    def _global_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
+
+
+    def _global_fire_iter_old(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
         self.allPts[step] = self.allPts[step-1] + \
             tStepArr[step-1]*self.allVelocities[step-1] + \
             0.5*self.allForces[step-1]*tStepArr[step-1]**2
@@ -758,6 +811,8 @@ class VerletMinimization:
     def _check_early_stop(self):
         
         return None
+
+ 
     
 class EulerLagrangeSolver:
     """
