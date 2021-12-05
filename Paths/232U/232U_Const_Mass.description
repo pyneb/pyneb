@@ -1,6 +1,0 @@
-Created_by: Daniel
-Created_on: 02/09/2021
-Method: NEB
-Method_description: {k: 20, kappa: 10, nPts: 22, nIterations: 750, optimization: velocity_verlet, endpointForce: (False,True)}
-Action: 903
-Run_time: 148
