@@ -1321,6 +1321,10 @@ class DynamicProgramming:
             raise ValueError("self.endpointIndices.shape == "+\
                              str(self.endpointIndices.shape)+"; dimension 1 must be "\
                              +str(self.nDims))
+                
+        if np.any(self.allowedEndpoints[:,0]<=self.initialPoint[0]):
+            raise ValueError("All final endpoints must have 0'th coordinate greater"\
+                             +" than the 0'th coordinate of the initial point")
         
         self.endpointIndices = [tuple(row) for row in self.endpointIndices]
         
@@ -1393,15 +1397,13 @@ class DynamicProgramming:
         distArr = np.inf*np.ones(self.potArr.shape)
         distArr[self.initialInds] = 0
         
-        #Main loop. Assumes truncation of PES, so that negative energies outside
-        #the outer turning line are set to be small but positive. Because 
-        #distArr is initialized to np.inf except at the origin, we don't have
-        #to initialize the first column separately.
-        finalIdx = np.max(np.array(self.endpointIndices)[:,1])            
+        #Main loop. Because distArr is initialized to np.inf except at the origin,
+        #we don't have to initialize the first column separately.
+        finalIdx = np.max(np.array(self.endpointIndices)[:,1])
+        print(finalIdx)
         for q2Idx in range(self.initialInds[1]+1,finalIdx+1):
             previousIndsArr, distArr = \
                 self._select_prior_points(q2Idx,previousIndsArr,distArr)
-                
             if q2Idx % self.logFreq == 0:
                 updateRange = (q2Idx-self.logFreq,q2Idx)
                 self.logger.log(previousIndsArr,distArr,updateRange)
@@ -1420,9 +1422,13 @@ class DynamicProgramming:
             
             path = []
             ind = endInds
+            
             while ind != self.initialInds:
+                if ind == self.nDims*(-1,):
+                    raise ValueError("Reached invalid index "+str(ind))
                 path.append(ind)
                 ind = tuple(previousIndsArr[ind])
+                
             path.append(self.initialInds)
             path.reverse()
             
