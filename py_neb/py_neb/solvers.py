@@ -1371,6 +1371,8 @@ class DynamicProgramming:
             
             enegs = np.zeros((2,))
             enegs[1] = self.potArr[idx]
+            if enegs[1] == np.inf:
+                continue
             
             masses = np.zeros((2,self.nDims,self.nDims))
             masses[1] = self.inertArr[idx]
@@ -1378,6 +1380,8 @@ class DynamicProgramming:
             for p in previousInds:
                 coords[0] = [c[p] for c in self.coordMeshTuple]
                 enegs[0] = self.potArr[p]
+                if enegs[0] == np.inf:
+                    continue
                 masses[0] = self.inertArr[p]
                 
                 tentDist = distArr[p] + self.target_func(coords,enegs,masses)[0]
@@ -1400,7 +1404,7 @@ class DynamicProgramming:
         #Main loop. Because distArr is initialized to np.inf except at the origin,
         #we don't have to initialize the first column separately.
         finalIdx = np.max(np.array(self.endpointIndices)[:,1])
-        print(finalIdx)
+        
         for q2Idx in range(self.initialInds[1]+1,finalIdx+1):
             previousIndsArr, distArr = \
                 self._select_prior_points(q2Idx,previousIndsArr,distArr)
@@ -1425,7 +1429,8 @@ class DynamicProgramming:
             
             while ind != self.initialInds:
                 if ind == self.nDims*(-1,):
-                    raise ValueError("Reached invalid index "+str(ind))
+                    break
+                    #raise ValueError("Reached invalid index "+str(ind))
                 path.append(ind)
                 ind = tuple(previousIndsArr[ind])
                 
@@ -1437,7 +1442,7 @@ class DynamicProgramming:
                                          i in path])
         
         t1 = time.time()
-        #old run time: 1600 seconds
+        
         self.logger.finalize(minPathDict,minIndsDict,distsDict,t1-t0)
         
         return minIndsDict, minPathDict, distsDict
