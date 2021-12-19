@@ -1,9 +1,9 @@
 import os
 import sys
 
-from tabulate import tabulate
-from texttable import Texttable
-import latextable
+# from tabulate import tabulate
+# from texttable import Texttable
+# import latextable
 
 import pandas as pd
 
@@ -100,13 +100,94 @@ def make_fig():
     
     return None
 
+def make_separate_figs():
+    colorsDict = {"neb_lap":"blue","dpm":"orange","el":"purple","neb_mep":"green"}
+    stylesDict = {"no_mass":"solid","mass":"solid"}
+    
+    noMassFig, noMassAx = plt.subplots()
+    massFig, massAx = plt.subplots()
+    # nLevels = 15
+    for ax in [massAx,noMassAx]:
+        cf = ax.contourf(pesDict["Q20"],pesDict["Q30"],pesDict["PES"].clip(-5,30),levels=45,\
+                         cmap="Spectral_r",extend="both")
+        cs = ax.contour(pesDict["Q20"],pesDict["Q30"],pesDict["PES"].clip(-5,30),levels=10,\
+                        linestyles="solid",colors="gray")
+        ax.clabel(cs,inline=1,fontsize=5,colors="black")
+    
+    typesDict = {'232U_NDLinear_Mass_None.txt':["no_mass","neb_lap"],\
+                 'Eric_232U_LAP_Mass_True_path.txt':["mass","neb_lap"],\
+                 '232U_MAP.txt':["no_mass","dpm"],'232U_MAP_WMP.txt':["mass","dpm"],\
+                 '232U_PathPablo.txt':["no_mass","el"],'232U_PathPablo_MassParams.txt':["mass","el"],\
+                 'Eric_MEP.txt':["no_mass","neb_mep"]}
+        
+    for (key,p) in pathsDict.items():
+        if typesDict[key][0] == "no_mass":
+            noMassAx.plot(*p.T,color=colorsDict[typesDict[key][1]],\
+                          ls=stylesDict["no_mass"])
+        else:
+            massAx.plot(*p.T,color=colorsDict[typesDict[key][1]],\
+                        ls=stylesDict["mass"])
+                
+    
+    massAx.set(xlabel=r"$Q_{20}$ (b)",ylabel=r"$Q_{30}$ (b${}^{3/2}$)",xlim=(0,400),ylim=(0,50))
+    massFig.colorbar(cf)#,label="Energy (MeV)")
+    massFig.savefig("232U_mass.pdf",bbox_inches="tight")
+    
+    noMassAx.set(xlabel=r"$Q_{20}$ (b)",ylabel=r"$Q_{30}$ (b${}^{3/2}$)",xlim=(0,400),ylim=(0,50))
+    noMassFig.colorbar(cf)#,label="Energy (MeV)")
+    noMassFig.savefig("232U_no_mass.pdf",bbox_inches="tight")
+    
+    return None
+
+def bw_styles_fig():
+    markerDict = {"neb_lap":None,"dpm":None,"el":None,"neb_mep":"o"}
+    stylesDict = {"neb_lap":"solid","dpm":"dashed","el":"dotted","neb_mep":None}
+    markEvery = 3
+    color = "black"
+    lineWidth = 0.5
+    markerSize = 2
+    
+    noMassFig, noMassAx = plt.subplots()
+    massFig, massAx = plt.subplots()
+    # nLevels = 15
+    for ax in [massAx,noMassAx]:
+        cf = ax.contourf(pesDict["Q20"],pesDict["Q30"],pesDict["PES"].clip(-5,30),levels=45,\
+                         cmap="Spectral_r",extend="both")
+        cs = ax.contour(pesDict["Q20"],pesDict["Q30"],pesDict["PES"].clip(-5,30),levels=10,\
+                        linestyles="solid",colors="gray")
+        ax.clabel(cs,inline=1,fontsize=5,colors="black")
+    
+    typesDict = {'232U_NDLinear_Mass_None.txt':["no_mass","neb_lap"],\
+                 'Eric_232U_LAP_Mass_True_path.txt':["mass","neb_lap"],\
+                 '232U_MAP.txt':["no_mass","dpm"],'232U_MAP_WMP.txt':["mass","dpm"],\
+                 '232U_PathPablo.txt':["no_mass","el"],'232U_PathPablo_MassParams.txt':["mass","el"],\
+                 'Eric_MEP.txt':["no_mass","neb_mep"]}
+        
+    for (key,p) in pathsDict.items():
+        if typesDict[key][0] == "no_mass":
+            ax = noMassAx
+        else:
+            ax = massAx
+        ax.plot(*p.T,color=color,marker=markerDict[typesDict[key][1]],\
+                linestyle=stylesDict[typesDict[key][1]],markevery=markEvery,\
+                linewidth=lineWidth,markersize=markerSize)
+    
+    massAx.set(xlabel=r"$Q_{20}$ (b)",ylabel=r"$Q_{30}$ (b${}^{3/2}$)",xlim=(0,400),ylim=(0,50))
+    massFig.colorbar(cf,ax=massAx)#,label="Energy (MeV)")
+    massFig.savefig("232U_mass_styled.pdf",bbox_inches="tight")
+    
+    noMassAx.set(xlabel=r"$Q_{20}$ (b)",ylabel=r"$Q_{30}$ (b${}^{3/2}$)",xlim=(0,400),ylim=(0,50))
+    noMassFig.colorbar(cf,ax=noMassAx)#,label="Energy (MeV)")
+    noMassFig.savefig("232U_no_mass_styled.pdf",bbox_inches="tight")
+    
+    return None
+
 def make_action_tables():
     uniqueCoords = [np.unique(pesDict[key]) for key in coordNms]
     pes_interp = NDInterpWithBoundary(uniqueCoords,pesDict["PES"])
     massInterpDict = {key:NDInterpWithBoundary(uniqueCoords,pesDict[key]) for\
                       key in ["B2020","B2030","B3030"]}
     mass_interp = mass_funcs_to_array_func(massInterpDict,["20","30"])
-    
     
     interpPathsDict = {}
     for key in pathFiles:
@@ -131,5 +212,7 @@ def make_action_tables():
     print(actsDict)
     return None
 
+np.seterr(invalid="raise")
 make_action_tables()
-# make_fig()
+make_fig()
+# bw_styles_fig()
