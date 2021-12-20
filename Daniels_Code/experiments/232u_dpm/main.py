@@ -4,11 +4,8 @@ import time
 import h5py
 import pandas as pd
 
-# from tabulate import tabulate
-# from texttable import Texttable
-# import latextable
-
 pyNebDir = os.path.expanduser("~/Research/ActionMinimization/py_neb/")
+
 if pyNebDir not in sys.path:
     sys.path.insert(0,pyNebDir)
     
@@ -34,7 +31,7 @@ def read_path(fname,returnHeads=False):
     return ret
 
 def read_potential():
-    fileDir = os.path.expanduser("~/Research/ActionMinimization/PES/")
+    fileDir = os.path.expanduser("~/Documents/ActionMinimization/PES/")
     
     dsetsToGet = ["Q20","Q30","PES","B2020","B2030","B3030"]
     dsetsDict = {}
