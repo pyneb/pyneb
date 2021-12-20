@@ -62,8 +62,64 @@ def camel_back_broken_sym(coords):
     else:pass
     result = (4 - 2.1*(x**2) + (1/3) * (x**4))*x**2 + x*y + 4*((y**2) - 1)*(y**2) + .5*y
     return(result)
-def path_wrapper():
-    return
+
+def get_crit_pnts(V_func,path):
+    '''
+    NOTE: This function depends on a package called autograd for hessian calculation
+    
+    This function finds the critical the MEP path must pass through by first finding the 
+    critical points of the energy along the curve and then classifies them
+    using the eigenvalues of the Hessian. Returns minima, maxima, and saddle points indices
+    along the path.
+    
+    Parameters
+    ----------
+    V_func : object
+        Energy Function that must have shape (nImgs,nDims).
+    path : ndarray
+        coordinates of the path on the surface with shape (nImgs,nDims).
+    interpolate : Boolean, optional
+        Interpolate path using nImgs (default 500) . The default is True.
+    nImgs : int, optional
+        Number of images to interpolate path to. The default is 500.
+
+    Returns
+    -------
+    3 arrays containing the indices of minima, maxima, and saddle points.
+
+    '''
+    ### path should be shape (nImgs,nDims)
+    nDim = path.shape[1]
+    H = hessian(V_func)
+    EnergyOnPath = V_func(path)
+    minima_pnts = utilities.SurfaceUtils.find_all_local_minimum(EnergyOnPath)[0]
+    maxima_pnts = utilities.SurfaceUtils.find_all_local_maxima(EnergyOnPath)[0]
+    crit_pnts = np.concatenate((minima_pnts,maxima_pnts))
+    maxima = []
+    minima = []
+    saddle = []
+    for indx in crit_pnts:
+        coord = interp_path[indx]
+        hess = H(coord)
+        evals = np.linalg.eigvals(hess)
+        ## see which components are less than 0.
+        neg_bool = evals < 0
+        ## count how many falses there are (ie how many postives there are)
+        eval_num = np.count_nonzero(neg_bool)
+        if eval_num == 0:
+            # if all evals are positive, then H is positive def and the function is
+            # concave up at this point. This means we are at a local minima
+            minima.append(indx)
+        elif eval_num == nDim:
+            # if all evals are positive, then H is negative def and the function is
+            # concave down at this point. This means we are at a local maxima
+            maxima.append(indx)
+        else:
+            # if evals are positive and negative, 
+            # this means we are at a local saddle
+            saddle.append(indx)
+    return(maxima,minima,saddle)
+
 surface_name = "6_camel_back_symm" # for output files
 save_data = False
 #Define potential function
@@ -100,52 +156,23 @@ EE = V_func_shift(np.array([xx,yy]))
 
 ## Import path
 
-LAP_path = np.loadtxt('../../Paths/CAMEL_BACK/PyNeb_6_camel_back_symm_LAP_path.txt',\
+MEP_path = np.loadtxt('../../Paths/CAMEL_BACK/PyNeb_6_camel_back_symm_MEP_path.txt',\
                       delimiter=',',skiprows=1)
 exact_LAP_evals = np.loadtxt('./symm_camel_exact_evals.txt',\
                       delimiter='\t')
 
-path_call = utilities.InterpolatedPath(LAP_path)
-nImages = 500
-t_array = np.linspace(0,1,nImages)
+nImgs = 500
+path_call = utilities.InterpolatedPath(MEP_path)
+t_array = np.linspace(0,1,nImgs)
 interp_path = np.array(path_call(t_array)).T
-grad_V = grad(camel_back_xy)
-H_f = hessian(camel_back_xy)
-
-path_V = camel_back(interp_path)
-minima_pnts = utilities.SurfaceUtils.find_all_local_minimum(path_V)[0]
-maxima_pnts = utilities.SurfaceUtils.find_all_local_maxima(path_V)[0]
-crit_pnts = np.concatenate((minima_pnts,maxima_pnts))
-maxima = []
-minima = []
-saddle = []
-for pnt in crit_pnts:
-    coord = interp_path[pnt]
-    nDim = coord.shape[0]
-    hess = H_f(coord)
-    evals = np.linalg.eigvals(hess)
-    ## see which components are less than 0.
-    neg_bool = evals < 0
-    ## count how many falses there are (ie how many postives there are)
-    eval_num = np.count_nonzero(neg_bool)
-    if eval_num == 0:
-        # if all evals are positive, then H is positive def
-        # This means we are at a local maximum
-        maxima.append([coord,pnt])
-    elif eval_num == nDim:
-        # if all evals are negative, then H is negative def
-        # This means we are at a local minimum
-        minima.append([coord,pnt])
-    else:
-        # if evals are positive and negative, 
-        # this means we are at a local saddle
-        saddle.append([coord,pnt])
+maxima,minima,saddle = get_crit_pnts(camel_back,interp_path)
+print(minima)
+print(maxima)
 print(saddle)
-plt.plot(t_array,camel_back(interp_path))
-plt.plot(t_array[crit_pnts],camel_back(interp_path[crit_pnts]),'o')
+plt.plot(interp_path[:,0],interp_path[:,1])
+plt.plot(interp_path[:,0][saddle],interp_path[:,1][saddle],'o')
+plt.plot(interp_path[:,0][minima],interp_path[:,1][minima],'o')
 plt.show()
-
-
 '''
 plt.plot(autograd_evals[:,1],label='autograd 1')
 plt.title('evals 1')
