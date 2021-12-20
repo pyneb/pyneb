@@ -4,11 +4,8 @@ import time
 import h5py
 import pandas as pd
 
-from tabulate import tabulate
-from texttable import Texttable
-import latextable
-
 pyNebDir = os.path.expanduser("~/Research/ActionMinimization/py_neb/")
+
 if pyNebDir not in sys.path:
     sys.path.insert(0,pyNebDir)
     
@@ -34,7 +31,7 @@ def read_path(fname,returnHeads=False):
     return ret
 
 def read_potential():
-    fileDir = os.path.expanduser("~/Research/ActionMinimization/PES/")
+    fileDir = os.path.expanduser("~/Documents/ActionMinimization/PES/")
     
     dsetsToGet = ["Q20","Q30","PES","B2020","B2030","B3030"]
     dsetsDict = {}
@@ -107,9 +104,12 @@ def plot_dpm():
     
     uniqueCoords = [np.unique(dsetsDict[key]) for key in coordNms]
     pot_func = NDInterpWithBoundary(uniqueCoords,dsetsDict["PES"])
+    massFuncsDict = {key:NDInterpWithBoundary(uniqueCoords,dsetsDict[key]) for\
+                     key in ["B2020","B2030","B3030"]}
+    mass_func = mass_funcs_to_array_func(massFuncsDict,["20","30"])
     
-    dpmInst = LoadDPMLogger("logs/finer.dpm")
-    dpmWMInst = LoadDPMLogger("logs/finer_with_mass.dpm")
+    # dpmInst = LoadDPMLogger("logs/finer.dpm")
+    dpmInst = LoadDPMLogger("logs/finer_with_mass_inf_cut.dpm")
     
     fig, ax = plt.subplots()
     cf = ax.contourf(*[dsetsDict[key] for key in coordNms],dsetsDict["PES"].clip(-5,30),\
@@ -128,18 +128,22 @@ def plot_dpm():
     trueDists = np.zeros(distsArr.shape[0])
     for i in range(distsArr.shape[0]):
         p = InterpolatedPath(dpmInst.pathDict[tuple(distsArr[i]["endpoint"])])
-        trueDists[i] = p.compute_along_path(TargetFunctions.action,1000,\
-                                            tfArgs=[pot_func])[1][0]
+        trueDists[i] = p.compute_along_path(TargetFunctions.action,500,\
+                                            tfArgs=[pot_func],tfKWargs={"masses":mass_func})[1][0]
         
     distFig, distAx = plt.subplots()
-    distAx.plot(np.arange(distsArr.shape[0]),distsArr["dist"],label="Grid Distance")
-    distAx.plot(np.arange(distsArr.shape[0]),trueDists,label="Interpolated Distance")
-    
-    distAx.legend()
+    distAx.scatter(np.arange(distsArr.shape[0]),distsArr["dist"],s=4,label="Grid Distance")
+    distAx.scatter(np.arange(distsArr.shape[0]),trueDists,s=4,label="Interpolated Distance")
+    distAx.legend(frameon=True)
     
     minPathIter = np.argmin(trueDists)
-    minKey = tuple(distsArr[minPathIter]["endpoint"])
-    ax.plot(*dpmInst.pathDict[key].T,"--")
+    # minKey = tuple(distsArr[minPathIter]["endpoint"])
+    # print(minKey)
+    # ax.plot(*dpmInst.pathDict[minKey].T,"--")
+    
+    distAx.axvline(minPathIter,color="grey",ls="--")
+    distAx.axhline(trueDists[minPathIter],color="grey",ls="--")
+    distFig.savefig("distances.pdf",bbox_inches="tight")
     
     finalFig, finalAx = plt.subplots()
     cf = finalAx.contourf(*[dsetsDict[key] for key in coordNms],dsetsDict["PES"].clip(-5,30),\
@@ -149,11 +153,11 @@ def plot_dpm():
     endPt = tuple([298.,31.3])
     
     finalAx.plot(*dpmInst.pathDict[endPt].T,color="red",label="Daniel")
-    finalAx.plot(*dpmWMInst.pathDict[endPt].T,"--",color="red")
-    sp = read_path("Sylvester_path.txt")
-    spm = read_path("Sylvester_path_with_mass.txt")
-    finalAx.plot(*sp.T,color="blue",label="Sylvester")
-    finalAx.plot(*spm.T,"--",color="blue")
+    # finalAx.plot(*dpmWMInst.pathDict[endPt].T,"--",color="red")
+    # sp = read_path("Sylvester_path.txt")
+    spm = read_path("232U_MAP_WMP.txt")
+    # finalAx.plot(*sp.T,color="blue",label="Sylvester")
+    finalAx.plot(*spm.T,"--",color="blue",label="Sylvester")
     
     for a in [ax,finalAx]:
         finalAx.set(xlabel=r"$Q_{20}$ (b)",ylabel=r"$Q_{30}$ (b${}^{3/2}$)",title=r"${}^{232}$U")
@@ -169,7 +173,7 @@ np.seterr(all="raise")
 
 coordNms = ["Q20","Q30"]
 
-# plot_dpm()
+plot_dpm()
 # run_dpm()
-run_finer_dpm()
+#run_finer_dpm()
 
