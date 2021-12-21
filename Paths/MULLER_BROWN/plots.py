@@ -1,4 +1,4 @@
-import numpy as np
+import autograd.numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import time
@@ -10,15 +10,15 @@ sys.path.insert(0, '../../py_neb/py_neb')
 sys.path.insert(0, '../../flynn_code/py_neb_demos')
 import utilities
 import utils
-plt.style.use('science')
+
+#plt.style.use('science')
 def make_MB_potential():
-    # parameter set taken from 1701.01241 (scaled down)
-    A = [-2,-1,-1,.15]
-    a = [-1,-1,-6.5,.7]
-    b= [0,0,11,0.6]
-    c = [-10,-10,-6.5,0.7]
-    x_bar = [1,0,-0.5,-1]
-    y_bar = [0,0.5,1.5,1]
+    A = np.array([-200.0,-100.0,-170.0,15.0])
+    a = np.array([-1.0,-1.0,-6.5,0.7])
+    b= np.array([0.0,0.0,11.0,0.6])
+    c = np.array([-10.0,-10.0,-6.5,0.7])
+    x_bar = np.array([1.0,0.0,-0.5,-1.0])
+    y_bar = np.array([0.0,0.5,1.5,1.0])
     def MB_potential(coords):
         if isinstance(coords, np.ndarray)==False:
             coords = np.array(coords)
@@ -37,8 +37,10 @@ def make_MB_potential():
             y = coords[1]
         else:pass
         result = np.zeros(x.shape)
+        #print(x)
+        #print(y)
         for i in range(len(A)):
-            result += A[i]*np.exp(a[i]*(x-x_bar[i])**2 + b[i]*(x-x_bar[i])*(y-y_bar[i]) + c[i]*(y-y_bar[i])**2)
+            result += A[i]*np.exp(a[i]*(x-x_bar[i])**2.0 + b[i]*(x-x_bar[i])*(y-y_bar[i]) + c[i]*(y-y_bar[i])**2.0)
         return result
     return MB_potential
 ### Plot title
@@ -81,7 +83,7 @@ print('E_gs: ',E_gs)
 V_func_shift = utilities.shift_func(V_func,shift=E_gs)#shift by the ground state
 EE = V_func_shift(np.array([xx,yy]))
 
-
+interp_paths = {}
 
 ## Interpolate the paths 
 for name in path_names:
@@ -93,15 +95,20 @@ for name in action_dict.keys():
 with open('MB_action_values.txt', 'w+') as f:
     for name in path_names:
         f.write(str(name)+': '+str(action_dict[name])+'\n')
-
+print(MEP_path)
+minima,maxima,saddle = utilities.get_crit_pnts(V_func, MEP_path)
+print(minima)
+print(maxima)
+print(saddle)
 ### Plot the results
 fig, ax = plt.subplots(1,1,figsize = (8, 6))
-im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,2.5))
-ax.contour(grids[0],grids[1],EE,colors=['black'],levels=MaxNLocator(nbins = 15).tick_values(0,2.5))  
-ax.plot(LAP_path[:, 0], LAP_path[:, 1],label='LAP '+str(action_dict['LAP']),linestyle='-',marker='.',color='purple',linewidth=1.0,markersize=6)
-ax.plot(MEP_path[:, 0], MEP_path[:, 1],label='MEP '+str(action_dict['MEP']),linestyle='-',marker='.',color='red',linewidth=1.0,markersize=6)
-ax.plot(DP_path[:, 0], DP_path[:, 1],label='DPM '+str(action_dict['DP']),linestyle='-',marker='.',color='black',linewidth=1.0,markersize=6)
+im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,200))
+ax.contour(grids[0],grids[1],EE,colors=['black'],levels=MaxNLocator(nbins = 15).tick_values(0,200))  
+ax.plot(LAP_path[:, 0], LAP_path[:, 1],label='LAP '+str(action_dict['LAP']),linestyle='-',color='purple',linewidth=1.0,markersize=6)
+ax.plot(MEP_path[:, 0], MEP_path[:, 1],label='MEP '+str(action_dict['MEP']),linestyle='-',color='red',linewidth=1.0,markersize=6)
+ax.plot(DP_path[:, 0], DP_path[:, 1],label='DPM '+str(action_dict['DP']),linestyle='-',color='black',linewidth=1.0,markersize=6)
+ax.plot(MEP_path[:, 0][saddle], MEP_path[:, 1][saddle],'*',label='MEP '+str(action_dict['MEP']),markersize=18)
 cbar = fig.colorbar(im)
-plt.legend(frameon=True,fancybox=True)
+#plt.legend(frameon=True,fancybox=True)
 plt.savefig(plt_title)
 plt.show()

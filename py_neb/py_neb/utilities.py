@@ -3,6 +3,8 @@ from fileio import *
 #Appears to be common/best practice to import required packages in every file
 #they are used in
 import numpy as np
+#import numdifftools as nd
+import numdifftools as nd
 import sys
 import matplotlib.pyplot as plt
 import itertools
@@ -350,7 +352,7 @@ class GradientApproximations:
         
         beff[1:] = np.array([np.dot(np.dot(massOnPath[ptIter],dr[ptIter]),dr[ptIter])/np.sum(dr[ptIter,:]**2) \
                                for ptIter in range(1,nPts)])
-        pool = Pool(4)
+        pool = Pool(6)
 
         mapOut = pool.map(self.discrete_element, \
                 itertools.repeat(mass,nPts-1),path[1:nPts-1,:], \
@@ -763,6 +765,47 @@ class SurfaceUtils:
         minIndsOut = tuple([allMinInds[coordIter,:] for \
                             coordIter in range(allMinInds.shape[0])])
         return minIndsOut
+    
+    def find_all_local_maximum(arr):
+        """
+        Returns the indices corresponding to the local maximum values. Taken
+        originally from https://stackoverflow.com/a/3986876
+        
+        Finder checks along the cardinal directions. If all neighbors in those
+        directions are greater than or equal to the current value, the index
+        is returned as a minimum. For the border, the array is reflected about
+        the axis. As a result, many indices are found that are not technically
+        local minima. However, we do want the border results - in practice,
+        nuclei often have a ground state at zero deformation in one collective
+        coordinate; to find that, we must include the border indices. 
+        
+        Parameters
+        ----------
+        arr : Numpy array
+            A D-dimensional array.
+    
+        Returns
+        -------
+        maxIndsOut : Tuple of numpy arrays
+            D arrays of length k, for k maxima found
+    
+        """
+        neighborhood = morphology.generate_binary_structure(len(arr.shape),1)
+        #Test case was giving floating-point differences along the outer edge of
+        #the array
+        local_max = np.isclose(filters.maximum_filter(arr, footprint=neighborhood,\
+                                                      mode="nearest"),arr,atol=10**(-15))
+        
+        background = (arr==0)
+        eroded_background = morphology.binary_erosion(background,\
+                                                      structure=neighborhood,\
+                                                      border_value=1)
+            
+        detected_maxima = local_max ^ eroded_background
+        allMaxInds = np.vstack(local_max.nonzero())
+        maxIndsOut = tuple([allMaxInds[coordIter,:] for \
+                            coordIter in range(allMaxInds.shape[0])])
+        return maxIndsOut
     
     def find_local_minimum(arr,searchPerc=[0.25,0.25],returnOnlySmallest=True):
         """
@@ -1487,3 +1530,68 @@ class InterpolatedPath:
         tfOut = target_func(path,*tfArgs,**tfKWargs)
         
         return path, tfOut
+    
+def get_crit_pnts(V_func,path,method='central'):
+    '''
+    WARNING: This function depends on a package called autograd for hessian calculation
+    When using this function, you need to import numpy using: import autograd.numpy as np
+    
+    This function finds the critical the MEP path must pass through by first finding the 
+    critical points of the potential function evaluated along the curve and then classifies 
+    using the eigenvalues of the Hessian. Returns minima, maxima, and saddle points indices
+    along the path.
+    
+    Parameters
+    ----------
+    V_func : object
+        Energy Function that must have shape (nImgs,nDims).
+    path : ndarray
+        coordinates of the path on the surface with shape (nImgs,nDims).
+
+    Returns
+    -------
+    3 arrays containing the indices of minima, maxima, and saddle points.
+
+    '''
+    ### path should be shape (nImgs,nDims)
+    nDim = path.shape[1]
+    EnergyOnPath = np.zeros(path.shape)
+    for i,pnt in enumerate(path):
+        EnergyOnPath[i] = V_func(pnt)
+    minima_pnts = SurfaceUtils.find_all_local_minimum(EnergyOnPath)[0]
+    maxima_pnts = SurfaceUtils.find_all_local_maximum(EnergyOnPath)[0]
+    crit_pnts = np.concatenate((minima_pnts,maxima_pnts))
+    maxima = []
+    minima = []
+    saddle = []
+    for indx in crit_pnts:
+        coord = path[indx]
+        hess = nd.Hessian(V_func,method=method,step=10**(-6))(coord)
+        evals = np.linalg.eigvals(hess)
+        for j,val in enumerate(evals):
+            if abs(val) < 10**(-6):
+                evals[j] = 0
+        ## see which components are less than 0.
+        print(evals)
+        neg_bool = evals < 0
+        ## count how many false vals there are (ie how many postives evals there are)
+        print(neg_bool)
+        eval_num = np.count_nonzero(neg_bool)
+        print(eval_num)
+        if eval_num == 0:
+            # if all evals are positive, then H is positive def and the function is
+            # concave up at this point. This means we are at a local minima
+            minima.append(indx)
+        elif eval_num == nDim:
+            # if all evals are positive, then H is negative def and the function is
+            # concave down at this point. This means we are at a local maxima
+            maxima.append(indx)
+        else:
+            # if evals are positive and negative, 
+            # this means we are at a local saddle
+            saddle.append(indx)
+        ## stupid way of removing duplicate indicies
+        maxima = list(set(maxima))
+        minima = list(set(minima))
+        saddle = list(set(saddle))
+    return(maxima,minima,saddle)

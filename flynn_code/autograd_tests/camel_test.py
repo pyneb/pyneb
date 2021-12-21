@@ -1,11 +1,12 @@
-from autograd import elementwise_grad as egrad
-from autograd import grad
-from autograd import hessian
-import autograd.numpy as np
-#import numpy as np
+#from autograd import hessian
+import numpy as np
+import numdifftools as nd
+
+
 import matplotlib.pyplot as plt
 import sys
 from datetime import date
+from matplotlib.ticker import MaxNLocator
 ### add pyneb
 sys.path.insert(0, '../../py_neb/py_neb')
 sys.path.insert(0, '../py_neb_demos')
@@ -90,17 +91,16 @@ def get_crit_pnts(V_func,path):
     '''
     ### path should be shape (nImgs,nDims)
     nDim = path.shape[1]
-    H = hessian(V_func)
     EnergyOnPath = V_func(path)
     minima_pnts = utilities.SurfaceUtils.find_all_local_minimum(EnergyOnPath)[0]
-    maxima_pnts = utilities.SurfaceUtils.find_all_local_maxima(EnergyOnPath)[0]
+    maxima_pnts = utilities.SurfaceUtils.find_all_local_maximum(EnergyOnPath)[0]
     crit_pnts = np.concatenate((minima_pnts,maxima_pnts))
     maxima = []
     minima = []
     saddle = []
     for indx in crit_pnts:
         coord = interp_path[indx]
-        hess = H(coord)
+        hess = nd.Hessian(V_func)(coord)
         evals = np.linalg.eigvals(hess)
         ## see which components are less than 0.
         neg_bool = evals < 0
@@ -169,9 +169,12 @@ maxima,minima,saddle = get_crit_pnts(camel_back,interp_path)
 print(minima)
 print(maxima)
 print(saddle)
+fig, ax = plt.subplots(1,1,figsize = (12, 10))
+im = ax.contourf(xx,yy,EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,3))
+ax.contour(xx,yy,EE,colors=['black'],levels=20)           
 plt.plot(interp_path[:,0],interp_path[:,1])
-plt.plot(interp_path[:,0][saddle],interp_path[:,1][saddle],'o')
-plt.plot(interp_path[:,0][minima],interp_path[:,1][minima],'o')
+plt.plot(interp_path[:,0][saddle],interp_path[:,1][saddle],'*',color='black',markersize=18)
+plt.plot(interp_path[:,0][minima],interp_path[:,1][minima],'^',markersize=18)
 plt.show()
 '''
 plt.plot(autograd_evals[:,1],label='autograd 1')
