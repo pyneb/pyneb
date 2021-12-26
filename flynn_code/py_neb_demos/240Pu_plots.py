@@ -24,7 +24,7 @@ E_gs_raw = EE[gs_ind]
 EE = EE - E_gs_raw
 
 
-V_func = utilities.NDInterpWithBoundary(uniq_coords,EE,boundaryHandler='exponential',minVal=0)
+V_func = utilities.NDInterpWithBoundary(uniq_coords,EE,boundaryHandler='exponential',symmExtend=[True,True])
 
 const_names = ['pairing']
 const_comps = [10]
@@ -48,12 +48,11 @@ ax.contour(xx_s,yy_s,zz_s,colors=['black'],levels=[E_gs])
 ax.plot(LAP_nomass[:,0], LAP_nomass[:,1], '.-',ms=10,label='LAP_NoMass',color='purple')
 ax.plot(LAP_mass[:,0], LAP_mass[:,1], '.-',ms=10,label='LAP_Mass',color='orange')
 ax.plot(MEP_nomass[:,0], MEP_nomass[:,1], '.-',ms=10,label='MEP_NoMass',color='red')
-#ax.plot(final_path_MEP[:, 0], final_path_MEP[:, 1], '.-',ms=10,label='MEP',color='red')    
+   
 ax.set_ylabel('$Q_{30}$',size=20)
 ax.set_xlabel('$Q_{20}$',size=20)
 ax.set_title('240Pu')
 ax.legend()
-fig.suptitle(f'Projection on to lambda_2 = {const_comps[0]}',fontsize=24)
 cbar = fig.colorbar(im)
 #plt.savefig(nucleus+'.pdf')
 plt.show()  
