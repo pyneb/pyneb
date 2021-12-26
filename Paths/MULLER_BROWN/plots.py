@@ -13,12 +13,12 @@ import utils
 
 #plt.style.use('science')
 def make_MB_potential():
-    A = np.array([-200.0,-100.0,-170.0,15.0])
-    a = np.array([-1.0,-1.0,-6.5,0.7])
-    b= np.array([0.0,0.0,11.0,0.6])
-    c = np.array([-10.0,-10.0,-6.5,0.7])
-    x_bar = np.array([1.0,0.0,-0.5,-1.0])
-    y_bar = np.array([0.0,0.5,1.5,1.0])
+    A = [-200,-100,-170,15]
+    a = [-1,-1,-6.5,0.7]
+    b= [0,0,11,0.6]
+    c = [-10,-10,-6.5,0.7]
+    x_bar = [1,0,-0.5,-1]
+    y_bar = [0,0.5,1.5,1]
     def MB_potential(coords):
         if isinstance(coords, np.ndarray)==False:
             coords = np.array(coords)
