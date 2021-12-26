@@ -27,7 +27,7 @@ EE = EE - E_gs_raw
 V_func = utilities.NDInterpWithBoundary(uniq_coords,EE,boundaryHandler='exponential',minVal=0)
 
 const_names = ['pairing']
-const_comps = [0]
+const_comps = [10]
 plane_names = ['Q20','Q30','E_HFB']
 re_dict= {'pairing':uniq_coords[2]}
 xx_s,yy_s,zz_s = PES.get_2dsubspace(const_names,const_comps,plane_names)
@@ -55,6 +55,6 @@ ax.set_title('240Pu')
 ax.legend()
 fig.suptitle(f'Projection on to lambda_2 = {const_comps[0]}',fontsize=24)
 cbar = fig.colorbar(im)
-plt.savefig(nucleus+'.pdf')
+#plt.savefig(nucleus+'.pdf')
 plt.show()  
 plt.clf()

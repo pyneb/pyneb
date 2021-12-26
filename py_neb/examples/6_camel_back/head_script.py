@@ -28,7 +28,7 @@ def camel_back(coords):
         x = coords[0]
         y = coords[1]
     else:pass
-    result = (4 - 2.1*(x**2) + (1/3) * (x**4))*x**2 + x*y + 4*((y**2) - 1)*(y**2) 
+    result = (4 - 2.1*(x**2) + (1/3) * (x**4))*(x**2) + x*y + 4*((y**2) - 1)*(y**2) 
     return(result)
 def camel_back_broken_sym(coords):
     if isinstance(coords, np.ndarray)==False:
@@ -50,10 +50,10 @@ def camel_back_broken_sym(coords):
     result = (4 - 2.1*(x**2) + (1/3) * (x**4))*x**2 + x*y + 4*((y**2) - 1)*(y**2) + .5*y
     return(result)
 
-surface_name = "6_camel_back_asymm" # for output files
-save_data = True
+surface_name = "6_camel_back_symm" # for output files
+save_data = False
 #Define potential function
-V_func = camel_back_broken_sym
+V_func = camel_back
 M_func = None # for LAP 
 auxFunc = None # for MEP
 
@@ -80,6 +80,8 @@ V_min = V_func([minima_coords[:,0],minima_coords[:,1]])
 gs_coord = minima_coords[0]
 E_gs = V_func(gs_coord)
 print('E_gs: ',E_gs)
+print(minima_coords)
+print(V_func(minima_coords))
 V_func_shift = utilities.shift_func(V_func,shift=E_gs)#shift by the ground state
 EE = V_func_shift(np.array([xx,yy]))
 
@@ -87,31 +89,34 @@ EE = V_func_shift(np.array([xx,yy]))
 
 ####
 
-NImgs = 52 # number of images
-k = 2.0 # spring constant for entire band
+NImgs = 52# number of images
+k = 1.0 # spring constant for entire band
 kappa = 1.0 # harmonic force strength (only used if force_RN or force_R0 is True)
 E_const = E_gs # energy contour to constrain the end points to
 nDims = len(uniq_coords)
 force_R0 = False
-force_RN = False
+force_RN = True
 springR0 = False
-springRN = False
+springRN = True
 endPointFix = (force_R0,force_RN)
 springForceFix = (springR0,springRN)
 
 ### Optimization parameters 
 ## Velocity Verlet parameter set
-dt = .2
-NIterations = 8000
+dt = .05
+NIterations = 2000
 
 
 ### define initial path
 #beginning point 
+R0 = [0,0]
 #R0 = [-1.700 ,0.790]# NEB starting point for symmetric case
-R0 = [1.700 ,-0.800]# NEB starting point for asymmetric case
+#R0 = [1.700 ,-0.800]# NEB starting point for asymmetric case
 #end point
+#RN = [0.08695652, -0.71488294]
+RN = [-0.08695652, -0.71488294]
 #RN =  [1.700 , -0.790]# NEB end point for symmetric case
-RN =  [-1.700 , 0.760]# NEB end point for asymmetric case
+#RN =  [-1.700 , 0.760]# NEB end point for asymmetric case
 print('R0: ',R0)
 print('RN: ',RN)
 init_path_constructor = utils.init_NEB_path(R0,RN,NImgs)
@@ -217,8 +222,8 @@ if save_data == True:
 ### Plot the results.
 fig, ax = plt.subplots(1,1,figsize = (12, 10))
 
-im = ax.contourf(grids[0],grids[1],EE_0,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(-1,4))
-ax.contour(grids[0],grids[1],EE_0,colors=['black'],levels=MaxNLocator(nbins = 15).tick_values(-1,4))  
+im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,4))
+ax.contour(grids[0],grids[1],EE,colors=['black'],levels=MaxNLocator(nbins = 15).tick_values(0,4))  
 ax.plot(init_path[:, 0], init_path[:, 1], '.-', color = 'green',ms=10,label='Initial Path')
 ax.plot(final_path_LAP[:, 0], final_path_LAP[:, 1], '.-',ms=10,label='LAP',color='purple')
 ax.plot(final_path_MEP[:, 0], final_path_MEP[:, 1], '.-',ms=10,label='MEP',color='red')    
@@ -244,3 +249,4 @@ plt.legend(frameon=True,fancybox=True)
 if save_data == True:
     plt.savefig(surface_name+'_M='+str(NIterations)+'_N='+str(NImgs)+'_k='+str(k)+'_kappa='+str(kappa)+'_action.pdf')
 plt.show()
+print('completed Nimg= '+str(NImgs))
