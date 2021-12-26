@@ -10,8 +10,7 @@ sys.path.insert(0, '../../py_neb/py_neb')
 sys.path.insert(0, '../../flynn_code/py_neb_demos')
 import utilities
 import utils
-
-#plt.style.use('science')
+plt.style.use('science')
 def make_MB_potential():
     A = [-200,-100,-170,15]
     a = [-1,-1,-6.5,0.7]
@@ -59,7 +58,7 @@ V_func = make_MB_potential()
 
 ### Shift Surface by global minimum
 x = np.linspace(-1.5, 1,300)
-y = np.linspace(-.25,2,300)
+y = np.linspace(-.25,1.9,300)
 uniq_coords = [x,y]
 
 xx,yy = np.meshgrid(x,y)
@@ -89,17 +88,14 @@ interp_paths = {}
 for name in path_names:
     path = paths[name]
     path_call = utilities.InterpolatedPath(path)
-    action_dict[name] = np.around(path_call.compute_along_path(utilities.TargetFunctions.action,1000,tfArgs=[V_func_shift])[1][0],3)
-for name in action_dict.keys():
-    print(name+': ', action_dict[name])
+    action_dict[name] = np.around(path_call.compute_along_path(utilities.TargetFunctions.action,500,tfArgs=[V_func_shift])[1][0],3)
+
 with open('MB_action_values.txt', 'w+') as f:
     for name in path_names:
         f.write(str(name)+': '+str(action_dict[name])+'\n')
-print(MEP_path)
-minima,maxima,saddle = utilities.get_crit_pnts(V_func, MEP_path)
-print(minima)
-print(maxima)
-print(saddle)
+for name in action_dict.keys():
+    print(name+': ', action_dict[name])
+    
 ### Plot the results
 fig, ax = plt.subplots(1,1,figsize = (8, 6))
 im = ax.contourf(grids[0],grids[1],EE.clip(0,195),cmap='Spectral_r',extend='both',levels=45)
