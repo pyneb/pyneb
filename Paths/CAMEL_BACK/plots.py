@@ -114,12 +114,26 @@ EE = V_func(np.array([xx,yy]))
 
 
 fig, ax = plt.subplots(1,1,figsize = (8, 6))
-im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,4))
-ax.contour(grids[0],grids[1],EE,colors=['black'],levels=MaxNLocator(nbins = 15).tick_values(0,4))  
-ax.plot(LAP_path[:, 0], LAP_path[:, 1],label='LAP '+str(action_dict['LAP']),linestyle='-',marker='.',color='purple',linewidth=1.0,markersize=6)
-ax.plot(MEP_path[:, 0], MEP_path[:, 1],label='MEP '+str(action_dict['MEP']),linestyle='-',marker='.',color='red',linewidth=1.0,markersize=6)
-ax.plot(DP_path[:, 0], DP_path[:, 1],label='DPM '+str(action_dict['DP']),linestyle='-',marker='.',color='black',linewidth=1.0,markersize=6)
+im = ax.contourf(grids[0],grids[1],EE.clip(0,5),cmap='Spectral_r',extend='both',levels=45)
+cs = ax.contour(grids[0],grids[1],EE.clip(0,5),colors=['black'],levels=10)  
+
+ax.plot(DP_path[:, 0], DP_path[:, 1],label='DP',linestyle='-',color='black',linewidth=2.0)
+ax.plot(EL_path[:, 0], EL_path[:, 1],label='EL',linestyle='-',color='cyan',linewidth=2.0)
+ax.plot(LAP_path[:, 0], LAP_path[:, 1],label='NEB-LAP ',linestyle='-',color='magenta',linewidth=2.0)
+ax.plot(MEP_path[:, 0], MEP_path[:, 1],label='NEB-MEP ',linestyle='-',color='red',linewidth=2.0)
+
+ax.plot(LAP_path[0][0],LAP_path[0][1],marker='s',color='yellow',markersize=5)
+ax.plot(LAP_path[-1][0],LAP_path[-1][1],marker='s',color='yellow',markersize=5)
+
+ax.clabel(cs,inline=1,fontsize=8,colors="black")
+
 cbar = fig.colorbar(im)
+cbar.ax.tick_params(labelsize=12) 
+plt.rc('xtick', labelsize=16) 
+plt.rc('ytick', labelsize=16) 
 plt.legend(frameon=True,fancybox=True)
-plt.savefig(plt_title)
+#plt.xlabel(r'$x$',size=24)
+#plt.ylabel(r'$y$',size=24)
+
+plt.savefig(plt_title,bbox_inches="tight")
 plt.show()
