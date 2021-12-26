@@ -55,9 +55,9 @@ class LepsPot():
         """
         
         LEPs potential plus harmonic oscillator.
-        Taken from Parameters are from Bruce J. Berne, Giovanni Ciccotti,David F. Coker, 
-        Classical and Quantum Dynamics in Condensed Phase Simulations 
-        Proceedings of the International School of Physics (1998) Chapter 16
+        Taken from Parameters are from Bruce J. Berne, Giovanni Ciccotti,David F. Coker, \
+        Classical and Quantum Dynamics in Condensed Phase Simulations \
+        Proceedings of the International School of Physics (1998) Chapter 16 \
         
         Call this function with a numpy array of rab and x:
         
@@ -92,7 +92,7 @@ class LepsPot():
 
 
 surface_name = "LEPSHO" # for output files
-save_data = False
+save_data = True
 #Define potential function
 V_func = LepsPot()
 M_func = None # for LAP 
@@ -126,10 +126,10 @@ EE = V_func_shift(np.array([xx,yy]))
 
 
 
-####
+#### Starting NEB
 
-NImgs = 32 # number of images
-k = 1.0 # spring constant for entire band
+NImgs = 62 # number of images
+k = 2.0 # spring constant for entire band
 kappa = 1.0 # harmonic force strength (only used if force_RN or force_R0 is True)
 E_const = E_gs # energy contour to constrain the end points to
 nDims = len(uniq_coords)
@@ -143,7 +143,7 @@ springForceFix = (springR0,springRN)
 ### Optimization parameters 
 ## Velocity Verlet parameter set
 dt = .5
-NIterations = 1000
+NIterations = 5000
 
 
 ### define initial path
@@ -153,9 +153,13 @@ R0 = [0.74, 1.30]
 RN = [ 3.00, -1.30]
 print('R0: ',R0)
 print('RN: ',RN)
-init_path_constructor = utils.init_NEB_path(R0,RN,NImgs)
-init_path = init_path_constructor.linear_path()
+#init_path_constructor = utils.init_NEB_path(R0,RN,NImgs)
 #init_path = init_path_constructor.linear_path()
+init_path = np.loadtxt('PyNeb_LEPSHO_LAP_path_bootstrap.txt',delimiter=',',skiprows=1)
+path_call = utilities.InterpolatedPath(init_path)
+t = np.linspace(0,1,NImgs)
+interp_path = np.array(path_call.__call__(t)).T
+init_path = interp_path
 ### Define parameter dictionaries (mostly for book keeping)
 neb_params ={'k':k,'kappa':kappa,'constraintEneg':E_const}
 method_dict = {'k':k,'kappa':kappa,'NImages': NImgs,'Iterations':NIterations,'dt':dt,'optimization':'Local FIRE','HarmonicForceEnds': endPointFix, \
@@ -283,4 +287,3 @@ plt.legend(frameon=True,fancybox=True)
 if save_data == True:
     plt.savefig(surface_name+'_M='+str(NIterations)+'_N='+str(NImgs)+'_k='+str(k)+'_kappa='+str(kappa)+'_action.pdf')
 plt.show()
-print('completed Nimg= '+str(NImgs))

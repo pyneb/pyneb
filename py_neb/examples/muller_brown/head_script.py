@@ -15,8 +15,8 @@ import utils
 today = date.today()
 def make_MB_potential():
     # parameter set taken from 1701.01241 (scaled down)
-    A = [-2,-1,-1,.15]
-    a = [-1,-1,-6.5,.7]
+    A = [-200,-100,-170,15]
+    a = [-1,-1,-6.5,0.7]
     b= [0,0,11,0.6]
     c = [-10,-10,-6.5,0.7]
     x_bar = [1,0,-0.5,-1]
@@ -45,7 +45,7 @@ def make_MB_potential():
     return MB_potential
 surface_name = "muller_brown_" # for output files
 #Define potential function
-save_data = True
+save_data = False
 V_func = make_MB_potential()
 M_func = None # for LAP 
 auxFunc = None # for MEP
@@ -93,14 +93,14 @@ springForceFix = (springR0,springRN)
 
 ### Optimization parameters 
 ## Velocity Verlet parameter set
-dt = .5
-NIterations = 2000
+dt = .01
+NIterations = 8000
 
 ### define initial path
 # NEB starting point
-R0 = gs_coord
+R0 = [-0.55, 1.44]
 # NEB end point
-RN = minima_coords[2]
+RN = [0.62, 0.03]
 print('R0:',R0)
 print('RN:',RN)
 
@@ -121,7 +121,7 @@ method_dict = {'k':k,'kappa':kappa,'NImages': NImgs,'Iterations':NIterations,'dt
 # LAP function you want to minimize
 target_func_LAP = utilities.TargetFunctions.action
 # LAP specialized function that takes the gradient of target function
-target_func_grad_LAP = utilities.GradientApproximations().forward_action_grad 
+target_func_grad_LAP = utilities.GradientApproximations().discrete_action_grad_const
 
 LAP_params = {'potential':V_func_shift,'nPts':NImgs,'nDims':nDims,'mass':M_func,'endpointSpringForce': springForceFix ,\
                  'endpointHarmonicForce':endPointFix,'target_func':target_func_LAP,\
@@ -150,6 +150,8 @@ print('total_time LAP: ',total_time_LAP)
 action_array_LAP = np.zeros(NIterations+2)
 for i,path in enumerate(allPaths_LAP):
     action_array_LAP[i] = utilities.TargetFunctions.action(path, V_func_shift,M_func)[0]
+    #path_call = utilities.InterpolatedPath(path)
+    #action_array_LAP[i] = np.around(path_call.compute_along_path(utilities.TargetFunctions.action,1000,tfArgs=[V_func_shift])[1][0],3)
 min_action_LAP = np.around(action_array_LAP[-1],3)
 
 ## Save metadata
@@ -188,6 +190,8 @@ print('total_time MEP: ',total_time_MEP)
 action_array_MEP = np.zeros(NIterations+2)
 for i,path in enumerate(allPaths_MEP):
     action_array_MEP[i] = utilities.TargetFunctions.action(path, V_func_shift,None)[0]   # endPointFix = (force_R0,force_RN) springForceFix
+    #path_call = utilities.InterpolatedPath(path)
+    #action_array_MEP[i] = np.around(path_call.compute_along_path(utilities.TargetFunctions.action,1000,tfArgs=[V_func_shift])[1][0],3)
 min_action_MEP =  np.around(action_array_MEP[-1],3)
 
 
@@ -204,8 +208,8 @@ if save_data == True:
 
 fig, ax = plt.subplots(1,1,figsize = (8, 6))
 
-im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,2.5))
-ax.contour(grids[0],grids[1],EE,colors=['black'],levels=MaxNLocator(nbins = 20).tick_values(0,2.5))  
+im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,215))
+ax.contour(grids[0],grids[1],EE,colors=['black'],levels=MaxNLocator(nbins = 20).tick_values(0,215))  
 ax.plot(init_path[:, 0], init_path[:, 1], '.-', color = 'green',ms=10,label='Initial Path')
 ax.plot(final_path_LAP[:, 0], final_path_LAP[:, 1], '.-',ms=10,label='LAP',color='purple')
 ax.plot(final_path_MEP[:, 0], final_path_MEP[:, 1], '.-',ms=10,label='MEP',color='red')    

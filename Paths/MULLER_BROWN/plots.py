@@ -13,8 +13,8 @@ import utils
 plt.style.use('science')
 def make_MB_potential():
     # parameter set taken from 1701.01241 (scaled down)
-    A = [-2,-1,-1,.15]
-    a = [-1,-1,-6.5,.7]
+    A = [-200,-100,-170,15]
+    a = [-1,-1,-6.5,0.7]
     b= [0,0,11,0.6]
     c = [-10,-10,-6.5,0.7]
     x_bar = [1,0,-0.5,-1]
@@ -42,14 +42,16 @@ def make_MB_potential():
         return result
     return MB_potential
 ### Plot title
-plt_title = 'MB_plot_v1.pdf'
+plt_title = 'MB_plot_v3.pdf'
 
 ### Paths to plot
 # './PyNeb_6_camel_back_symm_LAP_path.txt'
 LAP_path = np.loadtxt('./PyNeb_muller_brown__LAP_path.txt',skiprows=1,delimiter=',')
 MEP_path = np.loadtxt('./PyNeb_muller_brown__MEP_path.txt',skiprows=1,delimiter=',')
-DP_path = np.loadtxt('./mullerbrown_DPM_Path.txt',skiprows=1,delimiter=',')
-paths = {'LAP': LAP_path,'MEP': MEP_path,'DP': DP_path}
+DP_path = np.loadtxt('./mullerbrown_Path.txt',delimiter=',',skiprows=1)
+EL_path = np.loadtxt('./PathELEMuler-Brown.csv',delimiter=',')
+print(LAP_path[-1],MEP_path[-1],DP_path[0],EL_path[-1])
+paths = {'LAP': LAP_path,'MEP': MEP_path,'DP': DP_path,'EL':EL_path}
 path_names = paths.keys()
 action_dict = {}
 #Define potential function
@@ -57,7 +59,7 @@ V_func = make_MB_potential()
 
 ### Shift Surface by global minimum
 x = np.linspace(-1.5, 1,300)
-y = np.linspace(-.25,2,300)
+y = np.linspace(-.25,1.9,300)
 uniq_coords = [x,y]
 
 xx,yy = np.meshgrid(x,y)
@@ -87,21 +89,37 @@ EE = V_func_shift(np.array([xx,yy]))
 for name in path_names:
     path = paths[name]
     path_call = utilities.InterpolatedPath(path)
-    action_dict[name] = np.around(path_call.compute_along_path(utilities.TargetFunctions.action,1000,tfArgs=[V_func_shift])[1][0],3)
-for name in action_dict.keys():
-    print(name+': ', action_dict[name])
+    action_dict[name] = np.around(path_call.compute_along_path(utilities.TargetFunctions.action,500,tfArgs=[V_func_shift])[1][0],3)
+
 with open('MB_action_values.txt', 'w+') as f:
     for name in path_names:
         f.write(str(name)+': '+str(action_dict[name])+'\n')
+for name in action_dict.keys():
+    print(name+': ', action_dict[name])
 
 ### Plot the results
+
 fig, ax = plt.subplots(1,1,figsize = (8, 6))
-im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,2.5))
-ax.contour(grids[0],grids[1],EE,colors=['black'],levels=MaxNLocator(nbins = 15).tick_values(0,2.5))  
-ax.plot(LAP_path[:, 0], LAP_path[:, 1],label='LAP '+str(action_dict['LAP']),linestyle='-',marker='.',color='purple',linewidth=1.0,markersize=6)
-ax.plot(MEP_path[:, 0], MEP_path[:, 1],label='MEP '+str(action_dict['MEP']),linestyle='-',marker='.',color='red',linewidth=1.0,markersize=6)
-ax.plot(DP_path[:, 0], DP_path[:, 1],label='DPM '+str(action_dict['DP']),linestyle='-',marker='.',color='black',linewidth=1.0,markersize=6)
+im = ax.contourf(grids[0],grids[1],EE.clip(0,195),cmap='Spectral_r',extend='both',levels=45)
+cs = ax.contour(grids[0],grids[1],EE.clip(0,195),colors=['black'],levels=10)  
+
+ax.plot(DP_path[:, 0], DP_path[:, 1],label='DP',linestyle='-',color='black',linewidth=2.0)
+ax.plot(EL_path[:, 0], EL_path[:, 1],label='EL',linestyle='-',color='cyan',linewidth=2.0)
+ax.plot(LAP_path[:, 0], LAP_path[:, 1],label='NEB-LAP ',linestyle='-',color='magenta',linewidth=2.0)
+ax.plot(MEP_path[:, 0], MEP_path[:, 1],label='NEB-MEP ',linestyle='-',color='red',linewidth=2.0)
+
+ax.plot(LAP_path[0][0],LAP_path[0][1],marker='s',color='yellow',markersize=5)
+ax.plot(LAP_path[-1][0],LAP_path[-1][1],marker='s',color='yellow',markersize=5)
+
+ax.clabel(cs,inline=1,fontsize=8,colors="black")
+
 cbar = fig.colorbar(im)
+cbar.ax.tick_params(labelsize=12) 
 plt.legend(frameon=True,fancybox=True)
-plt.savefig(plt_title)
+plt.xticks(fontsize=14)
+plt.yticks(fontsize=14)
+ax.set(xlabel="x",ylabel="y")
+#plt.xlabel(r'$x$',size=24)
+#plt.ylabel(r'$y$',size=24)
+plt.savefig(plt_title,bbox_inches="tight")
 plt.show()
