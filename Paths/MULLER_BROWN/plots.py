@@ -12,6 +12,7 @@ import utilities
 import utils
 plt.style.use('science')
 def make_MB_potential():
+    # parameter set taken from 1701.01241 (scaled down)
     A = [-200,-100,-170,15]
     a = [-1,-1,-6.5,0.7]
     b= [0,0,11,0.6]
@@ -36,21 +37,21 @@ def make_MB_potential():
             y = coords[1]
         else:pass
         result = np.zeros(x.shape)
-        #print(x)
-        #print(y)
         for i in range(len(A)):
-            result += A[i]*np.exp(a[i]*(x-x_bar[i])**2.0 + b[i]*(x-x_bar[i])*(y-y_bar[i]) + c[i]*(y-y_bar[i])**2.0)
+            result += A[i]*np.exp(a[i]*(x-x_bar[i])**2 + b[i]*(x-x_bar[i])*(y-y_bar[i]) + c[i]*(y-y_bar[i])**2)
         return result
     return MB_potential
 ### Plot title
-plt_title = 'MB_plot_v1.pdf'
+plt_title = 'MB_plot_v3.pdf'
 
 ### Paths to plot
 # './PyNeb_6_camel_back_symm_LAP_path.txt'
 LAP_path = np.loadtxt('./PyNeb_muller_brown__LAP_path.txt',skiprows=1,delimiter=',')
 MEP_path = np.loadtxt('./PyNeb_muller_brown__MEP_path.txt',skiprows=1,delimiter=',')
-DP_path = np.loadtxt('./mullerbrown_DPM_Path.txt',skiprows=1,delimiter=',')
-paths = {'LAP': LAP_path,'MEP': MEP_path,'DP': DP_path}
+DP_path = np.loadtxt('./mullerbrown_Path.txt',delimiter=',',skiprows=1)
+EL_path = np.loadtxt('./PathELEMuler-Brown.csv',delimiter=',')
+print(LAP_path[-1],MEP_path[-1],DP_path[0],EL_path[-1])
+paths = {'LAP': LAP_path,'MEP': MEP_path,'DP': DP_path,'EL':EL_path}
 path_names = paths.keys()
 action_dict = {}
 #Define potential function
@@ -82,7 +83,7 @@ print('E_gs: ',E_gs)
 V_func_shift = utilities.shift_func(V_func,shift=E_gs)#shift by the ground state
 EE = V_func_shift(np.array([xx,yy]))
 
-interp_paths = {}
+
 
 ## Interpolate the paths 
 for name in path_names:
@@ -95,8 +96,9 @@ with open('MB_action_values.txt', 'w+') as f:
         f.write(str(name)+': '+str(action_dict[name])+'\n')
 for name in action_dict.keys():
     print(name+': ', action_dict[name])
-    
+
 ### Plot the results
+
 fig, ax = plt.subplots(1,1,figsize = (8, 6))
 im = ax.contourf(grids[0],grids[1],EE.clip(0,195),cmap='Spectral_r',extend='both',levels=45)
 cs = ax.contour(grids[0],grids[1],EE.clip(0,195),colors=['black'],levels=10)  
