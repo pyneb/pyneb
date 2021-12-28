@@ -1547,6 +1547,10 @@ def get_crit_pnts(V_func,path,method='central'):
         Energy Function that must have shape (nImgs,nDims).
     path : ndarray
         coordinates of the path on the surface with shape (nImgs,nDims).
+    method : string
+        differentiation method option for numdifftools. Options are 
+        ‘central’, ‘complex’, ‘multicomplex’, ‘forward’, ‘backward’. See 
+        https://numdifftools.readthedocs.io/en/latest/reference
 
     Returns
     -------
@@ -1566,18 +1570,16 @@ def get_crit_pnts(V_func,path,method='central'):
     saddle = []
     for indx in crit_pnts:
         coord = path[indx]
-        hess = nd.Hessian(V_func,method=method,step=10**(-6))(coord)
+        hess = nd.Hessian(V_func,method=method)(coord)
         evals = np.linalg.eigvals(hess)
         for j,val in enumerate(evals):
             if abs(val) < 10**(-6):
                 evals[j] = 0
         ## see which components are less than 0.
-        print(evals)
+        
         neg_bool = evals < 0
         ## count how many false vals there are (ie how many postives evals there are)
-        print(neg_bool)
         eval_num = np.count_nonzero(neg_bool)
-        print(eval_num)
         if eval_num == 0:
             # if all evals are positive, then H is positive def and the function is
             # concave up at this point. This means we are at a local minima
