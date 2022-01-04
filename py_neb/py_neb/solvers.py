@@ -1254,7 +1254,7 @@ class Dijkstra:
         return endptOut
 
 class DynamicProgramming:
-    def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,\
+    def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,allowedMask=None,\
                  target_func=TargetFunctions.action,allowedEndpoints=None,\
                  trimVals=[10**(-4),None],logLevel=1,fName=None,logFreq=50):
         warnings.warn("DynamicProgramming class is still under development")
@@ -1291,6 +1291,20 @@ class DynamicProgramming:
                 raise ValueError("potArr.shape is "+str(potArr.shape)+\
                                  "; required shape is "+str(expectedShape)+\
                                  " (or with swapped first two indices)")
+        if allowedMask is None:
+            self.allowedMask = np.ones(expectedShape,dtype=bool)
+        else:
+            if allowedMask.shape == expectedShape:
+                self.allowedMask = allowedMask
+            else:
+                dummyArr = np.swapaxes(allowedMask,0,1)
+                if dummyArr.shape == expectedShape:
+                    self.allowedMask = dummyArr
+                else:
+                    raise ValueError("allowedMask.shape is "+str(allowedMask.shape)+\
+                                     "; required shape is "+str(expectedShape)+\
+                                     " (or with swapped first two indices)")
+                    
         #TODO: apply error checking above to inertArr
         if inertArr is not None:
             inertArrRequiredShape = self.potArr.shape + 2*(self.nDims,)
@@ -1363,6 +1377,15 @@ class DynamicProgramming:
     
     def _select_prior_points(self,currentIdx,previousIndsArr,distArr):
         previousInds = self._gen_slice_inds(currentIdx-1)
+        #Use scipy.ndimage.label to only select previous indices that are connected
+        #to the current one. Imperfect - on vertical OTL, will choose from far
+        #away points - but unclear if/when that happens. More sophisticated
+        #method could look at connected current/previous slice; when they disagree,
+        #set a range for how far away the index can be on the previous slice.
+        #Won't be perfect. I still expect paths can follow the LAP, then jump
+        #around at the end, but they will no longer pass over the region outside
+        #the OTL, except for a bit near the OTL. "Connected" in this case means
+        #the mask saying which indices are allowed is connected in these two slices.
         currentInds = self._gen_slice_inds(currentIdx)
         
         for idx in currentInds:
@@ -1391,7 +1414,13 @@ class DynamicProgramming:
         
         return previousIndsArr, distArr
     
-    def __call__(self):
+    def __call__(self,searchRange=None,pathAsText=True):
+        # if searchRange is None:
+        #     uniqueSliceInds = [np.arange(self.potArr.shape[0]),[]]
+        #     for s in self.potArr.shape[2:]:
+        #         uniqueSliceInds.append([np.arange(s)])
+        # elif 
+        
         t0 = time.time()
         
         previousIndsArr = -1*np.ones(self.potArr.shape+(self.nDims,),dtype=int)
@@ -1443,6 +1472,7 @@ class DynamicProgramming:
         
         t1 = time.time()
         
-        self.logger.finalize(minPathDict,minIndsDict,distsDict,t1-t0)
+        self.logger.finalize(minPathDict,minIndsDict,distsDict,t1-t0,\
+                             pathAsText=pathAsText)
         
         return minIndsDict, minPathDict, distsDict
