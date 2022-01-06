@@ -60,7 +60,8 @@ LAP_path = np.loadtxt('./PyNeb_6_camel_back_asymm_LAP_path.txt',skiprows=1,delim
 MEP_path = np.loadtxt('./PyNeb_6_camel_back_asymm_MEP_path.txt',skiprows=1,delimiter=',')
 DP_path = np.loadtxt('./CAMEL_DPM_Assym_Path.txt',delimiter=',')
 EL_path = np.loadtxt('./ELEAsymmetrycCamelPath.csv',delimiter=',')
-paths = {'LAP': LAP_path,'MEP': MEP_path,'DP': DP_path,'EL':EL_path}
+DJK_path = np.loadtxt("./asymm_dijkstra.txt",delimiter=",")
+paths = {'NEB-LAP': LAP_path,'NEB-MEP': MEP_path,'DP': DP_path,'EL':EL_path,'Dijkstra':DJK_path}
 #paths = {'LAP': LAP_path,'MEP': MEP_path}
 path_names = paths.keys()
 action_dict = {}
@@ -114,10 +115,9 @@ fig, ax = plt.subplots(1,1,figsize = (8, 6))
 im = ax.contourf(grids[0],grids[1],EE.clip(0,5),cmap='Spectral_r',extend='both',levels=45)
 cs = ax.contour(grids[0],grids[1],EE.clip(0,5),colors=['black'],levels=10)  
 
-ax.plot(DP_path[:, 0], DP_path[:, 1],label='DP',linestyle='-',color='black',linewidth=2.0)
-ax.plot(EL_path[:, 0], EL_path[:, 1],label='EL',linestyle='-',color='cyan',linewidth=2.0)
-ax.plot(LAP_path[:, 0], LAP_path[:, 1],label='NEB-LAP ',linestyle='-',color='magenta',linewidth=2.0)
-ax.plot(MEP_path[:, 0], MEP_path[:, 1],label='NEB-MEP ',linestyle='-',color='red',linewidth=2.0)
+colorsDict = {'DP':"black","EL":"cyan","NEB-LAP":"magenta","NEB-MEP":"red","Dijkstra":"lime"}
+for key, path in paths.items():
+    ax.plot(*path.T,label=key,linestyle="-",color=colorsDict[key],linewidth=2.0)
 
 ax.plot(LAP_path[0][0],LAP_path[0][1],marker='s',color='yellow',markersize=5)
 ax.plot(LAP_path[-1][0],LAP_path[-1][1],marker='s',color='yellow',markersize=5)

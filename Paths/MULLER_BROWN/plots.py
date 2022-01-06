@@ -50,8 +50,10 @@ LAP_path = np.loadtxt('./PyNeb_muller_brown__LAP_path.txt',skiprows=1,delimiter=
 MEP_path = np.loadtxt('./PyNeb_muller_brown__MEP_path.txt',skiprows=1,delimiter=',')
 DP_path = np.loadtxt('./mullerbrown_Path.txt',delimiter=',',skiprows=1)
 EL_path = np.loadtxt('./PathELEMuler-Brown.csv',delimiter=',')
+DJK_path = np.loadtxt("./dijkstra.txt",delimiter=",")
 print(LAP_path[-1],MEP_path[-1],DP_path[0],EL_path[-1])
-paths = {'LAP': LAP_path,'MEP': MEP_path,'DP': DP_path,'EL':EL_path}
+paths = {'NEB-LAP': LAP_path,'NEB-MEP': MEP_path,'DP': DP_path,'EL':EL_path,\
+         "Dijkstra":DJK_path}
 path_names = paths.keys()
 action_dict = {}
 #Define potential function
@@ -103,10 +105,14 @@ fig, ax = plt.subplots(1,1,figsize = (8, 6))
 im = ax.contourf(grids[0],grids[1],EE.clip(0,195),cmap='Spectral_r',extend='both',levels=45)
 cs = ax.contour(grids[0],grids[1],EE.clip(0,195),colors=['black'],levels=10)  
 
-ax.plot(DP_path[:, 0], DP_path[:, 1],label='DP',linestyle='-',color='black',linewidth=2.0)
-ax.plot(EL_path[:, 0], EL_path[:, 1],label='EL',linestyle='-',color='cyan',linewidth=2.0)
-ax.plot(LAP_path[:, 0], LAP_path[:, 1],label='NEB-LAP ',linestyle='-',color='magenta',linewidth=2.0)
-ax.plot(MEP_path[:, 0], MEP_path[:, 1],label='NEB-MEP ',linestyle='-',color='red',linewidth=2.0)
+colorsDict = {'DP':"black","EL":"cyan","NEB-LAP":"magenta","NEB-MEP":"red","Dijkstra":"lime"}
+for key, path in paths.items():
+    ax.plot(*path.T,label=key,linestyle="-",color=colorsDict[key],linewidth=2.0)
+
+# ax.plot(DP_path[:, 0], DP_path[:, 1],label='DP',linestyle='-',color='black',linewidth=2.0)
+# ax.plot(EL_path[:, 0], EL_path[:, 1],label='EL',linestyle='-',color='cyan',linewidth=2.0)
+# ax.plot(LAP_path[:, 0], LAP_path[:, 1],label='NEB-LAP ',linestyle='-',color='magenta',linewidth=2.0)
+# ax.plot(MEP_path[:, 0], MEP_path[:, 1],label='NEB-MEP ',linestyle='-',color='red',linewidth=2.0)
 
 ax.plot(LAP_path[0][0],LAP_path[0][1],marker='s',color='yellow',markersize=5)
 ax.plot(LAP_path[-1][0],LAP_path[-1][1],marker='s',color='yellow',markersize=5)
