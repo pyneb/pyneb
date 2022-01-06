@@ -16,9 +16,9 @@ today = date.today()
 ### Define nucleus data path (assumes our github structure)
 nucleus = "240Pu"
 data_path = f"../../PES/{nucleus}.h5"
-
 use_mass = True
-run_name = 'dt_.5'
+save_data = True
+save_plt = False
 ### defines PES object from utils.py
 PES = utils.PES(data_path)
 mass_PES = utils.PES(data_path)
@@ -44,10 +44,16 @@ V_func = utilities.NDInterpWithBoundary(uniq_coords,EE,boundaryHandler='exponent
 
 # Create dictionary of functions for each comp of the tensor
 if use_mass == True:
-    mass_grids = {key: utilities.NDInterpWithBoundary(uniq_coords,mass_grids[key],boundaryHandler='exponential',symmExtend=True) \
+    mass_grids = {key: utilities.NDInterpWithBoundary(uniq_coords,mass_grids[key],boundaryHandler='exponential',symmExtend=[True,True,False]) \
                   for key in mass_keys}
-    # function returns matrix of functions
+# function returns matrix of functions
     M_func = utilities.mass_funcs_to_array_func(mass_grids,mass_tensor_indicies)
+else:
+    M_func = None # for LAP 
+#M_func = None # for LAP 
+auxFunc = None # for MEP
+if M_func is not None:
+    mass_title = 'True'
 else:
     M_func = None
 
@@ -71,8 +77,8 @@ cbar = fig.colorbar(im)
 plt.show()
 '''
 NImgs = 42
-k = .01
-kappa = 2.0
+k = 1.0
+kappa = 5.0
 E_const = E_gs
 nDims = len(uniq_coords)
 force_R0 = False
@@ -85,32 +91,30 @@ springForceFix = (springR0,springRN)
 ### Optimization parameters 
 ## Velocity Verlet parameter set
 dt = .5
-NIterations = 300
+NIterations = 2000
 
 ### define initial path
 R0 = gs_coord # NEB starting point
-RN = (185,17,2) # NEB end point
+RN = (185,17,6) # NEB end point
 init_path_constructor = utils.init_NEB_path(R0,RN,NImgs)
 init_path = init_path_constructor.linear_path()
 
 ### Define parameter dictionaries (mostly for book keeping)
 neb_params ={'k':k,'kappa':kappa,'constraintEneg':E_const}
-method_dict = {'k':k,'kappa':kappa,'NImages': NImgs,'Iterations':NIterations,'dt':dt,'optimization':'Local FIRE','HarmonicForceEnds': endPointFix, \
+method_dict = {'k':k,'kappa':kappa,'NImages': NImgs,'Iterations':NIterations,'dt':dt,'optimization':'FIRE2','HarmonicForceEnds': endPointFix, \
                    'SpringForceEnds': springForceFix}
-
-FireParams = {"dtMax":5.,"dtMin":.01,"nAccel":10,"fInc":1.1,"fAlpha":0.99,\
-     "fDecel":0.5,"aStart":0.1,"maxmove":np.array([1,.05,1])}
-    
-    
-    
-    
-    
-    
+FireParams = \
+            {"dtMax":10,"dtMin":0.1,"nAccel":10,"fInc":1.1,"fAlpha":0.99,\
+             "fDecel":0.5,"aStart":0.1,"maxmove":[10,.5,10]}
 #### Compute LAP
-# LAP function you want to minimize
-target_func_LAP = utilities.TargetFunctions.action_squared
-# LAP specialized function that takes the gradient of target function
-target_func_grad_LAP = solvers.GradientApproximations().discrete_sqr_action_grad
+if use_mass == True:
+    target_func_LAP = utilities.TargetFunctions.action_squared
+    # LAP specialized function that takes the gradient of target function
+    target_func_grad_LAP = utilities.GradientApproximations().discrete_sqr_action_grad_mp
+else:
+    target_func_LAP = utilities.TargetFunctions.action
+    # LAP specialized function that takes the gradient of target function
+    target_func_grad_LAP = utilities.GradientApproximations().discrete_action_grad_const
 
 LAP_params = {'potential':V_func_shift,'nPts':NImgs,'nDims':nDims,'mass':M_func,'endpointSpringForce': springForceFix ,\
                  'endpointHarmonicForce':endPointFix,'target_func':target_func_LAP,\
@@ -144,14 +148,15 @@ min_action_LAP = np.around(action_array_LAP[-1],2)
 title = 'Eric_'+nucleus+'_LAP_'+'Mass_'+str(use_mass)+'_'+run_name
 
 ### write run meta data to txt file.
-metadata = {'title':title,'Created_by': 'Eric','Created_on':today.strftime("%b-%d-%Y"),'method':'NEB-LAP-Numerical','method_description':method_dict, \
+metadata = {'title':title,'Created_by': 'Eric','Created_on':today.strftime("%b-%d-%Y"),'method':'NEB-LAP','method_description':method_dict, \
                 'masses':None,'E_gs': str(E_gs),'action':action_array_LAP[-1],'run_time':total_time_LAP ,\
                     'initial_start_point': R0,'initial_end_point': RN}
-utils.make_metadata(metadata)
-FireParams['title'] = 'FireParams'
-utils.make_metadata(FireParams)
+if save_data == True:
+    utils.make_metadata(metadata)
+
 # write final path to txt.
-np.savetxt(title+'_path.txt',final_path_LAP,comments='',delimiter=',',header="Q20,Q30")
+if save_data == True:
+    np.savetxt(title+'_path.txt',final_path_LAP,comments='',delimiter=',',header="Q20,Q30")
 
 
 
@@ -204,25 +209,27 @@ np.savetxt(title+'_path.txt',final_path_MEP,comments='',delimiter=',',header="Q2
 fig, ax = plt.subplots(1,1,figsize = (12, 10))
 
 im = ax.contourf(xx_s,yy_s,zz_s,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,15))
-ax.contour(xx_s,yy_s,zz_s,colors=['black'],levels=[E_gs])              
+ax.contour(xx_s,yy_s,zz_scolors=['black'],levels=[E_gs])              
 ax.plot(init_path[:, 0], init_path[:, 1], '.-', color = 'orange',ms=10,label='Initial Path')
 ax.plot(final_path_LAP[:, 0], final_path_LAP[:, 1], '.-',ms=10,label='LAP',color='purple')
 #ax.plot(final_path_MEP[:, 0], final_path_MEP[:, 1], '.-',ms=10,label='MEP',color='red')    
 ax.set_ylabel('$Q_{30}$',size=20)
 ax.set_xlabel('$Q_{20}$',size=20)
-ax.set_title('M = '+str(NIterations)+' N = '+str(NImgs)+' k='+str(k)+' kappa='+str(kappa)+'_Mass_'+str(use_mass))
+ax.set_title('M = '+str(NIterations)+' N = '+str(NImgs)+' k='+str(k)+' kappa='+str(kappa)+'_mass_'+str(use_mass))
+
+fig.suptitle(f'Projection onto lambda_2 = {const_comps[0]}',fontsize=24)
 ax.legend()
-fig.suptitle(f'Projection on to lambda_2 = {const_comps[0]}',fontsize=24)
 cbar = fig.colorbar(im)
-plt.savefig('Eric_'+nucleus+'Mass_'+str(use_mass)+'_'+run_name+'.pdf')
+if save_plt == True:
+    plt.savefig(nucleus+'_Mass_'+str(use_mass)+'_M_'+str(NIterations)+'_N_'+str(NImgs)+'k_'+str(k)+'kappa_'+str(kappa)+'_path.pdf')
 plt.show()  
 plt.clf()
 
 plt.plot(range(NIterations+2),action_array_LAP,label='LAP '+str(min_action_LAP))
 #plt.plot(range(NIterations+2),action_array_MEP,label='MEP '+str(min_action_MEP))
-#plt.plot(range(NIterations+2),action_array_MEP_old,label='MEP Discrete '+str(min_action_MEP_old))
 plt.xlabel('Iterations')
 plt.ylabel('Action')
 plt.legend()
-plt.savefig('Eric_'+nucleus+'Mass_'+str(use_mass)+'_'+run_name+'_action.pdf')
+if save_plt == True:
+    plt.savefig(nucleus+'_Mass_'+str(use_mass)+'_M_'+str(NIterations)+'_N_'+str(NImgs)+'k_'+str(k)+'kappa_'+str(kappa)+'_action.pdf')
 plt.show()
