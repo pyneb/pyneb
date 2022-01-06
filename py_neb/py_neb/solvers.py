@@ -649,11 +649,11 @@ class VerletMinimization:
             #TODO: check potential off-by-one indexing on tStep
             if useLocal:
                 tStepArr,alphaArr,stepsSinceReset = \
-                    self._local_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
+                    self._local_fire2_iter(step,tStepArr,alphaArr,stepsSinceReset,\
                                           fireParams)
             else:
                 tStepArr,alphaArr,stepsSinceReset = \
-                    self._global_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
+                    self._global_fire2_iter(step,tStepArr,alphaArr,stepsSinceReset,\
                                            fireParams)
         
         if useLocal:
