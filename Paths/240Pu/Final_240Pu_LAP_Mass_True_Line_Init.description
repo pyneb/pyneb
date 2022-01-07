@@ -1,0 +1,11 @@
+title: Final_240Pu_LAP_Mass_True_Line_Init
+Created_by: Kyle
+Created_on: Jan-06-2022
+method: NEB-LAP-Numerical-Line-Init
+method_description: {'k': 0.001, 'kappa': 2.0, 'NImages': 102, 'Iterations': 10000, 'dt': 0.02, 'optimization': 'FIRE2', 'HarmonicForceEnds': (False, True), 'SpringForceEnds': (False, True)}
+masses: None
+E_gs: [0.]
+action: 16.529731568987692
+run_time: 7775.934329986572
+initial_start_point: [86.  0.  0.]
+initial_end_point: (184, 18.6, 4.8)
