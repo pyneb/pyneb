@@ -1,9 +1,9 @@
 import os
 import sys
 
-# from tabulate import tabulate
-# from texttable import Texttable
-# import latextable
+from tabulate import tabulate
+from texttable import Texttable
+import latextable
 
 import pandas as pd
 
@@ -56,7 +56,8 @@ pathsDir = os.path.expanduser("~/Research/ActionMinimization/Paths/232U/")
 pathFiles = ['Eric_MEP.txt','232U_NDLinear_Mass_None.txt',\
              'Eric_232U_LAP_Mass_True_path.txt',\
              '232U_MAP.txt','232U_MAP_WMP.txt',\
-             '232U_PathPablo.txt','232U_PathPablo_MassParams.txt']
+             '232U_PathPablo.txt','232U_PathPablo_MassParams.txt',\
+             'djk_path_no_mass.txt','djk_path_mass.txt']
 
 pathsDict = {}
 for f in pathFiles:
@@ -82,14 +83,16 @@ def make_fig():
                  'Eric_232U_LAP_Mass_True_path.txt':"blue",\
                  '232U_MAP.txt':"orange",'232U_MAP_WMP.txt':"orange",\
                  '232U_PathPablo.txt':"purple",'232U_PathPablo_MassParams.txt':'purple',\
-                 'Eric_MEP.txt':"green"}
+                 'Eric_MEP.txt':"green",\
+                 'djk_path_no_mass.txt':'black','djk_path_mass.txt':'black'}
     noMassStyle = "solid"
     massStyle = "dotted"
     stylesDict = {'232U_NDLinear_Mass_None.txt':noMassStyle,\
                  'Eric_232U_LAP_Mass_True_path.txt':massStyle,\
                  '232U_MAP.txt':noMassStyle,'232U_MAP_WMP.txt':massStyle,\
                  '232U_PathPablo.txt':noMassStyle,'Eric_MEP.txt':noMassStyle,\
-                 '232U_PathPablo_MassParams.txt':massStyle}
+                 '232U_PathPablo_MassParams.txt':massStyle,\
+                 'djk_path_no_mass.txt':noMassStyle,'djk_path_mass.txt':massStyle}
         
     for (key,p) in pathsDict.items():
         ax.plot(*p.T,color=colorsDict[key],ls=stylesDict[key])
@@ -101,7 +104,8 @@ def make_fig():
     return None
 
 def make_separate_figs():
-    colorsDict = {"neb_lap":"blue","dpm":"orange","el":"purple","neb_mep":"green"}
+    colorsDict = {"neb_lap":"blue","dpm":"orange","el":"purple","neb_mep":"green",\
+                  "dijkstra":"black"}
     stylesDict = {"no_mass":"solid","mass":"solid"}
     
     noMassFig, noMassAx = plt.subplots()
@@ -118,7 +122,8 @@ def make_separate_figs():
                  'Eric_232U_LAP_Mass_True_path.txt':["mass","neb_lap"],\
                  '232U_MAP.txt':["no_mass","dpm"],'232U_MAP_WMP.txt':["mass","dpm"],\
                  '232U_PathPablo.txt':["no_mass","el"],'232U_PathPablo_MassParams.txt':["mass","el"],\
-                 'Eric_MEP.txt':["no_mass","neb_mep"]}
+                 'Eric_MEP.txt':["no_mass","neb_mep"],'djk_path_no_mass.txt':["no_mass","dijkstra"],\
+                 'djk_path_mass.txt':["mass","dijkstra"]}
         
     for (key,p) in pathsDict.items():
         if typesDict[key][0] == "no_mass":
@@ -197,22 +202,37 @@ def make_action_tables():
                    'Eric_232U_LAP_Mass_True_path.txt':True,\
                    '232U_MAP.txt':False,'232U_MAP_WMP.txt':True,\
                    '232U_PathPablo.txt':False,'Eric_MEP.txt':False,\
-                   '232U_PathPablo_MassParams.txt':True}
+                   '232U_PathPablo_MassParams.txt':True,\
+                   'djk_path_no_mass.txt':False,'djk_path_mass.txt':True}
         
     actsDict = {}
     for key in pathFiles:
-        if useMassDict[key]:
-            actsDict[key] = interpPathsDict[key].compute_along_path(TargetFunctions.action,500,\
-                                                                    tfArgs=[pes_interp],\
-                                                                    tfKWargs={"masses":mass_interp})[1][0]
-        else:
-            actsDict[key] = interpPathsDict[key].compute_along_path(TargetFunctions.action,500,\
-                                                                    tfArgs=[pes_interp])[1][0]
+        # if useMassDict[key]:
+        actsDict[key] = interpPathsDict[key].compute_along_path(TargetFunctions.action,500,\
+                                                                tfArgs=[pes_interp],\
+                                                                tfKWargs={"masses":mass_interp})[1][0]
+        # else:
+        #     actsDict[key] = interpPathsDict[key].compute_along_path(TargetFunctions.action,500,\
+        #                                                             tfArgs=[pes_interp])[1][0]
     
-    print(actsDict)
+    r1Keys = ["Eric_MEP.txt","232U_NDLinear_Mass_None.txt","232U_MAP.txt","232U_PathPablo.txt",\
+              "djk_path_no_mass.txt"]
+    r2Keys = ["Eric_232U_LAP_Mass_True_path.txt","232U_MAP_WMP.txt","232U_PathPablo_MassParams.txt",\
+              "djk_path_mass.txt"]
+        
+    #Have to format here and in tabulate, since it'll treat different columns differently
+    r1 = [r'${}^{232}$U']+[format(actsDict[key],".1f") for key in r1Keys]
+    r2 = [r'${}^{232}$U, WI',"-"]+[format(actsDict[key],".1f") for key in r2Keys]
+    
+    headers = ["NEB-MEP","NEB-LAP","DPM","EL","Dijkstra"]
+    
+    print(tabulate([r1,r2], headers=headers, tablefmt='latex_raw',floatfmt=".1f"))
+    
+    # print(actsDict)
     return None
 
 np.seterr(invalid="raise")
 make_action_tables()
 make_fig()
+make_separate_figs()
 # bw_styles_fig()
