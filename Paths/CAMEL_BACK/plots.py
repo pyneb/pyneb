@@ -5,7 +5,6 @@ import time
 import sys
 
 ### add pyneb
-import sys
 sys.path.insert(0, '../../py_neb/py_neb')
 sys.path.insert(0, '../../flynn_code/py_neb_demos')
 import utilities
@@ -51,20 +50,58 @@ def camel_back_asymm(coords):
     return(result)
 
 ### Plot title
-surface_name = 'camel_asymm'
+surface_name = 'camel_symm'
 plt_title = surface_name+'_v3.pdf'
-V_func = camel_back_asymm
+V_func = camel_back
 ### Paths to plot
 # './PyNeb_6_camel_back_symm_LAP_path.txt'
-LAP_path = np.loadtxt('./PyNeb_6_camel_back_asymm_LAP_path.txt',skiprows=1,delimiter=',')
-MEP_path = np.loadtxt('./PyNeb_6_camel_back_asymm_MEP_path.txt',skiprows=1,delimiter=',')
-DP_path = np.loadtxt('./CAMEL_DPM_Assym_Path.txt',delimiter=',')
-EL_path = np.loadtxt('./ELEAsymmetrycCamelPath.csv',delimiter=',')
+LAP_path = np.loadtxt('./PyNeb_6_camel_back_symm_LAP_path.txt',skiprows=1,delimiter=',')
+MEP_path = np.loadtxt('./PyNeb_6_camel_back_symm_MEP_path.txt',skiprows=1,delimiter=',')
+DP_path = np.loadtxt('./CAMEL_DPM_Symm_Path.txt',delimiter=',')
+EL_path = np.loadtxt('./ELESymmetricCamelPath.csv',delimiter=',')
 paths = {'LAP': LAP_path,'MEP': MEP_path,'DP': DP_path,'EL':EL_path}
 #paths = {'LAP': LAP_path,'MEP': MEP_path}
 path_names = paths.keys()
 action_dict = {}
 #Define potential function
+
+### Find global minimum to shift surface
+x = np.linspace(-2, 2,300)
+y = np.linspace(-1.25, 1.25,300)
+uniq_coords = [x,y]
+
+xx,yy = np.meshgrid(x,y)
+grids = [xx,yy]
+coords = np.array([xx,yy])
+EE_0 = V_func(np.array([xx,yy]))
+
+#Calculate minima of PES
+minima_id =  utilities.SurfaceUtils.find_all_local_minimum(EE_0)
+minima_coords = np.array((xx[minima_id],yy[minima_id])).T
+V_min = V_func(minima_coords)
+sorted_ascending_idx = np.argsort(V_min) #places global min first
+
+# redefine minima_coords so that they are in ascending order
+minima_coords = minima_coords[sorted_ascending_idx]
+V_min = V_func([minima_coords[:,0],minima_coords[:,1]])
+####
+gs_coord = minima_coords[0]
+E_gs = V_func(gs_coord)
+print('E_gs: ',E_gs)
+V_func_shift = utilities.shift_func(V_func,shift=E_gs)#shift by the ground state
+EE = V_func_shift(np.array([xx,yy]))
+
+
+
+
+## Interpolate the paths 
+for name in path_names:
+    path = paths[name]
+    path_call = utilities.InterpolatedPath(path)
+    action_dict[name] = np.around(path_call.compute_along_path(utilities.TargetFunctions.action,500,tfArgs=[V_func_shift])[1][0],3)
+
+for name in action_dict.keys():
+    print(name+': ', action_dict[name])
 print("Beginning Points: ", LAP_path[0],MEP_path[0],DP_path[0],EL_path[-1])
 print("Ending Points: ", LAP_path[-1],MEP_path[-1],DP_path[-1],EL_path[0])
 ### Shift Surface by global minimum
@@ -109,18 +146,22 @@ with open(surface_name+'_action_values.txt', 'w+') as f:
 for name in action_dict.keys():
     print(name+': ', action_dict[name])
 
+maxima,minima,saddle = utilities.get_crit_pnts(V_func, MEP_path,method='central')
+
 ### Plot the results
 fig, ax = plt.subplots(1,1,figsize = (8, 6))
 im = ax.contourf(grids[0],grids[1],EE.clip(0,5),cmap='Spectral_r',extend='both',levels=45)
-cs = ax.contour(grids[0],grids[1],EE.clip(0,5),colors=['black'],levels=10)  
+cs = ax.contour(grids[0],grids[1],EE.clip(0,5),colors=['black'],levels=10) 
+
 
 ax.plot(DP_path[:, 0], DP_path[:, 1],label='DP',linestyle='-',color='black',linewidth=2.0)
 ax.plot(EL_path[:, 0], EL_path[:, 1],label='EL',linestyle='-',color='cyan',linewidth=2.0)
 ax.plot(LAP_path[:, 0], LAP_path[:, 1],label='NEB-LAP ',linestyle='-',color='magenta',linewidth=2.0)
 ax.plot(MEP_path[:, 0], MEP_path[:, 1],label='NEB-MEP ',linestyle='-',color='red',linewidth=2.0)
+ 
 
-ax.plot(LAP_path[0][0],LAP_path[0][1],marker='s',color='yellow',markersize=5)
-ax.plot(LAP_path[-1][0],LAP_path[-1][1],marker='s',color='yellow',markersize=5)
+ax.plot(MEP_path[:,0][saddle],MEP_path[:,1][saddle],'*',color='black',markersize=14)
+ax.plot(MEP_path[:,0][minima],MEP_path[:,1][minima],'X',color='yellow',markersize=12)
 
 ax.clabel(cs,inline=1,fontsize=8,colors="black")
 

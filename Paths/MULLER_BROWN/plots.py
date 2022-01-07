@@ -97,6 +97,8 @@ with open('MB_action_values.txt', 'w+') as f:
 for name in action_dict.keys():
     print(name+': ', action_dict[name])
 
+maxima,minima,saddle = utilities.get_crit_pnts(V_func, MEP_path,method='central')
+
 ### Plot the results
 
 fig, ax = plt.subplots(1,1,figsize = (8, 6))
@@ -108,9 +110,9 @@ ax.plot(EL_path[:, 0], EL_path[:, 1],label='EL',linestyle='-',color='cyan',linew
 ax.plot(LAP_path[:, 0], LAP_path[:, 1],label='NEB-LAP ',linestyle='-',color='magenta',linewidth=2.0)
 ax.plot(MEP_path[:, 0], MEP_path[:, 1],label='NEB-MEP ',linestyle='-',color='red',linewidth=2.0)
 
-ax.plot(LAP_path[0][0],LAP_path[0][1],marker='s',color='yellow',markersize=5)
-ax.plot(LAP_path[-1][0],LAP_path[-1][1],marker='s',color='yellow',markersize=5)
 
+ax.plot(MEP_path[:,0][saddle],MEP_path[:,1][saddle],'*',color='black',markersize=14)
+ax.plot(MEP_path[:,0][minima],MEP_path[:,1][minima],'X',color='yellow',markersize=12)
 ax.clabel(cs,inline=1,fontsize=8,colors="black")
 
 cbar = fig.colorbar(im)
