@@ -2,11 +2,39 @@ import h5py
 import os
 
 import numpy as np
+import pandas as pd
 import datetime
 
 import warnings
 import functools
 import inspect
+
+def path_to_text(path,fName,colHeads=None):
+    if colHeads is None:
+        header = ""
+    else:
+        header = ",".join(colHeads)
+        
+    np.savetxt(fName,path,delimiter=",",header=header,fmt="%.6e")
+    
+    return None
+
+def path_from_text(fName,returnHeads=False):
+    df = pd.read_csv(fName,sep=",",index_col=None,header=None)
+    
+    firstRow = np.array(df.loc[0])
+    try:
+        firstRow = firstRow.astype(float)
+        arr = np.array(df)
+        heads = None
+    except ValueError:
+        arr = np.array(df.loc[1:]).astype(float)
+        heads = df.loc[0]
+        
+    if returnHeads:
+        return arr, heads
+    else:
+        return arr
 
 class ForceLogger:
     #TODO: log interpolators better/at all. Want to allow a link to the dataset(s)
@@ -382,6 +410,7 @@ class DPMLogger:
         if fName is None:
             fName = datetime.datetime.now().isoformat()
         self.fName = "logs/"+fName+".dpm"
+        self.fNameIn = fName #Could be cleaner -_-
         if logLevel not in [0,1]:
             raise ValueError("logLevel "+str(logLevel)+" not allowed")
         self.logLevel = logLevel
@@ -438,10 +467,13 @@ class DPMLogger:
         
         return None
     
-    def finalize(self,minPathDict,minIndsDict,distsDict,runTime):
+    def finalize(self,minPathDict,minIndsDict,distsDict,runTime,\
+                 pathAsText=True):
         distsDType = np.dtype({"names":["endpoint","dist","strLabel"],\
                                "formats":[(float,(self.classInst.nDims,)),float,\
                                           h5py.string_dtype("utf-8")]})
+        if pathAsText:
+            os.makedirs("paths",exist_ok=True)
         
         if self.logLevel == 1:
             h5File = h5py.File(self.fName,"a")
@@ -452,7 +484,8 @@ class DPMLogger:
             padLen = len(str(nEndpoints))
             
             for (keyIter,key) in enumerate(distsDict.keys()):
-                gpNm = "endpoints/"+str(keyIter).zfill(padLen)
+                strIter = str(keyIter).zfill(padLen)
+                gpNm = "endpoints/"+strIter
                 h5File.create_group(gpNm)
                 h5File[gpNm].attrs.create("endpoint",key)
                 h5File[gpNm].create_dataset("inds",data=minIndsDict[key])
@@ -460,13 +493,17 @@ class DPMLogger:
                 
                 distsArr[keyIter]["endpoint"] = key
                 distsArr[keyIter]["dist"] = distsDict[key]
-                distsArr[keyIter]["strLabel"] = str(keyIter).zfill(padLen)
+                distsArr[keyIter]["strLabel"] = strIter
+                
+                if pathAsText:
+                    pathTxtName = "paths/"+self.fNameIn+"_endpoint_"+strIter+".txt"
+                    path_to_text(minPathDict[key],pathTxtName)
             
             h5File.attrs.create("runTime",runTime)
             h5File.create_dataset("dists",data=distsArr)
             
             h5File.close()
-        
+                    
         return None
     
 class LoadDPMLogger:

@@ -1,0 +1,11 @@
+title: Final_240Pu_LAP_Mass_True_DP_Init
+Created_by: Kyle
+Created_on: Jan-06-2022
+method: NEB-LAP-Numerical-DP-Init
+method_description: {'k': 0.01, 'kappa': 2.0, 'NImages': 194, 'Iterations': 1000, 'dt': 0.02, 'optimization': 'FIRE2', 'HarmonicForceEnds': (False, True), 'SpringForceEnds': (False, True)}
+masses: None
+E_gs: [0.]
+action: 16.303589856081455
+run_time: 1038.3612701892853
+initial_start_point: [86.  0.  0.]
+initial_end_point: (184, 18.6, 4.8)
