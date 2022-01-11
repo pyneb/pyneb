@@ -53,8 +53,8 @@ def read_potential():
 coordNms = ["Q20","Q30"]
 
 pathsDir = os.path.expanduser("~/Research/ActionMinimization/Paths/232U/")
-pathFiles = ['Eric_MEP.txt','232U_NDLinear_Mass_None.txt',\
-             'Eric_232U_LAP_Mass_True_path.txt',\
+pathFiles = ['Eric_MEP.txt','Eric_232U_LAP_Mass_False_path.txt',\
+             '232U_LAP_WMP_NEB.txt',\
              '232U_MAP.txt','232U_MAP_WMP.txt',\
              '232U_PathPablo.txt','232U_PathPablo_MassParams.txt',\
              'djk_path_no_mass.txt','djk_path_mass.txt']
@@ -79,16 +79,16 @@ def make_fig():
                     linestyles="solid",colors="gray")
     ax.clabel(cs,inline=1,fontsize=5,colors="black")
     
-    colorsDict = {'232U_NDLinear_Mass_None.txt':"blue",\
-                 'Eric_232U_LAP_Mass_True_path.txt':"blue",\
+    colorsDict = {'Eric_232U_LAP_Mass_False_path.txt':"blue",\
+                 '232U_LAP_WMP_NEB.txt':"blue",\
                  '232U_MAP.txt':"orange",'232U_MAP_WMP.txt':"orange",\
                  '232U_PathPablo.txt':"purple",'232U_PathPablo_MassParams.txt':'purple',\
                  'Eric_MEP.txt':"green",\
                  'djk_path_no_mass.txt':'black','djk_path_mass.txt':'black'}
     noMassStyle = "solid"
     massStyle = "dotted"
-    stylesDict = {'232U_NDLinear_Mass_None.txt':noMassStyle,\
-                 'Eric_232U_LAP_Mass_True_path.txt':massStyle,\
+    stylesDict = {'Eric_232U_LAP_Mass_False_path.txt':noMassStyle,\
+                 '232U_LAP_WMP_NEB.txt':massStyle,\
                  '232U_MAP.txt':noMassStyle,'232U_MAP_WMP.txt':massStyle,\
                  '232U_PathPablo.txt':noMassStyle,'Eric_MEP.txt':noMassStyle,\
                  '232U_PathPablo_MassParams.txt':massStyle,\
@@ -118,8 +118,8 @@ def make_separate_figs():
                         linestyles="solid",colors="gray")
         ax.clabel(cs,inline=1,fontsize=5,colors="black")
     
-    typesDict = {'232U_NDLinear_Mass_None.txt':["no_mass","neb_lap"],\
-                 'Eric_232U_LAP_Mass_True_path.txt':["mass","neb_lap"],\
+    typesDict = {'Eric_232U_LAP_Mass_False_path.txt':["no_mass","neb_lap"],\
+                 '232U_LAP_WMP_NEB.txt':["mass","neb_lap"],\
                  '232U_MAP.txt':["no_mass","dpm"],'232U_MAP_WMP.txt':["mass","dpm"],\
                  '232U_PathPablo.txt':["no_mass","el"],'232U_PathPablo_MassParams.txt':["mass","el"],\
                  'Eric_MEP.txt':["no_mass","neb_mep"],'djk_path_no_mass.txt':["no_mass","dijkstra"],\
@@ -162,8 +162,8 @@ def bw_styles_fig():
                         linestyles="solid",colors="gray")
         ax.clabel(cs,inline=1,fontsize=5,colors="black")
     
-    typesDict = {'232U_NDLinear_Mass_None.txt':["no_mass","neb_lap"],\
-                 'Eric_232U_LAP_Mass_True_path.txt':["mass","neb_lap"],\
+    typesDict = {'Eric_232U_LAP_Mass_False_path.txt':["no_mass","neb_lap"],\
+                 '232U_LAP_WMP_NEB.txt':["mass","neb_lap"],\
                  '232U_MAP.txt':["no_mass","dpm"],'232U_MAP_WMP.txt':["mass","dpm"],\
                  '232U_PathPablo.txt':["no_mass","el"],'232U_PathPablo_MassParams.txt':["mass","el"],\
                  'Eric_MEP.txt':["no_mass","neb_mep"]}
@@ -198,8 +198,8 @@ def make_action_tables():
     for key in pathFiles:
         interpPathsDict[key] = InterpolatedPath(pathsDict[key])
         
-    useMassDict = {'232U_NDLinear_Mass_None.txt':False,\
-                   'Eric_232U_LAP_Mass_True_path.txt':True,\
+    useMassDict = {'Eric_232U_LAP_Mass_False_path.txt':False,\
+                   '232U_LAP_WMP_NEB.txt':True,\
                    '232U_MAP.txt':False,'232U_MAP_WMP.txt':True,\
                    '232U_PathPablo.txt':False,'Eric_MEP.txt':False,\
                    '232U_PathPablo_MassParams.txt':True,\
@@ -215,9 +215,9 @@ def make_action_tables():
         #     actsDict[key] = interpPathsDict[key].compute_along_path(TargetFunctions.action,500,\
         #                                                             tfArgs=[pes_interp])[1][0]
     
-    r1Keys = ["Eric_MEP.txt","232U_NDLinear_Mass_None.txt","232U_MAP.txt","232U_PathPablo.txt",\
+    r1Keys = ["Eric_MEP.txt","Eric_232U_LAP_Mass_False_path.txt","232U_MAP.txt","232U_PathPablo.txt",\
               "djk_path_no_mass.txt"]
-    r2Keys = ["Eric_232U_LAP_Mass_True_path.txt","232U_MAP_WMP.txt","232U_PathPablo_MassParams.txt",\
+    r2Keys = ["232U_LAP_WMP_NEB.txt","232U_MAP_WMP.txt","232U_PathPablo_MassParams.txt",\
               "djk_path_mass.txt"]
         
     #Have to format here and in tabulate, since it'll treat different columns differently
