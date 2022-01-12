@@ -72,8 +72,8 @@ class ForceLogger:
             if self.loggerSettings["logName"] is None:
                 self.fileName = "logs/"+self.initTime+fileExt
             else:
-                self.fileName = "logs/"+self.loggerSettings["logName"]
-            
+                self.fileName = "logs/"+self.loggerSettings["logName"]+fileExt
+                        
             #Creating attributes and initializing datasets
             h5File = h5py.File(self.fileName,"w")
             
@@ -177,8 +177,8 @@ class ForceLogger:
                 
                 h5File.close()
         return None
-    
-class LoadForceLog:
+        
+class LoadForceLogger:
     def __init__(self,file):
         allowedExtensions = [".lap",".mep"]
         fileExt = file[-4:]
@@ -206,6 +206,11 @@ class LoadForceLog:
             setattr(self,dset,np.array(h5File[dset]))
         
         h5File.close()
+        
+class LoadForceLog(LoadForceLogger):
+    def __init__(self,file):
+        warnings.warn("Deprecating LoadForceLog in favor of LoadForceLogger")
+        LoadForceLogger.__init__(self,file)
         
 class VerletLogger:
     def __init__(self,vltInst,logLevel):
@@ -339,7 +344,47 @@ class DijkstraLogger:
         h5File.close()
         return None
     
-class LoadDijkstraLog:
+    def finalize(self,runTime,pathAsText=True):
+        #TODO: adjust so that the final path is written to a text file after the
+        #HDF5 log is written
+        # distsDType = np.dtype({"names":["endpoint","dist","strLabel"],\
+        #                        "formats":[(float,(self.classInst.nDims,)),float,\
+        #                                   h5py.string_dtype("utf-8")]})
+        if pathAsText:
+            os.makedirs("paths",exist_ok=True)
+        
+        if self.logLevel == 1:
+            # h5File = h5py.File(self.fName,"a")
+            # h5File.create_group("endpoints")
+            # distsArr = np.zeros(len(distsDict),dtype=distsDType)
+            
+            nEndpoints = len(self.classInst.endpointIndices)
+            padLen = len(str(nEndpoints))
+            
+            for (keyIter,key) in enumerate(distsDict.keys()):
+                strIter = str(keyIter).zfill(padLen)
+                # gpNm = "endpoints/"+strIter
+                # h5File.create_group(gpNm)
+                # h5File[gpNm].attrs.create("endpoint",key)
+                # h5File[gpNm].create_dataset("inds",data=minIndsDict[key])
+                # h5File[gpNm].create_dataset("points",data=minPathDict[key])
+                
+                # distsArr[keyIter]["endpoint"] = key
+                # distsArr[keyIter]["dist"] = distsDict[key]
+                # distsArr[keyIter]["strLabel"] = strIter
+                
+                if pathAsText:
+                    pathTxtName = "paths/"+self.fNameIn+"_endpoint_"+strIter+".txt"
+                    path_to_text(minPathDict[key],pathTxtName)
+            
+            # h5File.attrs.create("runTime",runTime)
+            # h5File.create_dataset("dists",data=distsArr)
+            
+            # h5File.close()
+                    
+        return None
+            
+class LoadDijkstraLogger:
     #Maybe can just be a function
     def __init__(self,file):
         if not file.endswith(".djk"):
@@ -473,7 +518,7 @@ class DPMLogger:
                                "formats":[(float,(self.classInst.nDims,)),float,\
                                           h5py.string_dtype("utf-8")]})
         if pathAsText:
-            os.makedirs("paths",exist_ok=True)
+            os.makedirs("paths/dpm",exist_ok=True)
         
         if self.logLevel == 1:
             h5File = h5py.File(self.fName,"a")
@@ -496,7 +541,7 @@ class DPMLogger:
                 distsArr[keyIter]["strLabel"] = strIter
                 
                 if pathAsText:
-                    pathTxtName = "paths/"+self.fNameIn+"_endpoint_"+strIter+".txt"
+                    pathTxtName = "paths/dpm/"+self.fNameIn+"_endpoint_"+strIter+".txt"
                     path_to_text(minPathDict[key],pathTxtName)
             
             h5File.attrs.create("runTime",runTime)
