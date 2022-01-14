@@ -83,7 +83,6 @@ def make_action_tables():
     
     for key in pathFiles:
         if pathsDict[key].shape[1] == 2:
-            print(key)
             pathsDict[key] = np.hstack((pathsDict[key],np.zeros((pathsDict[key].shape[0],1))))
     
     interpPathsDict = {}
@@ -96,9 +95,17 @@ def make_action_tables():
                                                                 tfArgs=[pes_interp],\
                                                                 tfKWargs={"masses":mass_interp})[1][0]
     
-    for (key,val) in actsDict.items():
-        # print(50*"=")
-        print(key+", %.3f"%val)
+    sortOrder = ["neb-mep","neb-lap","dpm","ele","dijkstra"]
+    noMassFiles = [s+"_no_mass.txt" for s in sortOrder]
+    massFiles = [s+"_mass.txt" for s in sortOrder]
+    
+    r1 = [r'${}^{240}$Pu']+[format(actsDict[key],".2f") for key in noMassFiles]
+    r2 = [r'${}^{240}$Pu, WI',"-"]+[format(actsDict[key],".2f") for key in massFiles[1:]]
+    
+    headers = ["NEB-MEP","NEB-LAP","DPM","EL","DA"]
+    
+    print(tabulate([r1,r2], headers=headers, tablefmt='latex_raw',floatfmt=".2f"))
+    
         
     # print(actsDict)
     
