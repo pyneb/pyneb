@@ -44,15 +44,22 @@ newDf["PES"] -= eGS
 
 h5File = h5py.File("..//232U_original.h5","w")
 h5File.attrs.create("DFT","SKMs")
-h5File.attrs.create("Ground_State",gsLoc)
+h5File.attrs.create("GS_Inds",gsLoc)
+h5File.attrs.create("GS_Loc",[mesh[gsLoc] for mesh in expectedMesh])
 h5File.attrs.create("Original_File","232U_original.dat")
 
 h5File.create_group("interpolation")
 h5File["interpolation"].attrs.create("method","scipy.interpolate.RBFInterpolator")
 
 for col in newDf.columns:
-    resArr = np.array(newDf[col]).reshape(expectedMesh[0].shape,order="F")
-    h5File.create_dataset(col,data=resArr.flatten())
+    # if col not in ["Q20","Q30"]:
+    #     # resArr = np.array(newDf[col]).reshape(expectedMesh[0].shape)
+    #     h5File.create_dataset(col,data=resArr.flatten(order="C"))
+    #     fig, ax = plt.subplots()
+    #     ax.contourf(resArr)
+    # else:
+    h5File.create_dataset(col,data=np.array(newDf[col]))
+    
 
 h5File.close()
 
