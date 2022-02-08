@@ -564,25 +564,28 @@ class VerletMinimization:
          
         vProj = np.zeros((self.nPts,self.nDims))
         
-        for step in range(1,maxIters+1):
-            self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
-            
-            for ptIter in range(self.nPts):
-                product = np.dot(self.allVelocities[step-1,ptIter],self.allForces[step,ptIter])
-                if product > 0:
-                    vProj[ptIter] = \
-                        product*self.allForces[step,ptIter]/\
-                            np.dot(self.allForces[step,ptIter],self.allForces[step,ptIter])
-                else:
-                    vProj[ptIter] = np.zeros(self.nDims)
-                    
-            #Damping term. Algorithm 6 uses allVelocities[step], but that hasn't
-            #been computed yet. Note that this isn't applied to compute allPts[1].
-            accel = self.allForces[step] - dampingParameter*self.allVelocities[step-1]                
-            self.allVelocities[step] = vProj + tStep * accel
-            
-            self.allPts[step+1] = self.allPts[step] + self.allVelocities[step]*tStep + \
-                0.5*accel*tStep**2
+        try:
+            for step in range(1,maxIters+1):
+                self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
+                
+                for ptIter in range(self.nPts):
+                    product = np.dot(self.allVelocities[step-1,ptIter],self.allForces[step,ptIter])
+                    if product > 0:
+                        vProj[ptIter] = \
+                            product*self.allForces[step,ptIter]/\
+                                np.dot(self.allForces[step,ptIter],self.allForces[step,ptIter])
+                    else:
+                        vProj[ptIter] = np.zeros(self.nDims)
+                        
+                #Damping term. Algorithm 6 uses allVelocities[step], but that hasn't
+                #been computed yet. Note that this isn't applied to compute allPts[1].
+                accel = self.allForces[step] - dampingParameter*self.allVelocities[step-1]                
+                self.allVelocities[step] = vProj + tStep * accel
+                
+                self.allPts[step+1] = self.allPts[step] + self.allVelocities[step]*tStep + \
+                    0.5*accel*tStep**2
+        finally:
+            self.nebObj.logger.flush()
             
         return None
     
@@ -651,32 +654,35 @@ class VerletMinimization:
         tStepArr[0] = tStep
         alphaArr[0] = fireParams["aStart"]
         
-        for step in range(1,maxIters+1):
-            #TODO: check potential off-by-one indexing on tStep
+        try:
+            for step in range(1,maxIters+1):
+                #TODO: check potential off-by-one indexing on tStep
+                if useLocal:
+                    tStepArr,alphaArr,stepsSinceReset = \
+                        self._local_fire2_iter(step,tStepArr,alphaArr,stepsSinceReset,\
+                                              fireParams)
+                else:
+                    tStepArr,alphaArr,stepsSinceReset = \
+                        self._global_fire2_iter(step,tStepArr,alphaArr,stepsSinceReset,\
+                                               fireParams)
+            
             if useLocal:
-                tStepArr,alphaArr,stepsSinceReset = \
-                    self._local_fire2_iter(step,tStepArr,alphaArr,stepsSinceReset,\
-                                          fireParams)
+                tStepFinal = tStepArr[-1].reshape((-1,1))
+                shift = tStepFinal*self.allVelocities[-1] + \
+                    0.5*self.allForces[-1]*tStepFinal**2
+    
+                for ptIter in range(self.nPts):
+                    for dimIter in range(self.nDims):
+                        if(abs(shift[ptIter,dimIter])>fireParams["maxmove"][dimIter]):
+                            shift[ptIter] = shift[ptIter] * \
+                                fireParams["maxmove"][dimIter]/abs(shift[ptIter,dimIter])
+    
+                self.allPts[-1] = self.allPts[-2] + shift
             else:
-                tStepArr,alphaArr,stepsSinceReset = \
-                    self._global_fire2_iter(step,tStepArr,alphaArr,stepsSinceReset,\
-                                           fireParams)
-        
-        if useLocal:
-            tStepFinal = tStepArr[-1].reshape((-1,1))
-            shift = tStepFinal*self.allVelocities[-1] + \
-                0.5*self.allForces[-1]*tStepFinal**2
-
-            for ptIter in range(self.nPts):
-                for dimIter in range(self.nDims):
-                    if(abs(shift[ptIter,dimIter])>fireParams["maxmove"][dimIter]):
-                        shift[ptIter] = shift[ptIter] * \
-                            fireParams["maxmove"][dimIter]/abs(shift[ptIter,dimIter])
-
-            self.allPts[-1] = self.allPts[-2] + shift
-        else:
-            self.allPts[-1] = self.allPts[-2] + tStepArr[-1]*self.allVelocities[-1] + \
-                0.5*self.allForces[-1]*tStepArr[-1]**2
+                self.allPts[-1] = self.allPts[-2] + tStepArr[-1]*self.allVelocities[-1] + \
+                    0.5*self.allForces[-1]*tStepArr[-1]**2
+        finally:
+            self.nebObj.logger.flush()
         
         return tStepArr, alphaArr, stepsSinceReset
     
@@ -842,32 +848,35 @@ class VerletMinimization:
         tStepArr[0] = tStep
         alphaArr[0] = fireParams["aStart"]
         
-        for step in range(1,maxIters+1):
-            #TODO: check potential off-by-one indexing on tStep
+        try:
+            for step in range(1,maxIters+1):
+                #TODO: check potential off-by-one indexing on tStep
+                if useLocal:
+                    tStepArr,alphaArr,stepsSinceReset = \
+                        self._local_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
+                                              fireParams)
+                else:
+                    tStepArr,alphaArr,stepsSinceReset = \
+                        self._global_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
+                                               fireParams)
+            #Final iteration, I think
             if useLocal:
-                tStepArr,alphaArr,stepsSinceReset = \
-                    self._local_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
-                                          fireParams)
+                tStepFinal = tStepArr[-1].reshape((-1,1))
+                shift = tStepFinal*self.allVelocities[-1] + \
+                    0.5*self.allForces[-1]*tStepFinal**2
+    
+                for ptIter in range(self.nPts):
+                    for dimIter in range(self.nDims):
+                        if(abs(shift[ptIter,dimIter])>fireParams["maxmove"][dimIter]):
+                            shift[ptIter] = shift[ptIter] * \
+                                fireParams["maxmove"][dimIter]/abs(shift[ptIter,dimIter])
+    
+                self.allPts[-1] = self.allPts[-2] + shift
             else:
-                tStepArr,alphaArr,stepsSinceReset = \
-                    self._global_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
-                                           fireParams)
-        
-        if useLocal:
-            tStepFinal = tStepArr[-1].reshape((-1,1))
-            shift = tStepFinal*self.allVelocities[-1] + \
-                0.5*self.allForces[-1]*tStepFinal**2
-
-            for ptIter in range(self.nPts):
-                for dimIter in range(self.nDims):
-                    if(abs(shift[ptIter,dimIter])>fireParams["maxmove"][dimIter]):
-                        shift[ptIter] = shift[ptIter] * \
-                            fireParams["maxmove"][dimIter]/abs(shift[ptIter,dimIter])
-
-            self.allPts[-1] = self.allPts[-2] + shift
-        else:
-            self.allPts[-1] = self.allPts[-2] + tStepArr[-1]*self.allVelocities[-1] + \
-                0.5*self.allForces[-1]*tStepArr[-1]**2
+                self.allPts[-1] = self.allPts[-2] + tStepArr[-1]*self.allVelocities[-1] + \
+                    0.5*self.allForces[-1]*tStepArr[-1]**2
+        finally:
+            self.nebObj.logger.flush()
         
         return tStepArr, alphaArr, stepsSinceReset
     
