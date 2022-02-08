@@ -13,12 +13,12 @@ class VerletMinimization_velocity_verlet(unittest.TestCase):
         
         nPts = 3
         nDims = 2
-        lap = LeastActionPath(pot,nPts,nDims)
+        lap = LeastActionPath(pot,nPts,nDims,logLevel=0)
         
         initialPoints = np.array([[0.,0.],[1.,2.],[2.,3]])
         
         minObj = VerletMinimization(lap,initialPoints)
-        allPts, allVelocities, allForces = minObj.velocity_verlet(0.1, 1)
+        minObj.velocity_verlet(0.1, 1)
         
         #Computed via Mathematica, trusting the output of the force
         #evaluations of LeastActionPath
@@ -45,10 +45,9 @@ class VerletMinimization_velocity_verlet(unittest.TestCase):
                        [-7.83759615,-30.2935116],\
                        [21.3304619,417.854312]]])
             
-            
-        self.assertIsNone(np.testing.assert_allclose(allPts,correctPts))
-        self.assertIsNone(np.testing.assert_allclose(allVelocities,correctVelocities))
-        self.assertIsNone(np.testing.assert_allclose(allForces,correctForces))
+        self.assertIsNone(np.testing.assert_allclose(minObj.allPts,correctPts))
+        self.assertIsNone(np.testing.assert_allclose(minObj.allVelocities,correctVelocities))
+        self.assertIsNone(np.testing.assert_allclose(minObj.allForces,correctForces))
         
         return None
     
@@ -58,13 +57,12 @@ class VerletMinimization_velocity_verlet(unittest.TestCase):
         
         nPts = 3
         nDims = 2
-        lap = LeastActionPath(pot,nPts,nDims)
+        lap = LeastActionPath(pot,nPts,nDims,logLevel=0)
         
         initialPoints = np.array([[0.,0.],[1.,2.],[2.,3]])
         
         minObj = VerletMinimization(lap,initialPoints)
-        allPts, allVelocities, allForces = \
-            minObj.velocity_verlet(0.1, 1, dampingParameter=1)
+        minObj.velocity_verlet(0.1, 1, dampingParameter=1)
         
         #Computed via Mathematica, trusting the output of the force
         #evaluations of LeastActionPath
@@ -91,9 +89,9 @@ class VerletMinimization_velocity_verlet(unittest.TestCase):
                        [-7.83759615,-30.2935116],\
                        [21.3304619,417.854312]]])
                 
-        self.assertIsNone(np.testing.assert_allclose(allPts,correctPts))
-        self.assertIsNone(np.testing.assert_allclose(allVelocities,correctVelocities))
-        self.assertIsNone(np.testing.assert_allclose(allForces,correctForces))
+        self.assertIsNone(np.testing.assert_allclose(minObj.allPts,correctPts))
+        self.assertIsNone(np.testing.assert_allclose(minObj.allVelocities,correctVelocities))
+        self.assertIsNone(np.testing.assert_allclose(minObj.allForces,correctForces))
         
         return None
     

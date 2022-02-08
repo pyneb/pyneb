@@ -91,13 +91,13 @@ class LeastActionPath:
             
         if isinstance(endpointSpringForce,bool):
             endpointSpringForce = 2*(endpointSpringForce,)
-        if not isinstance(endpointSpringForce,tuple):
+        if not isinstance(endpointSpringForce,(tuple,list)):
             raise ValueError("Unknown value "+str(endpointSpringForce)+\
                              " for endpointSpringForce")
                 
         if isinstance(endpointHarmonicForce,bool):
             endpointHarmonicForce = 2*(endpointHarmonicForce,)
-        if not isinstance(endpointHarmonicForce,tuple):
+        if not isinstance(endpointHarmonicForce,(tuple,list)):
             raise ValueError("Unknown value "+str(endpointHarmonicForce)+\
                              " for endpointSpringForce")
         
@@ -201,7 +201,9 @@ class LeastActionPath:
         
         integVal, energies, masses = self.target_func(points,self.potential,self.mass)
         tangents = self._compute_tangents(points,energies)
-        print("Action: ",integVal)
+        
+        if self.logger.logLevel == 2:
+            print("Action: ",integVal)
         gradOfAction, gradOfPes = \
             self.target_func_grad(points,self.potential,energies,self.mass,masses,\
                                   self.target_func)
@@ -544,41 +546,45 @@ class VerletMinimization:
         allForces : TYPE
             DESCRIPTION.
         """
-        #allPts is longer by 1 than the velocities/forces, because the last 
-        #velocity/force computed should be used to update the points one 
-        #last time (else that's computational time that's wasted)
-        allPts = np.zeros((maxIters+2,self.nPts,self.nDims))
-        allVelocities = np.zeros((maxIters+1,self.nPts,self.nDims))
-        allForces = np.zeros((maxIters+1,self.nPts,self.nDims))
         
+        """
+        allPts is longer by 1 than the velocities/forces, because the last 
+        velocity/force computed should be used to update the points one 
+        last time (else that's computational time that's wasted)
+        """
+        self.allPts = np.zeros((maxIters+2,self.nPts,self.nDims))
+        self.allVelocities = np.zeros((maxIters+1,self.nPts,self.nDims))
+        self.allForces = np.zeros((maxIters+1,self.nPts,self.nDims))
+
+        self.allPts[0] = self.initialPoints
+        self.allForces[0] = self.nebObj.compute_force(self.allPts[0])
+        self.allVelocities[0] = tStep*self.allForces[0]
+        self.allPts[1] = self.allPts[0] + \
+            self.allVelocities[0]*tStep + 0.5*self.allForces[0]*tStep**2
+         
         vProj = np.zeros((self.nPts,self.nDims))
         
-        allPts[0] = self.initialPoints
-        allForces[0] = self.nebObj.compute_force(self.initialPoints)
-        allVelocities[0] = tStep*allForces[0]
-        allPts[1] = allPts[0] + allVelocities[0]*tStep + 0.5*allForces[0]*tStep**2
-        
         for step in range(1,maxIters+1):
-            allForces[step] = self.nebObj.compute_force(allPts[step])
+            self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
             
             for ptIter in range(self.nPts):
-                product = np.dot(allVelocities[step-1,ptIter],allForces[step,ptIter])
+                product = np.dot(self.allVelocities[step-1,ptIter],self.allForces[step,ptIter])
                 if product > 0:
                     vProj[ptIter] = \
-                        product*allForces[step,ptIter]/\
-                            np.dot(allForces[step,ptIter],allForces[step,ptIter])
+                        product*self.allForces[step,ptIter]/\
+                            np.dot(self.allForces[step,ptIter],self.allForces[step,ptIter])
                 else:
                     vProj[ptIter] = np.zeros(self.nDims)
                     
             #Damping term. Algorithm 6 uses allVelocities[step], but that hasn't
             #been computed yet. Note that this isn't applied to compute allPts[1].
-            accel = allForces[step] - dampingParameter*allVelocities[step-1]                
-            allVelocities[step] = vProj + tStep * accel
+            accel = self.allForces[step] - dampingParameter*self.allVelocities[step-1]                
+            self.allVelocities[step] = vProj + tStep * accel
             
-            allPts[step+1] = allPts[step] + allVelocities[step]*tStep + \
+            self.allPts[step+1] = self.allPts[step] + self.allVelocities[step]*tStep + \
                 0.5*accel*tStep**2
             
-        return allPts, allVelocities, allForces
+        return None
     
     def fire2(self,tStep,maxIters,fireParams={},useLocal=False):
         """
@@ -1192,7 +1198,7 @@ class Dijkstra:
             inertArrRequiredShape = self.potArr.shape + 2*(self.nDims,)
             if inertArr.shape != inertArrRequiredShape:
                 raise ValueError("inertArr.shape is "+str(inertArr.shape)+\
-                                 "; required shape is "+inertArrRequiredShape)
+                                 "; required shape is "+str(inertArrRequiredShape))
             self.inertArr = inertArr
         else:
             #Simplifies things in self._construct_path_dict if I set this to the 
