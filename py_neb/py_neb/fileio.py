@@ -2,11 +2,39 @@ import h5py
 import os
 
 import numpy as np
+import pandas as pd
 import datetime
 
 import warnings
 import functools
 import inspect
+
+def path_to_text(path,fName,colHeads=None):
+    if colHeads is None:
+        header = ""
+    else:
+        header = ",".join(colHeads)
+        
+    np.savetxt(fName,path,delimiter=",",header=header,fmt="%.6e")
+    
+    return None
+
+def path_from_text(fName,returnHeads=False):
+    df = pd.read_csv(fName,sep=",",index_col=None,header=None)
+    
+    firstRow = np.array(df.loc[0])
+    try:
+        firstRow = firstRow.astype(float)
+        arr = np.array(df)
+        heads = None
+    except ValueError:
+        arr = np.array(df.loc[1:]).astype(float)
+        heads = df.loc[0]
+        
+    if returnHeads:
+        return arr, heads
+    else:
+        return arr
 
 class ForceLogger:
     #TODO: log interpolators better/at all. Want to allow a link to the dataset(s)
@@ -374,3 +402,147 @@ class LoadDijkstraLog:
                                mask=dsetsDict["tentativeDistance"]["mask"])
             
         return None
+    
+class DPMLogger:
+    def __init__(self,classInst,logLevel=1,fName=None):
+        os.makedirs("logs",exist_ok=True)
+        
+        if fName is None:
+            fName = datetime.datetime.now().isoformat()
+        self.fName = "logs/"+fName+".dpm"
+        self.fNameIn = fName #Could be cleaner -_-
+        if logLevel not in [0,1]:
+            raise ValueError("logLevel "+str(logLevel)+" not allowed")
+        self.logLevel = logLevel
+        
+        self.classInst = classInst
+        self._initialize_log()
+        
+    def _initialize_log(self):
+        if self.logLevel == 1:
+            h5File = h5py.File(self.fName,"w")
+            
+            #Standard logging of the grid data, allowed endpoints, etc.
+            h5File.attrs.create("initialInds",np.array(self.classInst.initialInds))
+            h5File.attrs.create("initialPoint",np.array(self.classInst.initialPoint))
+            h5File.attrs.create("target_func",self.classInst.target_func.__qualname__)
+            
+            #TODO: allow for naming the coordinates
+            h5File.create_group("uniqueCoords")
+            for (cIter, coord) in enumerate(self.classInst.uniqueCoords):
+                h5File["uniqueCoords"].create_dataset("coord_"+str(cIter),\
+                                                      data=np.array(coord))
+            h5File.create_dataset("potArr",data=self.classInst.potArr)
+            if self.classInst.trimVals[0] is not None:
+                h5File["potArr"].attrs.create("minTrim",data=self.classInst.trimVals[0])
+            if self.classInst.trimVals[1] is not None:
+                h5File["potArr"].attrs.create("maxTrim",data=self.classInst.trimVals[1])
+                
+            h5File.create_dataset("inertArr",data=self.classInst.inertArr)
+            
+            h5File.create_dataset("endpointIndices",data=np.array(self.classInst.endpointIndices))
+            h5File.create_dataset("allowedEndpoints",data=self.classInst.allowedEndpoints)
+            
+            #Initializing datasets
+            previousIndsArrInit = -1*np.ones(self.classInst.potArr.shape+(self.classInst.nDims,),\
+                                             dtype=int)
+            h5File.create_dataset("previousIndsArr",data=previousIndsArrInit)
+            distArrInit = np.inf*np.ones(self.classInst.potArr.shape)
+            h5File.create_dataset("distArr",data=distArrInit)
+            
+            h5File.close()
+        
+        return None
+    
+    def log(self,previousIndsArr,distArr,updateRange):
+        if self.logLevel == 1:
+            print("Logging slice ",updateRange)
+            h5File = h5py.File(self.fName,"a")
+            
+            slc = (slice(None),slice(*updateRange))+(self.classInst.nDims-2)*(slice(None,),)
+            h5File["previousIndsArr"][slc] = previousIndsArr[slc]
+            h5File["distArr"][slc] = distArr[slc]
+            
+            h5File.close()
+        
+        return None
+    
+    def finalize(self,minPathDict,minIndsDict,distsDict,runTime,\
+                 pathAsText=True):
+        distsDType = np.dtype({"names":["endpoint","dist","strLabel"],\
+                               "formats":[(float,(self.classInst.nDims,)),float,\
+                                          h5py.string_dtype("utf-8")]})
+        if pathAsText:
+            os.makedirs("paths",exist_ok=True)
+        
+        if self.logLevel == 1:
+            h5File = h5py.File(self.fName,"a")
+            h5File.create_group("endpoints")
+            distsArr = np.zeros(len(distsDict),dtype=distsDType)
+            
+            nEndpoints = len(self.classInst.endpointIndices)
+            padLen = len(str(nEndpoints))
+            
+            for (keyIter,key) in enumerate(distsDict.keys()):
+                strIter = str(keyIter).zfill(padLen)
+                gpNm = "endpoints/"+strIter
+                h5File.create_group(gpNm)
+                h5File[gpNm].attrs.create("endpoint",key)
+                h5File[gpNm].create_dataset("inds",data=minIndsDict[key])
+                h5File[gpNm].create_dataset("points",data=minPathDict[key])
+                
+                distsArr[keyIter]["endpoint"] = key
+                distsArr[keyIter]["dist"] = distsDict[key]
+                distsArr[keyIter]["strLabel"] = strIter
+                
+                if pathAsText:
+                    pathTxtName = "paths/"+self.fNameIn+"_endpoint_"+strIter+".txt"
+                    path_to_text(minPathDict[key],pathTxtName)
+            
+            h5File.attrs.create("runTime",runTime)
+            h5File.create_dataset("dists",data=distsArr)
+            
+            h5File.close()
+                    
+        return None
+    
+class LoadDPMLogger:
+    def __init__(self,fName):
+        if not fName.endswith(".dpm"):
+            raise TypeError("File "+str(fName)+" does not have extension .dpm")
+        
+        scalarAttrs = ["runTime","target_func"]
+        tupleAttrs = ["initialInds","initialPoint"]
+        expectedDSets = ["allowedEndpoints","distArr","potArr","previousIndsArr","dists"]
+        
+        dsetsDict = {}
+        
+        h5File = h5py.File(fName,"r")
+        
+        for attr in h5File.attrs:
+            if attr in scalarAttrs:
+                setattr(self,attr,h5File.attrs[attr])
+            elif attr in tupleAttrs:
+                setattr(self,attr,tuple(np.array(h5File.attrs[attr])))
+            else:
+                warnings.warn("Attribute "+attr+" not recognized; will not be loaded")
+                
+        for d in expectedDSets:
+            if d in h5File:
+                setattr(self,d,np.array(h5File[d]))
+            else:
+                h5File.close()
+                raise ValueError("Dataset "+d+" expected but not found")
+        
+        self.uniqueCoords = [np.array(h5File["uniqueCoords"][c]) for c in h5File["uniqueCoords"]]
+        
+        self.pathIndsDict = {}
+        self.pathDict = {}
+        
+        for gp in h5File["endpoints"]:
+            key = tuple(np.array(h5File["endpoints"][gp].attrs["endpoint"]))
+            self.pathIndsDict[key] = np.array(h5File["endpoints"][gp]["inds"])
+            self.pathDict[key] = np.array(h5File["endpoints"][gp]["points"])
+        
+        h5File.close()
+        

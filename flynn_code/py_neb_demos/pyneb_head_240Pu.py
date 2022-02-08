@@ -55,7 +55,9 @@ auxFunc = None # for MEP
 if M_func is not None:
     mass_title = 'True'
 else:
-    mass_title = 'False'
+    M_func = None
+
+auxFunc = None # for MEP
 #########
 E_gs = V_func(gs_coord)
 V_func_shift = V_func#utilities.shift_func(V_func,shift=-1.0*E_gs)
@@ -143,7 +145,7 @@ for i,path in enumerate(allPaths_LAP):
     #action_array_LAP[i] = path_call.compute_along_path(utilities.TargetFunctions.action,100,tfArgs=[V_func_shift])[1][0]
     action_array_LAP[i] = utilities.TargetFunctions.action(path, V_func_shift,M_func)[0]
 min_action_LAP = np.around(action_array_LAP[-1],2)
-title = 'Eric_'+nucleus+'_LAP_'+'Mass_'+mass_title
+title = 'Eric_'+nucleus+'_LAP_'+'Mass_'+str(use_mass)+'_'+run_name
 
 ### write run meta data to txt file.
 metadata = {'title':title,'Created_by': 'Eric','Created_on':today.strftime("%b-%d-%Y"),'method':'NEB-LAP','method_description':method_dict, \
@@ -163,20 +165,20 @@ if save_data == True:
 # MEP function you want to minimize
 target_func_MEP = utilities.TargetFunctions.mep_default
 # MEP specialized function that takes the gradient of target function
-target_func_grad_MEP = solvers.potential_central_grad 
+target_func_grad_MEP = utilities.potential_central_grad 
 MEP_params = {'potential':V_func_shift,'nPts':NImgs,'nDims':nDims,'auxFunc':auxFunc,'endpointSpringForce': springForceFix ,\
                  'endpointHarmonicForce':endPointFix,'target_func':target_func_MEP,\
                  'target_func_grad':target_func_grad_MEP,'nebParams':neb_params}
 t0 = time.time()
 mep = solvers.MinimumEnergyPath(**MEP_params)
 minObj_MEP = solvers.VerletMinimization(mep,initialPoints=init_path)
-tStepArr, alphaArr, stepsSinceReset = minObj_MEP.fire(dt,NIterations,useLocal=False)
+tStepArr, alphaArr, stepsSinceReset = minObj_MEP.fire(dt,NIterations,fireParams=FireParams,useLocal=False)
 allPaths_MEP = minObj_MEP.allPts
 #allPaths_MEP, allVelocities_MEP, allForces_MEP = minObj_MEP.velocity_verlet(dt,NIterations)
 t1 = time.time()
 total_time_MEP = t1 - t0
 final_path_MEP = allPaths_MEP[-1]
-title = 'Eric_'+nucleus+'_MEP_'+'Mass_'+mass_title
+title = 'Eric_'+nucleus+'_MEP_'+'Mass_'+str(use_mass)+'_'+run_name
 print('total_time MEP: ',total_time_MEP)
 
 ### Compute the action of each path in allPts_MEP
@@ -199,10 +201,7 @@ utils.make_metadata(metadata)
     ## model description {k: 10, kappa: 20, nPts: 22, nIterations: 750, optimization: velocity_verlet, endpointForce: on}
 np.savetxt(title+'_path.txt',final_path_MEP,comments='',delimiter=',',header="Q20,Q30")
 '''
-print('LAP Final OTP: ',final_path_LAP)
-#print('MEP Final OTP: ', final_path_MEP)
-#print('LAP path energy: ',V_func_shift(final_path_LAP))
-#print('MEP path energy: ',V_func_shift(final_path_MEP))
+
 
 
 

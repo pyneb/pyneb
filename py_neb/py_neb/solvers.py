@@ -1309,9 +1309,9 @@ class Dijkstra:
         return endptOut
 
 class DynamicProgramming:
-    def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,\
+    def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,allowedMask=None,\
                  target_func=TargetFunctions.action,allowedEndpoints=None,\
-                 trimVals=[10**(-4),None],logLevel=1,fName=None):
+                 trimVals=[10**(-4),None],logLevel=1,fName=None,logFreq=50):
         warnings.warn("DynamicProgramming class is still under development")
         self.initialPoint = initialPoint
         self.coordMeshTuple = coordMeshTuple
@@ -1346,6 +1346,20 @@ class DynamicProgramming:
                 raise ValueError("potArr.shape is "+str(potArr.shape)+\
                                  "; required shape is "+str(expectedShape)+\
                                  " (or with swapped first two indices)")
+        if allowedMask is None:
+            self.allowedMask = np.ones(expectedShape,dtype=bool)
+        else:
+            if allowedMask.shape == expectedShape:
+                self.allowedMask = allowedMask
+            else:
+                dummyArr = np.swapaxes(allowedMask,0,1)
+                if dummyArr.shape == expectedShape:
+                    self.allowedMask = dummyArr
+                else:
+                    raise ValueError("allowedMask.shape is "+str(allowedMask.shape)+\
+                                     "; required shape is "+str(expectedShape)+\
+                                     " (or with swapped first two indices)")
+                    
         #TODO: apply error checking above to inertArr
         if inertArr is not None:
             inertArrRequiredShape = self.potArr.shape + 2*(self.nDims,)
@@ -1376,6 +1390,10 @@ class DynamicProgramming:
             raise ValueError("self.endpointIndices.shape == "+\
                              str(self.endpointIndices.shape)+"; dimension 1 must be "\
                              +str(self.nDims))
+                
+        if np.any(self.allowedEndpoints[:,0]<=self.initialPoint[0]):
+            raise ValueError("All final endpoints must have 0'th coordinate greater"\
+                             +" than the 0'th coordinate of the initial point")
         
         self.endpointIndices = [tuple(row) for row in self.endpointIndices]
         
@@ -1383,6 +1401,8 @@ class DynamicProgramming:
         self.trimVals = trimVals
         if self.trimVals != [None,None]:
             self.potArr = self.potArr.clip(self.trimVals[0],self.trimVals[1])
+        else:
+            warnings.warn("Not clipping self.potArr; may run into negative numbers in self.target_func")
         
         #Getting indices for self.initialPoint
         self.initialInds = np.zeros(self.nDims,dtype=int)
@@ -1392,96 +1412,122 @@ class DynamicProgramming:
             self.initialInds[dimIter] = \
                 np.argwhere(np.isclose(self.uniqueCoords[dimIter],self.initialPoint[dimIter]))
         
+        self.uniqueSliceInds = [np.arange(self.potArr.shape[0]),[]]
+        for s in self.potArr.shape[2:]:
+            self.uniqueSliceInds.append([np.arange(s)])
+        
         #Index swapping like mentioned above. Now, self.initialInds[0] <= Ny,
         #and self.initialInds[1] <= Nx
         self.initialInds[[1,0]] = self.initialInds[[0,1]]
         self.initialInds = tuple(self.initialInds)
         
-        # self.djkLogger = DijkstraLogger(self,logLevel=logLevel,fName=fName)
+        self.logger = DPMLogger(self,logLevel=logLevel,fName=fName)
+        self.logFreq = logFreq
+    
+    def _gen_slice_inds(self,constInd):
+        sliceCopy = self.uniqueSliceInds.copy()
+        sliceCopy[1] = [constInd]
         
-    def _select_next_point(self,currentInds,relativeNeighborInds,maxInds):
-        indsToCheck = np.array(currentInds) - relativeNeighborInds
+        return list(itertools.product(*sliceCopy))
+    
+    def _select_prior_points(self,currentIdx,previousIndsArr,distArr):
+        previousInds = self._gen_slice_inds(currentIdx-1)
+        #Use scipy.ndimage.label to only select previous indices that are connected
+        #to the current one. Imperfect - on vertical OTL, will choose from far
+        #away points - but unclear if/when that happens. More sophisticated
+        #method could look at connected current/previous slice; when they disagree,
+        #set a range for how far away the index can be on the previous slice.
+        #Won't be perfect. I still expect paths can follow the LAP, then jump
+        #around at the end, but they will no longer pass over the region outside
+        #the OTL, except for a bit near the OTL. "Connected" in this case means
+        #the mask saying which indices are allowed is connected in these two slices.
+        currentInds = self._gen_slice_inds(currentIdx)
         
-        #Removing indices that take us off-grid. See e.g.
-        #https://stackoverflow.com/a/20528566
-        isNegativeBool = [indsToCheck[:,i] < 0 for i in range(self.nDims)]
-        indsToCheck = \
-            indsToCheck[np.logical_not(np.logical_or.reduce(isNegativeBool))]
-        isTooBigBool = [indsToCheck[:,i] >= maxInds[i] for i in range(self.nDims)]
-        indsToCheck = \
-            indsToCheck[np.logical_not(np.logical_or.reduce(isTooBigBool))]
+        for idx in currentInds:
+            coords = np.zeros((2,self.nDims))
+            coords[1] = [c[idx] for c in self.coordMeshTuple]
             
-        indsToCheck = [tuple(i) for i in indsToCheck]
-        
-        coords = np.zeros((2,self.nDims))
-        coords[0] = np.array([c[currentInds] for c in self.coordMeshTuple])
-        
-        enegs = np.zeros(2)
-        enegs[0] = self.potArr[currentInds]
-        
-        inertArr = np.zeros((2,self.nDims,self.nDims))
-        inertArr[0] = self.inertArr[currentInds]
-        
-        minDist = np.inf
-        minInds = None
-        for inds in indsToCheck:
-            coords[1] = np.array([c[inds] for c in self.coordMeshTuple])
-            enegs[1] = self.potArr[inds]
-            inertArr[1] = self.inertArr[inds]
+            enegs = np.zeros((2,))
+            enegs[1] = self.potArr[idx]
+            if enegs[1] == np.inf:
+                continue
             
-            newDist = self.target_func(coords,enegs,inertArr)[0]
-            if newDist < minDist:
-                minDist = newDist
-                minInds = inds
-        
-        return minInds, minDist
-        
-    def __call__(self,nNeighbors):
-        #Allows for variable number of neighbors
-        if not isinstance(nNeighbors,np.ndarray):
-            nNeighbors = nNeighbors*np.ones(self.nDims-1)
+            masses = np.zeros((2,self.nDims,self.nDims))
+            masses[1] = self.inertArr[idx]
             
-        if nNeighbors.shape != (self.nDims-1,):
-            raise ValueError("nNeighbors.shape "+str(nNeighbors.shape)+\
-                             " does not match expected shape ("+str(self.nDims-1)+",)")
-        
-        listOfRelativeInds = [np.arange(-nNeighbors[0],nNeighbors[0]+1)]
-        listOfRelativeInds.append([0])
-        for n in nNeighbors[1:]:
-            listOfRelativeInds.append(np.arange(-n,n+1))
-        relativeNeighborInds = list(itertools.product(*listOfRelativeInds))
-        
-        relativeNeighborInds.remove(self.nDims*(0,))
-        
-        maxInds = np.array([len(c) for c in self.uniqueCoords])
-        maxInds[[1,0]] = maxInds[[0,1]]
-        
-        pathIndsDict = {}
-        pathDistsDict = {}
-        for endInds in self.endpointIndices:
-            pathIndsDict[endInds] = [self.initialInds]
-            pathDistsDict[endInds] = 0
-            
-            #Searches from left to right, according to the first coordinate
-            #(the second index). The final point is fixed to endInds.
-            nIters = endInds[1] - self.initialInds[1] - 1
-            
-            currentInds = self.initialInds
-            for i in range(nIters):
-                minInds, minDist = self._select_next_point(currentInds,relativeNeighborInds,\
-                                                           maxInds)
-                pathIndsDict[endInds].append(minInds)
-                pathDistsDict[endInds] += minDist
-                currentInds = minInds
+            for p in previousInds:
+                coords[0] = [c[p] for c in self.coordMeshTuple]
+                enegs[0] = self.potArr[p]
+                if enegs[0] == np.inf:
+                    continue
+                masses[0] = self.inertArr[p]
                 
-            pathIndsDict[endInds].append(endInds)
-            #Finalizing the action
-            coords = np.array([[c[currentInds] for c in self.coordMeshTuple],\
-                               [c[endInds] for c in self.coordMeshTuple]])
-            enegs = np.array([self.potArr[currentInds],self.potArr[endInds]])
-            inertArr = np.array([self.inertArr[currentInds],self.inertArr[endInds]])
+                tentDist = distArr[p] + self.target_func(coords,enegs,masses)[0]
+                if tentDist < distArr[idx]: #distArr is initialized to infinity
+                    previousIndsArr[idx] = p
+                    distArr[idx] = tentDist
+        
+        return previousIndsArr, distArr
+    
+    def __call__(self,searchRange=None,pathAsText=True):
+        # if searchRange is None:
+        #     uniqueSliceInds = [np.arange(self.potArr.shape[0]),[]]
+        #     for s in self.potArr.shape[2:]:
+        #         uniqueSliceInds.append([np.arange(s)])
+        # elif 
+        
+        t0 = time.time()
+        
+        previousIndsArr = -1*np.ones(self.potArr.shape+(self.nDims,),dtype=int)
+        previousIndsArr[self.initialInds] = self.initialInds
+        previousIndsArr[:,self.initialInds[1]+1] = self.initialInds
+        
+        distArr = np.inf*np.ones(self.potArr.shape)
+        distArr[self.initialInds] = 0
+        
+        #Main loop. Because distArr is initialized to np.inf except at the origin,
+        #we don't have to initialize the first column separately.
+        finalIdx = np.max(np.array(self.endpointIndices)[:,1])
+        
+        for q2Idx in range(self.initialInds[1]+1,finalIdx+1):
+            previousIndsArr, distArr = \
+                self._select_prior_points(q2Idx,previousIndsArr,distArr)
+            if q2Idx % self.logFreq == 0:
+                updateRange = (q2Idx-self.logFreq,q2Idx)
+                self.logger.log(previousIndsArr,distArr,updateRange)
+        
+        updateRange = (finalIdx-self.logFreq,finalIdx) #Some overlap here but whatever
+        self.logger.log(previousIndsArr,distArr,updateRange)
+        
+        #Getting paths given previousIndsArr
+        minIndsDict = {}
+        minPathDict = {}
+        distsDict = {}
+        for endInds in self.endpointIndices:
+            key = tuple([c[endInds] for c in self.coordMeshTuple])
             
-            pathDistsDict[endInds] += self.target_func(coords,enegs,inertArr)[0]
+            distsDict[key] = distArr[endInds]
+            
+            path = []
+            ind = endInds
+            
+            while ind != self.initialInds:
+                if ind == self.nDims*(-1,):
+                    break
+                    #raise ValueError("Reached invalid index "+str(ind))
+                path.append(ind)
+                ind = tuple(previousIndsArr[ind])
+                
+            path.append(self.initialInds)
+            path.reverse()
+            
+            minIndsDict[key] = path
+            minPathDict[key] = np.array([[c[i] for c in self.coordMeshTuple] for\
+                                         i in path])
         
-        return pathIndsDict, pathDistsDict
+        t1 = time.time()
         
+        self.logger.finalize(minPathDict,minIndsDict,distsDict,t1-t0,\
+                             pathAsText=pathAsText)
+        
+        return minIndsDict, minPathDict, distsDict

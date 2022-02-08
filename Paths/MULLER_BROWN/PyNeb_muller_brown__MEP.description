@@ -1,0 +1,11 @@
+title: PyNeb_muller_brown__MEP
+Created_by: Eric
+Created_on: Nov-29-2021
+method: NEB-MEP
+method_description: {'k': 20.0, 'kappa': 1.0, 'NImages': 102, 'Iterations': 8000, 'dt': 0.01, 'optimization': 'Local FIRE', 'HarmonicForceEnds': (False, False), 'SpringForceEnds': (False, False)}
+masses: None
+E_gs: [-146.69479333]
+action: 28.63167257274285
+run_time: 77.47993683815002
+initial_start_point: [-0.55, 1.44]
+initial_end_point: [0.62, 0.03]

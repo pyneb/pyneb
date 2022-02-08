@@ -265,6 +265,18 @@ class init_NEB_path:
                 xi = np.linspace(self.R0[i],self.RN[i],self.NImgs)
                 path[:,i] = xi
             return(path)
+    def deform(self):
+            path = self.linear_path()
+            deformed_path = np.zeros((self.NImgs,len(self.R0)))
+            for i in range(len(path)):
+                if i == 0:
+                    deformed_path[i] = path[i]
+                elif i == len(path)-1:
+                    deformed_path[i] = path[i]
+                else:
+                    deformed_path[i][0] = path[i][0] #.1*np.sin(5*path[i][0]) 
+                    deformed_path[i][1] = path[i][1] + .3 #.18*np.cos(12*path[i][1]) 
+            return(deformed_path)    
  ### Analytic surfaces
 def V_sin(x,y,ax,ay):
     result = ax*np.cos(2.0*np.pi*x) + ay*np.cos(2.0*np.pi*y) 
