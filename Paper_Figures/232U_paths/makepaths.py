@@ -15,7 +15,7 @@ from py_neb import *
 
 plt.style.use('science')
 
-def get_unique_inds(arr):    
+def get_unique_inds(arr):
     #From https://stackoverflow.com/a/30003565
     idx_sort = np.argsort(arr)
     sorted_records_array = arr[idx_sort]
@@ -38,7 +38,7 @@ def read_potential():
     dsetsToGet = ["Q20","Q30","PES","B2020","B2030","B3030"]
     dsetsDict = {}
     
-    h5File = h5py.File(fileDir+"232U.h5","r")
+    h5File = h5py.File(fileDir+"232U-SkMs-NF25.h5","r")
     for dset in dsetsToGet:
         dsetsDict[dset] = np.array(h5File[dset])
     
@@ -53,11 +53,7 @@ def read_potential():
 coordNms = ["Q20","Q30"]
 
 pathsDir = os.path.expanduser("~/Research/ActionMinimization/Paths/232U/")
-pathFiles = ['Eric_MEP.txt','Eric_232U_LAP_Mass_False_path.txt',\
-             '232U_LAP_WMP_NEB.txt',\
-             '232U_MAP.txt','232U_MAP_WMP.txt',\
-             '232U_PathPablo.txt','232U_PathPablo_MassParams.txt',\
-             'djk_path_no_mass.txt','djk_path_mass.txt']
+pathFiles = [f for f in os.listdir(pathsDir) if f.endswith(".txt")]
 
 pathsDict = {}
 for f in pathFiles:
@@ -79,23 +75,13 @@ def make_fig():
                     linestyles="solid",colors="gray")
     ax.clabel(cs,inline=1,fontsize=5,colors="black")
     
-    colorsDict = {'Eric_232U_LAP_Mass_False_path.txt':"blue",\
-                 '232U_LAP_WMP_NEB.txt':"blue",\
-                 '232U_MAP.txt':"orange",'232U_MAP_WMP.txt':"orange",\
-                 '232U_PathPablo.txt':"purple",'232U_PathPablo_MassParams.txt':'purple',\
-                 'Eric_MEP.txt':"green",\
-                 'djk_path_no_mass.txt':'black','djk_path_mass.txt':'black'}
-    noMassStyle = "solid"
-    massStyle = "dotted"
-    stylesDict = {'Eric_232U_LAP_Mass_False_path.txt':noMassStyle,\
-                 '232U_LAP_WMP_NEB.txt':massStyle,\
-                 '232U_MAP.txt':noMassStyle,'232U_MAP_WMP.txt':massStyle,\
-                 '232U_PathPablo.txt':noMassStyle,'Eric_MEP.txt':noMassStyle,\
-                 '232U_PathPablo_MassParams.txt':massStyle,\
-                 'djk_path_no_mass.txt':noMassStyle,'djk_path_mass.txt':massStyle}
+    colorsDict = {"neb-lap":"blue","neb-mep":"green","dpm":"orange",
+                  "djk":"black","el":"purple"}
+    stylesDict = {"no-mass":"solid","mass":"dotted"}
         
     for (key,p) in pathsDict.items():
-        ax.plot(*p.T,color=colorsDict[key],ls=stylesDict[key])
+        colorKey, styleKey = key.replace(".txt","").split("_")
+        ax.plot(*p.T,color=colorsDict[colorKey],ls=stylesDict[styleKey])
     
     ax.set(xlabel=r"$Q_{20}$ (b)",ylabel=r"$Q_{30}$ (b${}^{3/2}$)",xlim=(0,400),ylim=(0,50))
     fig.colorbar(cf)#,label="Energy (MeV)")
@@ -104,9 +90,9 @@ def make_fig():
     return None
 
 def make_separate_figs():
-    colorsDict = {"neb_lap":"blue","dpm":"orange","el":"purple","neb_mep":"green",\
-                  "dijkstra":"black"}
-    stylesDict = {"no_mass":"solid","mass":"solid"}
+    colorsDict = {"neb-lap":"blue","dpm":"orange","el":"purple","neb-mep":"green",\
+                  "djk":"black"}
+    stylesDict = {"no-mass":"solid","mass":"solid"}
     
     noMassFig, noMassAx = plt.subplots()
     massFig, massAx = plt.subplots()
@@ -117,21 +103,15 @@ def make_separate_figs():
         cs = ax.contour(pesDict["Q20"],pesDict["Q30"],pesDict["PES"].clip(-5,30),levels=10,\
                         linestyles="solid",colors="gray")
         ax.clabel(cs,inline=1,fontsize=5,colors="black")
-    
-    typesDict = {'Eric_232U_LAP_Mass_False_path.txt':["no_mass","neb_lap"],\
-                 '232U_LAP_WMP_NEB.txt':["mass","neb_lap"],\
-                 '232U_MAP.txt':["no_mass","dpm"],'232U_MAP_WMP.txt':["mass","dpm"],\
-                 '232U_PathPablo.txt':["no_mass","el"],'232U_PathPablo_MassParams.txt':["mass","el"],\
-                 'Eric_MEP.txt':["no_mass","neb_mep"],'djk_path_no_mass.txt':["no_mass","dijkstra"],\
-                 'djk_path_mass.txt':["mass","dijkstra"]}
         
     for (key,p) in pathsDict.items():
-        if typesDict[key][0] == "no_mass":
-            noMassAx.plot(*p.T,color=colorsDict[typesDict[key][1]],\
-                          ls=stylesDict["no_mass"])
+        colorKey, styleKey = key.replace(".txt","").split("_")
+        if styleKey == "no-mass":
+            noMassAx.plot(*p.T,color=colorsDict[colorKey],\
+                          ls=stylesDict["no-mass"])
         else:
-            massAx.plot(*p.T,color=colorsDict[typesDict[key][1]],\
-                        ls=stylesDict["mass"])
+            massAx.plot(*p.T,color=colorsDict[colorKey],\
+                          ls=stylesDict["no-mass"])
                 
     
     massAx.set(xlabel=r"$Q_{20}$ (b)",ylabel=r"$Q_{30}$ (b${}^{3/2}$)",xlim=(0,400),ylim=(0,50))
@@ -198,33 +178,36 @@ def make_action_tables():
     for key in pathFiles:
         interpPathsDict[key] = InterpolatedPath(pathsDict[key])
         
-    useMassDict = {'Eric_232U_LAP_Mass_False_path.txt':False,\
-                   '232U_LAP_WMP_NEB.txt':True,\
-                   '232U_MAP.txt':False,'232U_MAP_WMP.txt':True,\
-                   '232U_PathPablo.txt':False,'Eric_MEP.txt':False,\
-                   '232U_PathPablo_MassParams.txt':True,\
-                   'djk_path_no_mass.txt':False,'djk_path_mass.txt':True}
-        
     actsDict = {}
     for key in pathFiles:
-        # if useMassDict[key]:
         actsDict[key] = interpPathsDict[key].compute_along_path(TargetFunctions.action,500,\
                                                                 tfArgs=[pes_interp],\
                                                                 tfKWargs={"masses":mass_interp})[1][0]
-        # else:
-        #     actsDict[key] = interpPathsDict[key].compute_along_path(TargetFunctions.action,500,\
-        #                                                             tfArgs=[pes_interp])[1][0]
     
-    r1Keys = ["Eric_MEP.txt","Eric_232U_LAP_Mass_False_path.txt","232U_MAP.txt","232U_PathPablo.txt",\
-              "djk_path_no_mass.txt"]
-    r2Keys = ["232U_LAP_WMP_NEB.txt","232U_MAP_WMP.txt","232U_PathPablo_MassParams.txt",\
-              "djk_path_mass.txt"]
+    tableOrder = ["neb-lap","dpm","el","djk"]
+    noMassKeys = ["mep-neb.txt"]+[nm+"_no-mass.txt" for nm in tableOrder]
+    massKeys = [nm+"_mass.txt" for nm in tableOrder]
         
     #Have to format here and in tabulate, since it'll treat different columns differently
-    r1 = [r'${}^{232}$U']+[format(actsDict[key],".1f") for key in r1Keys]
-    r2 = [r'${}^{232}$U, WI',"-"]+[format(actsDict[key],".1f") for key in r2Keys]
+    r1 = [r'${}^{232}$U']
+    for key in noMassKeys:
+        if key in actsDict.keys():
+            r1 += [format(actsDict[key],".1f")]
+        else:
+            r1 += "-"
     
-    headers = ["NEB-MEP","NEB-LAP","DPM","EL","Dijkstra"]
+    r2 = [r'${}^{232}$U, WI',"-"]
+    for key in massKeys:
+        if key in actsDict.keys():
+            r2 += [format(actsDict[key],".1f")]
+        else:
+            r2 += "-"
+    
+    # +[format(actsDict[key],".1f") for key in r2Keys]
+    # +[format(actsDict[key],".1f") for key in r1Keys]
+    
+    
+    headers = ["NEB-MEP","NEB-LAP","DPM","EL","DJK"]
     
     print(tabulate([r1,r2], headers=headers, tablefmt='latex_raw',floatfmt=".1f"))
     
@@ -232,7 +215,6 @@ def make_action_tables():
     return None
 
 np.seterr(invalid="raise")
-make_action_tables()
 make_fig()
 make_separate_figs()
-# bw_styles_fig()
+make_action_tables()
