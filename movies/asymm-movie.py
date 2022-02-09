@@ -5,7 +5,7 @@ import time
 import sys
 from datetime import date
 ### add pyneb
-sys.path.insert(0, '../py_neb/')
+sys.path.insert(0, '../py_neb/py_neb')
 sys.path.insert(0, '../flynn_code/py_neb_demos')
 import solvers
 import utilities
@@ -104,8 +104,8 @@ springForceFix = (springR0,springRN)
 
 ### Optimization parameters 
 ## Velocity Verlet parameter set
-dt = .1
-NIterations = 5
+dt = .09
+NIterations = 700
 
 
 ### define initial path
@@ -162,7 +162,22 @@ t1 = time.time()
 total_time_LAP = t1 - t0
 print('total_time LAP: ',total_time_LAP)
 action_array_LAP = np.zeros(NIterations+2)
-for i,path in enumerate(allPaths_LAP):
+for i,path in enumerate(allPatf isinstance(coords, np.ndarray)==False:
+        coords = np.array(coords)
+    ## check if it's scalar
+    if len(coords.shape) == 1:
+        coords = coords.reshape(1,-1)
+        x = coords[:,0]
+        y = coords[:,1]
+    else:pass
+    if len(coords.shape) < 3:
+        x = coords[:,0]
+        y = coords[:,1]
+    else:pass
+    if len(coords.shape)>= 3:
+        x = coords[0]
+        y = coords[1]
+    else:passhs_LAP):
     #action_array_LAP[i] = utilities.TargetFunctions.action(path, V_func_shift,M_func)[0]
     path_call = utilities.InterpolatedPath(path)
     action_array_LAP[i] = np.around(path_call.compute_along_path(utilities.TargetFunctions.action,500,tfArgs=[V_func_shift])[1][0],4)
@@ -216,7 +231,27 @@ utils.make_metadata(metadata)
 
 if save_data == True:
     np.savetxt(title+'_path.txt',final_path_MEP,comments='',delimiter=',',header="Q20,Q30")
+'''
+fig, ax = plt.subplots(1,1,figsize = (12, 10))
+    
+im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,4.5))
+ax.contour(grids[0],grids[1],EE,colors=['black'],levels=MaxNLocator(nbins = 15).tick_values(0,4.5))  
 
+ax.plot(allPaths_LAP[-1][:, 0], allPaths_LAP[-1][:, 1], '.-',ms=18,label='LAP',color='purple',linewidth=3)
+ax.plot(allPaths_MEP[-1][:, 0], allPaths_MEP[-1][:, 1], '.-',ms=18,label='MEP',color='red',linewidth=3)    
+
+
+ax.set_ylabel('$y$',size=32)
+ax.set_xlabel('$x$',size=32)
+#ax.set_title('Asymmetric Camel-back Surface',fontsize=24)
+
+ax.legend(frameon=True,fancybox=True,fontsize=20)
+cbar = fig.colorbar(im,format='%.1f')
+plt.show()
+plt.plot(range(NIterations+2),action_array_LAP,label='LAP '+str(min_action_LAP))
+plt.legend()
+plt.show()
+'''
 for i in range(0,NIterations ):
     ### Plot the results
     fig, ax = plt.subplots(1,1,figsize = (12, 10))
@@ -224,7 +259,7 @@ for i in range(0,NIterations ):
     im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,4.5))
     ax.contour(grids[0],grids[1],EE,colors=['black'],levels=MaxNLocator(nbins = 15).tick_values(0,4.5))  
     
-    ax.plot(allPaths_LAP[i][:, 0], allPaths_MEP[i][:, 1], '.-',ms=18,label='LAP',color='purple',linewidth=3)
+    ax.plot(allPaths_LAP[i][:, 0], allPaths_LAP[i][:, 1], '.-',ms=18,label='LAP',color='purple',linewidth=3)
     ax.plot(allPaths_MEP[i][:, 0], allPaths_MEP[i][:, 1], '.-',ms=18,label='MEP',color='red',linewidth=3)    
     
     
