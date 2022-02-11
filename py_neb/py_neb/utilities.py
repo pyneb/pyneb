@@ -211,6 +211,67 @@ class TargetFunctions:
         return actOut, potArr, massArr
     
     @staticmethod
+    def term_in_action_squared_sum(points,potential,masses=None):
+        """
+        
+        TODO: docs
+        Allowed masses:
+            -Constant mass; set masses = None
+            -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
+            -A function; set masses to a function
+        Allowed potential:
+            -Array of values; set potential to a numpy array of shape (nPoints,)
+            -A function; set masses to a function
+            
+        Computes action as
+            $ S = sum_{i=1}^{nPoints} sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
+            
+        :Maintainer: Daniel
+        """
+        nDims = points.shape[1]
+        if points.shape[0] != 2:
+            raise ValueError("Expected exactly 2 points; received "+str(points.shape[0]))
+        
+        if masses is None:
+            massArr = np.identity(nDims)
+        elif not isinstance(masses,np.ndarray):
+            massArr = masses(points[1]).reshape((nDims,nDims))
+        else:
+            massArr = masses
+        
+        massDim = (nDims,nDims)
+        if massArr.shape != massDim:
+            raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
+                             "; required shape is "+str(massDim))
+        
+        #There's lots of things that can be fed in, including odd things like
+        #np.int objects. These aren't caught with a simple filter like "isinstance(potential,int)",
+        #so I'm trying it this way for a bit
+        try:
+            potArr = potential(points[1])
+        except TypeError:
+            if not isinstance(potential,np.ndarray):
+                potArr = np.array([potential])
+            else:
+                potArr = potential
+        
+        potShape = (1,)
+        if potArr.shape != potShape:
+            raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
+                             "; required shape is "+str(potShape))
+        
+        #TODO: check if we want this
+        potArr = potArr.clip(0)
+        
+        #Actual calculation
+        coordDiff = points[1] - points[0]
+        #The M_{ab} dx^a dx^b bit
+        dist = np.dot(coordDiff,np.dot(massArr,coordDiff))
+        actOut = 2*potArr[0]*dist
+        
+        return actOut, potArr, massArr
+    
+    @staticmethod
     def mep_default(points,potential,auxFunc=None):
         '''
         
@@ -276,7 +337,8 @@ class GradientApproximations:
         :Maintainer: Daniel
         """
         self.targetFuncToComponentMap = \
-            {"action":TargetFunctions.term_in_action_sum}
+            {"action":TargetFunctions.term_in_action_sum,
+             "action_squared":TargetFunctions.term_in_action_squared_sum}
     
     def discrete_element(self,mass,path,gradOfPes,dr,drp1,beff,beffp1,beffm1,pot,potp1,potm1):
         """
@@ -1015,6 +1077,7 @@ class SurfaceUtils:
         -------
         allowedEndpoints : TYPE
             DESCRIPTION.
+        allowedIndices : asdf
 
         """
         if returnAllPoints:
@@ -1407,6 +1470,91 @@ class NDInterpWithBoundary:
         result = valAtNearest*np.exp(np.sqrt(dist))
         return result
     
+class PositiveSemidefInterpolator:
+    def __init__(self,gridPoints,listOfVals,ndInterpKWargs={}):
+        """
+        
+
+        Parameters
+        ----------
+        gridPoints : TYPE
+            DESCRIPTION.
+        listOfVals : TYPE
+            Expected to be ordered by row for the matrix, e.g.
+                [[l[0],l[1],...,l[n]],
+                 [-,l[n+1],...,l[2n-1]],
+                 ...]
+        ndInterpKWargs : TYPE, optional
+            DESCRIPTION. The default is {}.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.nDims = len(gridPoints)
+        self.gridPoints = gridPoints
+        
+        #Stupid case for nDims == 1. For higher dimensions, pass through
+        #NDInterpWithBoundary in components individually
+        if self.nDims != 2: #Unused case self.nDims == 1
+            raise NotImplementedError
+        
+        #Standard error checking
+        assert self.nDims == len(listOfVals)
+        
+        for i, p in enumerate(gridPoints):
+            if not np.all(np.diff(p) > 0.):
+                raise ValueError("The points in dimension %d must be strictly "
+                                 "ascending" % i)
+        
+        defaultMeshgridShape = np.array([len(g) for g in gridPoints])
+        possibleOtherShape = tuple(defaultMeshgridShape)
+        defaultMeshgridShape[[1,0]] = defaultMeshgridShape[[0,1]]
+        defaultMeshgridShape = tuple(defaultMeshgridShape)
+        
+        if defaultMeshgridShape[0] == defaultMeshgridShape[1]:
+            warnings.warn("Grid is square; cannot check if data is transposed."+\
+                          " Note that gridVals should be of shape (x.size,y.size).")
+        
+        self.gridValsList = []
+        for l in listOfVals:            
+            if l.shape == defaultMeshgridShape:
+                self.gridValsList.append(l)
+            elif l.shape == possibleOtherShape:
+                self.gridValsList.append(np.swapaxes(l,0,1))
+            else:
+                raise ValueError("One supplied gridVals.shape does not match expected shape "+\
+                                 str(defaultMeshgridShape)+" or possible shape "+\
+                                 str(possibleOtherShape))
+                    
+        #Taking shortcuts because I only care about D=2 right now
+        self.gridVals = np.stack((np.stack(self.gridValsList[0],self.gridValsList[1]),\
+                                  np.stack(self.gridValsList[1],self.gridValsList[2])))
+        self.gridVals = np.moveaxis(self.gridVals,[0,1],[2,3])
+        
+        self.eigenVals, self.eigenVecs = np.linalg.eig(self.gridVals)
+        thetaVals = np.arccos(self.eigenVecs[:,:,0,0])
+        
+        #Constructing interpolators
+        self.eigenValInterps = [NDInterpWithBoundary(self.gridPoints,e,**ndInterpKWargs)\
+                                for e in self.eigenVals]
+        self.eigenVecInterp = NDInterpWithBoundary(self.gridPoints,thetaVals,**ndInterpKWargs)
+        
+    def __call__(self,points):
+        eigenVals = [e(points) for e in self.eigenValInterps]
+        theta = self.eigenVecInterp(points)
+        
+        eigenVals = [e.clip(0) for e in eigenVals]
+        
+        ret = np.zeros(points.shape[:-1]+(self.nDims,self.nDims))
+        # evalMat = np.stack([np.diag(e) for e in np.stack(eigenVals).T])
+        # evecMat = 
+        
+        return None
+                    
+                
+    
 def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
     """
     Formats a collection of functions for use in computing the inertia tensor.
@@ -1455,11 +1603,16 @@ def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
                          str(nFilledKeys)+" instead. dictKeys = "+str(dictKeys))
     
     def func_out(coords):
-        if len(coords.shape) == 1:
-            coords = coords.reshape((1,nDims))
-        elif len(coords.shape) > 2:
-            raise ValueError("coords.shape = "+str(coords.shape)+\
-                             "; coords.shape must have length <= 2")
+        originalShape = coords.shape[:-1]
+        if originalShape == ():
+            originalShape = (1,)
+        
+        if coords.shape[-1] != nDims:
+            raise ValueError("The requested sample points have dimension "
+                             "%d, but this NDInterpWithBoundary expects "
+                             "dimension %d" % (coords.shape[-1], nDims))
+        
+        coords = coords.reshape((-1,nDims))
         
         nPoints = coords.shape[0]
         outVals = np.zeros((nPoints,)+2*(nDims,))
@@ -1473,7 +1626,7 @@ def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
                 outVals[:,iIter,jIter] = fEvals
                 outVals[:,jIter,iIter] = fEvals
                 
-        return outVals
+        return outVals.reshape(originalShape+2*(nDims,))
     return func_out
 
 class InterpolatedPath:
