@@ -783,7 +783,8 @@ class VerletMinimization:
         
         return tStepArr, alphaArr, stepsSinceReset
 
-    def fire(self,tStep,maxIters,fireParams={},useLocal=True):
+    def fire(self,tStep,maxIters,fireParams={},useLocal=True,earlyStop=True,
+             earlyStopParams={}):
         """
         Wrapper for fast inertial relaxation engine.
         FIRE step taken from http://dx.doi.org/10.1103/PhysRevLett.97.170201
@@ -828,6 +829,17 @@ class VerletMinimization:
             if key not in fireParams.keys():
                 fireParams[key] = defaultFireParams[key]
                 
+        defaultStopParams = {"startCheckIter":300,"nStabIters":50,"checkFreq":10,\
+                             "stabPerc":0.002}
+        
+        for key in earlyStopParams.keys():
+            if key not in defaultStopParams.keys():
+                raise ValueError("Key "+key+" in earlyStopParams not allowed")
+                
+        for key in defaultStopParams.keys():
+            if key not in earlyStopParams.keys():
+                earlyStopParams[key] = defaultStopParams[key]
+        
         self.allPts = np.zeros((maxIters+2,self.nPts,self.nDims))
         self.allVelocities = np.zeros((maxIters+1,self.nPts,self.nDims))
         self.allForces = np.zeros((maxIters+1,self.nPts,self.nDims))
@@ -859,7 +871,16 @@ class VerletMinimization:
                     tStepArr,alphaArr,stepsSinceReset = \
                         self._global_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
                                                fireParams)
-            #Final iteration, I think
+                            
+                if earlyStop:
+                    stopBool = self._check_early_stop(step,earlyStopParams)
+                    if stopBool: #TODO: Check this for potential off-by-one errors
+                        self.allPts = self.allPts[:step+1]
+                        self.allVelocities = self.allVelocities[:step]
+                        self.allForces = self.allForces[:step]
+                        break
+                    
+            #Final iteration
             if useLocal:
                 tStepFinal = tStepArr[-1].reshape((-1,1))
                 shift = tStepFinal*self.allVelocities[-1] + \
@@ -962,11 +983,25 @@ class VerletMinimization:
         
         return tStepArr, alphaArr, stepsSinceReset
     
-    def _check_early_stop(self):
+    def _check_early_stop(self,currentIter,stopParams):
+        startCheckIter = stopParams["startCheckIter"]
+        stabPerc = stopParams["stabPerc"]
+        nStabIters = stopParams["nStabIters"]
+        checkFreq = stopParams["checkFreq"]
         
-        return None
-
- 
+        #TODO: could cache energies/masses for use here
+        if (currentIter >= startCheckIter) and (currentIter % checkFreq == 0):
+            tfs = np.array([self.nebObj.target_func(pt,self.nebObj.potential,self.nebObj.mass)[0] \
+                            for pt in self.allPts[currentIter-nStabIters:currentIter]])
+            mean = np.mean(tfs)
+            std = np.std(tfs)
+            
+            if std <= stabPerc * mean:
+                ret = True
+            else:
+                ret = False
+        
+        return ret
     
 class EulerLagrangeSolver:
     """
