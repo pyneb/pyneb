@@ -73,6 +73,7 @@ def make_fig():
                      cmap="Spectral_r",extend="both")
     cs = ax.contour(pesDict["Q20"],pesDict["Q30"],pesDict["PES"].clip(-5,30),levels=10,\
                     linestyles="solid",colors="gray")
+    ax.contour(pesDict["Q20"],pesDict["Q30"],pesDict["PES"],levels=[0],colors="black")
     ax.clabel(cs,inline=1,fontsize=5,colors="black")
     
     colorsDict = {"neb-lap":"blue","neb-mep":"green","dpm":"orange",
@@ -83,8 +84,9 @@ def make_fig():
         colorKey, styleKey = key.replace(".txt","").split("_")
         ax.plot(*p.T,color=colorsDict[colorKey],ls=stylesDict[styleKey])
     
+    fig.colorbar(cf,ax=ax)#,label="Energy (MeV)")
     ax.set(xlabel=r"$Q_{20}$ (b)",ylabel=r"$Q_{30}$ (b${}^{3/2}$)",xlim=(0,400),ylim=(0,50))
-    fig.colorbar(cf)#,label="Energy (MeV)")
+    
     fig.savefig("232U.pdf",bbox_inches="tight")
     
     return None
@@ -216,5 +218,5 @@ def make_action_tables():
 
 np.seterr(invalid="raise")
 make_fig()
-make_separate_figs()
+# make_separate_figs()
 make_action_tables()
