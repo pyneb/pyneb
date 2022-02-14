@@ -7,6 +7,9 @@ import latextable
 
 import pandas as pd
 
+# rootDir = os.getcwd()+"..//.."
+# print(rootDir)
+
 pyNebDir = os.path.expanduser("~/Research/ActionMinimization/py_neb/")
 if pyNebDir not in sys.path:
     sys.path.insert(0,pyNebDir)
@@ -218,5 +221,5 @@ def make_action_tables():
 
 np.seterr(invalid="raise")
 make_fig()
-# make_separate_figs()
+make_separate_figs()
 make_action_tables()
