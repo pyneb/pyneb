@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
+from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes
+from mpl_toolkits.axes_grid1.inset_locator import mark_inset
 import time
 import sys
 
@@ -42,7 +44,7 @@ def make_MB_potential():
         return result
     return MB_potential
 ### Plot title
-plt_title = 'MB_plot_v3.pdf'
+plt_title = 'MB_plot_v4.pdf'
 
 ### Paths to plot
 # './PyNeb_6_camel_back_symm_LAP_path.txt'
@@ -50,10 +52,9 @@ LAP_path = np.loadtxt('./PyNeb_muller_brown__LAP_path.txt',skiprows=1,delimiter=
 MEP_path = np.loadtxt('./PyNeb_muller_brown__MEP_path.txt',skiprows=1,delimiter=',')
 DP_path = np.loadtxt('./mullerbrown_Path.txt',delimiter=',',skiprows=1)
 EL_path = np.loadtxt('./PathELEMuler-Brown.csv',delimiter=',')
-DJK_path = np.loadtxt("./dijkstra.txt",delimiter=",")
+DJ_path = np.loadtxt('./dijkstra.txt',delimiter=',')
 print(LAP_path[-1],MEP_path[-1],DP_path[0],EL_path[-1])
-paths = {'NEB-LAP': LAP_path,'NEB-MEP': MEP_path,'DP': DP_path,'EL':EL_path,\
-         "Dijkstra":DJK_path}
+paths = {'LAP': LAP_path,'MEP': MEP_path,'DP': DP_path,'EL':EL_path,'DJ':DJ_path}
 path_names = paths.keys()
 action_dict = {}
 #Define potential function
@@ -107,27 +108,45 @@ fig, ax = plt.subplots(1,1,figsize = (8, 6))
 im = ax.contourf(grids[0],grids[1],EE.clip(0,195),cmap='Spectral_r',extend='both',levels=45)
 cs = ax.contour(grids[0],grids[1],EE.clip(0,195),colors=['black'],levels=10)  
 
-colorsDict = {'DP':"black","EL":"cyan","NEB-LAP":"magenta","NEB-MEP":"red","Dijkstra":"lime"}
-for key, path in paths.items():
-    ax.plot(*path.T,label=key,linestyle="-",color=colorsDict[key],linewidth=2.0)
-
-# ax.plot(DP_path[:, 0], DP_path[:, 1],label='DP',linestyle='-',color='black',linewidth=2.0)
-# ax.plot(EL_path[:, 0], EL_path[:, 1],label='EL',linestyle='-',color='cyan',linewidth=2.0)
-# ax.plot(LAP_path[:, 0], LAP_path[:, 1],label='NEB-LAP ',linestyle='-',color='magenta',linewidth=2.0)
-# ax.plot(MEP_path[:, 0], MEP_path[:, 1],label='NEB-MEP ',linestyle='-',color='red',linewidth=2.0)
+ax.plot(DP_path[:, 0], DP_path[:, 1],label='DP',linestyle='-',color='black',linewidth=2.0)
+ax.plot(DJ_path[:, 0], DJ_path[:, 1],label='Dijkstra ',linestyle='-',color='lime',linewidth=2.0)
+ax.plot(EL_path[:, 0], EL_path[:, 1],label='EL',linestyle='-',color='cyan',linewidth=2.0)
+ax.plot(LAP_path[:, 0], LAP_path[:, 1],label='NEB-LAP ',linestyle='-',color='magenta',linewidth=2.0)
+ax.plot(MEP_path[:, 0], MEP_path[:, 1],label='NEB-MEP ',linestyle='-',color='red',linewidth=2.0)
 
 
 ax.plot(MEP_path[:,0][saddle],MEP_path[:,1][saddle],'*',color='black',markersize=14)
 ax.plot(MEP_path[:,0][minima],MEP_path[:,1][minima],'X',color='yellow',markersize=12)
 ax.clabel(cs,inline=1,fontsize=8,colors="black")
 
+### Make inset 
+
 cbar = fig.colorbar(im)
-cbar.ax.tick_params(labelsize=12) 
-plt.legend(frameon=True,fancybox=True)
-plt.xticks(fontsize=14)
-plt.yticks(fontsize=14)
-ax.set(xlabel="x",ylabel="y")
-#plt.xlabel(r'$x$',size=24)
-#plt.ylabel(r'$y$',size=24)
+ax.clabel(cs,inline=1,colors="black") 
+axins = zoomed_inset_axes(ax, 2, loc=1)
+axins.contourf(grids[0], grids[1], EE.clip(0,195), cmap='Spectral_r',extend='both',levels=45,origin='lower')
+cs2 = axins.contour(grids[0],grids[1],EE.clip(0,195),colors=['black'],levels=10)  
+axins.clabel(cs2,inline=5,colors="black")
+axins.plot(DP_path[:, 0], DP_path[:, 1],label='DP',linestyle='-',color='black',linewidth=3.0)
+axins.plot(DJ_path[:, 0], DJ_path[:, 1],label='Dijkstra ',linestyle='-',color='lime',linewidth=3.0)
+axins.plot(EL_path[:, 0], EL_path[:, 1],label='EL',linestyle='-',color='cyan',linewidth=3.0)
+axins.plot(LAP_path[:, 0], LAP_path[:, 1],label='NEB-LAP ',linestyle='-',color='magenta',linewidth=3.0)
+axins.plot(MEP_path[:, 0], MEP_path[:, 1],label='NEB-MEP ',linestyle='-',color='red',linewidth=3.0)
+axins.plot(MEP_path[:,0][minima],MEP_path[:,1][minima],'X',color='yellow',markersize=18)
+# sub region of the original image
+x1, x2, y1, y2 = -.8, -0.3, 1.05, 1.55
+axins.set_xlim(x1, x2)
+axins.set_ylim(y1, y2)
+axins.set_xticklabels([])
+axins.set_yticklabels([])
+mark_inset(ax, axins, loc1=2, loc2=3, lw=2, ec='black')
+
+ax.set_ylabel('$y$',size=24)
+ax.set_xlabel('$x$',size=24)
+#fig.suptitle(f'Projection onto lambda_2 = {const_comps[0]}',fontsize=24)
+#plt.legend(frameon=True,fancybox=True)
+
+plt.rc('xtick', labelsize=24) 
+plt.rc('ytick', labelsize=24) 
 plt.savefig(plt_title,bbox_inches="tight")
 plt.show()
