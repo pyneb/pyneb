@@ -1,9 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
-import time
 import sys
-from datetime import date
+import os
 ### add pyneb
 sys.path.insert(0, '../py_neb/py_neb')
 sys.path.insert(0, '../flynn_code/py_neb_demos')
@@ -33,8 +32,9 @@ def test_func(coords):
     return(result)
 
 
-surface_name = "multi-modal" # for output files
-save_data = False
+movie_name = "multi-modal" # for output files
+dir_name = movie_name+'-frames'
+os.makedirs(dir_name, exist_ok=True) 
 #Define potential function
 V_func = test_func
 M_func = None # for LAP 
@@ -92,7 +92,7 @@ NIterations = 400
 
 ### define initial path
 #beginning point 
-RN_array = [[1.1,1.4],[.8,1.4] ,[.3,1.5],[1.5,0],[1.75,-.25],[2.0,-.4],[1.06521739,0.58361204]]
+RN_array = [[1.1,1.4],[.8,1.4] ,[.3,1.5],[1.06521739,0.58361204],[1.5,0],[1.75,-.25],[2.0,-.4]]
 LAP_array = []
 actions = []
 for RN in RN_array:
@@ -135,15 +135,11 @@ for RN in RN_array:
     
     ### Begining the optimization procedure. Results are all of the velocities
     ### band positions, and forces for each iteration of the optimization.
-    t0 = time.time()
     tStepArr, alphaArr, stepsSinceReset = minObj_LAP.fire2(dt,NIterations,fireParams=FireParams,useLocal=False)
     allPaths_LAP= minObj_LAP.allPts
     final_path_LAP = allPaths_LAP[-1]
     LAP_array.append(allPaths_LAP) 
     
-    t1 = time.time()
-    total_time_LAP = t1 - t0
-    print('total_time LAP: ',total_time_LAP)
     action_array_LAP = np.zeros(NIterations+2)
     for i,path in enumerate(allPaths_LAP):
         #action_array_LAP[i] = utilities.TargetFunctions.action(path, V_func_shift,M_func)[0]
@@ -181,7 +177,7 @@ for i in range(0,NIterations):
     im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,2.5))
     ax.contour(grids[0],grids[1],EE,colors=['black'],levels=MaxNLocator(nbins = 15).tick_values(0,2.5))  
     for j,LAP_path in enumerate(LAP_array):
-        ax.plot(LAP_path[i][:, 0], LAP_path[i][:, 1], '.-',label=str(actions[j][i]),ms=18,linewidth=3)
+        ax.plot(LAP_path[i][:, 0], LAP_path[i][:, 1], '.-',label="{:.3f}".format(actions[j][i]),ms=18,linewidth=3)
     ax.contour(grids[0],grids[1],EE,colors=['black'],levels=[E_gs],linewidths=4)  
 
     ax.set_ylabel('$y$',size=32)
@@ -191,6 +187,6 @@ for i in range(0,NIterations):
     plt.rc('ytick', labelsize=24) 
     #ax.legend(frameon=True,fancybox=True,fontsize=20)
     cbar = fig.colorbar(im,format='%.1f')
-    plt.savefig('multi-modal-frames/frame'+str(i).zfill(3)+'.png',dpi=100)
+    plt.savefig(dir_name+'/frame'+str(i).zfill(3)+'.png',dpi=100)
     plt.clf()
     plt.close()
