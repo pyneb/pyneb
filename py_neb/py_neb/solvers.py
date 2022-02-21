@@ -680,10 +680,13 @@ class VerletMinimization:
                             
                 if earlyStop:
                     stopBool = self._check_early_stop(step,earlyStopParams)
-                    if stopBool: #TODO: Check this for potential off-by-one errors
-                        self.allPts = self.allPts[:step+1]
+                    if stopBool:
+                        self.allPts = self.allPts[:step+2]
                         self.allVelocities = self.allVelocities[:step]
                         self.allForces = self.allForces[:step]
+                        
+                        tStepArr = tStepArr[:step]
+                        alphaArr = alphaArr[:step]
                         break
                     
             #Final iteration
@@ -984,6 +987,8 @@ class VerletMinimization:
         return tStepArr, alphaArr, stepsSinceReset
     
     def _check_early_stop(self,currentIter,stopParams):
+        ret = False
+        
         startCheckIter = stopParams["startCheckIter"]
         stabPerc = stopParams["stabPerc"]
         nStabIters = stopParams["nStabIters"]
@@ -996,10 +1001,8 @@ class VerletMinimization:
             mean = np.mean(tfs)
             std = np.std(tfs)
             
-            if std <= stabPerc * mean:
+            if std <= stabPerc:# * mean:
                 ret = True
-            else:
-                ret = False
         
         return ret
     
