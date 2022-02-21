@@ -1,7 +1,7 @@
 import sys, os
 import pandas as pd
 
-pyNebDir = os.path.expanduser("~/Research/ActionMinimization/py_neb/")
+pyNebDir = os.path.expanduser(os.getcwd()+"//..//..//../py_neb/")
 if pyNebDir not in sys.path:
     sys.path.insert(0,pyNebDir)
     
@@ -48,36 +48,37 @@ def muller_brown(coords):
 initPt = np.array([-0.550,1.440])
 finalPt = np.array([0.600,0.030])
     
-dxVals = np.logspace(-3,-1,30)
-dyVals = np.logspace(-3,-1,30)
-nImages = np.linspace(30,200,10,dtype=int)
+dxVals = np.logspace(-3,-1,20)
+nImages = np.arange(20,220,20)
 
 for dx in dxVals:
-    for dy in dyVals:
-        for n in nImages:
-            x = np.arange(-1.5,1+dx,dx)
-            y = np.arange(-0.25,1.75+dy,dy)
-            
-            cMeshTuple = np.meshgrid(x,y)
-            cMeshArr = np.moveaxis(np.array(cMeshTuple),0,-1)
-            zz = muller_brown(cMeshArr)
-            eGS = zz.min()
-            zz = zz - eGS
-            
-            pes_func = NDInterpWithBoundary((x,y),zz)
-            
-            initialPoints = np.array([np.linspace(initPt[i],finalPt[i],n) for\
-                                      i in range(2)]).T
-            
-            lap = LeastActionPath(pes_func,n,2,endpointSpringForce=False,\
-                                  endpointHarmonicForce=False)
-            neb = VerletMinimization(lap,initialPoints)
-            
-            neb.fire(0.2,1000,earlyStop=True,fireParams={"maxmove":0.1*np.ones(2)},
-                     earlyStopParams={"stabPerc":10**(-3)})
-            
-            acts = np.array([TargetFunctions.action(p,pes_func)[0] for p in neb.allPts])
-            
-            h5File = h5py.File(lap.logger.fileName,"a")
-            h5File.create_dataset("target_func_values",data=acts)
-            h5File.close()
+    for n in nImages:
+        dy = dx
+        
+        x = np.arange(-1.5,1+dx,dx)
+        y = np.arange(-0.25,1.75+dy,dy)
+        
+        cMeshTuple = np.meshgrid(x,y)
+        cMeshArr = np.moveaxis(np.array(cMeshTuple),0,-1)
+        zz = muller_brown(cMeshArr)
+        eGS = zz.min()
+        zz = zz - eGS
+        
+        pes_func = NDInterpWithBoundary((x,y),zz)
+        
+        initialPoints = np.array([np.linspace(initPt[i],finalPt[i],n) for\
+                                  i in range(2)]).T
+        
+        lap = LeastActionPath(pes_func,n,2,endpointSpringForce=False,\
+                              endpointHarmonicForce=False)
+        neb = VerletMinimization(lap,initialPoints)
+        
+        neb.fire(0.2,2000,earlyStop=True,fireParams={"maxmove":0.1*np.ones(2)},
+                 earlyStopParams={"stabPerc":10**(-3)})
+        
+        acts = np.array([TargetFunctions.action(p,pes_func)[0] for p in neb.allPts])
+        
+        h5File = h5py.File(lap.logger.fileName,"a")
+        h5File.create_dataset("target_func_values",data=acts)
+        h5File.close()
+        
