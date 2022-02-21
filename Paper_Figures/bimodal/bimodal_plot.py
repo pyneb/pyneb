@@ -155,13 +155,20 @@ fig, ax = plt.subplots(1,1,figsize = (12, 10))
 
 axins = zoomed_inset_axes(ax,3,loc=2)
 
-for ax in [axins,ax]:
-    im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,2.5))
-    cs = ax.contour(grids[0],grids[1],EE,colors=['black'],levels=MaxNLocator(nbins = 15).tick_values(0.01,2.5))  
-    ax.plot(LAP_array[0][-1][:, 0], LAP_array[0][-1][:, 1], '.-',label="{:.3f}".format(actions[0][-1]),ms=18,linewidth=3,color='black')
-    ax.plot(LAP_array[1][-1][:, 0], LAP_array[1][-1][:, 1], '.-',label="{:.3f}".format(actions[1][-1]),ms=18,linewidth=3,color='cyan')
-    ax.plot(LAP_array[0][60][:, 0], LAP_array[0][60][:, 1], '.-',label="{:.3f}".format(actions[0][-1]),ms=18,linewidth=3,color='gray')
-    ax.contour(grids[0],grids[1],EE,colors=['white'],levels=[E_gs],linestyles='solid',linewidths=8)  
+
+im = axins.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,2.5))
+cs = axins.contour(grids[0],grids[1],EE,colors=['black'],levels=MaxNLocator(nbins = 15).tick_values(0.01,2.5))  
+axins.plot(LAP_array[0][-1][:, 0], LAP_array[0][-1][:, 1], '-',label="{:.3f}".format(actions[0][-1]),ms=18,linewidth=5,color='black')
+axins.plot(LAP_array[1][-1][:, 0], LAP_array[1][-1][:, 1], '-',label="{:.3f}".format(actions[1][-1]),ms=18,linewidth=5,color='cyan')
+axins.plot(LAP_array[0][60][:, 0], LAP_array[0][60][:, 1], '.-',label="{:.3f}".format(actions[0][-1]),ms=18,linewidth=5,color='gray')
+axins.contour(grids[0],grids[1],EE,colors=['white'],levels=[E_gs],linestyles='solid',linewidths=8)  
+
+im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,2.5))
+cs = ax.contour(grids[0],grids[1],EE,colors=['black'],levels=MaxNLocator(nbins = 15).tick_values(0.01,2.5))  
+ax.plot(LAP_array[0][-1][:, 0], LAP_array[0][-1][:, 1], '-',label="{:.3f}".format(actions[0][-1]),ms=18,linewidth=5,color='black')
+ax.plot(LAP_array[1][-1][:, 0], LAP_array[1][-1][:, 1], '-',label="{:.3f}".format(actions[1][-1]),ms=18,linewidth=5,color='cyan')
+ax.plot(LAP_array[0][60][:, 0], LAP_array[0][60][:, 1], '-',label="{:.3f}".format(actions[0][-1]),ms=18,linewidth=5,color='gray')
+ax.contour(grids[0],grids[1],EE,colors=['white'],levels=[E_gs],linestyles='solid',linewidths=8)  
 
 axins.set_xlim(0.65, 1.1)
 axins.set_ylim(.4, .8)
