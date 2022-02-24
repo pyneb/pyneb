@@ -15,7 +15,7 @@ import utils
 today = date.today()
 ### Define nucleus data path (assumes our github structure)
 nucleus = "240Pu"
-data_path = f"../../PES/{nucleus}.h5"
+data_path = f"../../PES/{nucleus}_new.h5"
 use_mass = True
 save_data = True
 save_plt = False
@@ -31,8 +31,10 @@ mass_tensor_indicies = ['20','30','pair']
 
 minima_ind = utilities.SurfaceUtils.find_all_local_minimum(EE)
 gs_ind = utilities.SurfaceUtils.find_local_minimum(EE,searchPerc=[0.25,0.25,0.25],returnOnlySmallest=True)
+print(gs_ind)
 gs_coord = np.array((grids[0][gs_ind],grids[1][gs_ind],grids[2][gs_ind])).T
 E_gs_raw = EE[gs_ind]
+print(E_gs_raw)
 EE = EE - E_gs_raw
 #########
 
@@ -60,6 +62,7 @@ else:
 auxFunc = None # for MEP
 #########
 E_gs = V_func(gs_coord)
+print(E_gs)
 V_func_shift = V_func#utilities.shift_func(V_func,shift=-1.0*E_gs)
 const_names = ['pairing']
 const_comps = [0]
@@ -91,7 +94,7 @@ springForceFix = (springR0,springRN)
 ### Optimization parameters 
 ## Velocity Verlet parameter set
 dt = .5
-NIterations = 2000
+NIterations = 50
 
 ### define initial path
 R0 = gs_coord # NEB starting point
@@ -145,7 +148,7 @@ for i,path in enumerate(allPaths_LAP):
     #action_array_LAP[i] = path_call.compute_along_path(utilities.TargetFunctions.action,100,tfArgs=[V_func_shift])[1][0]
     action_array_LAP[i] = utilities.TargetFunctions.action(path, V_func_shift,M_func)[0]
 min_action_LAP = np.around(action_array_LAP[-1],2)
-title = 'Eric_'+nucleus+'_LAP_'+'Mass_'+str(use_mass)+'_'+run_name
+title = 'Eric_'+nucleus+'_LAP_'+'Mass_'+str(use_mass)+'_'
 
 ### write run meta data to txt file.
 metadata = {'title':title,'Created_by': 'Eric','Created_on':today.strftime("%b-%d-%Y"),'method':'NEB-LAP','method_description':method_dict, \
@@ -156,7 +159,7 @@ if save_data == True:
 
 # write final path to txt.
 if save_data == True:
-    np.savetxt(title+'_path.txt',final_path_LAP,comments='',delimiter=',',header="Q20,Q30")
+    np.savetxt(title+'_path.txt',final_path_LAP,comments='',delimiter=',',header="Q20,Q30,lambda2")
 
 
 
