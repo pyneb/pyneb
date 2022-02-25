@@ -1,6 +1,7 @@
 import os
-import sys
 
+import sys
+from matplotlib.ticker import MaxNLocator
 from tabulate import tabulate
 from texttable import Texttable
 import latextable
@@ -72,10 +73,10 @@ pesDict = read_potential()
 def make_fig():
     fig, ax = plt.subplots()
     # nLevels = 15
-    cf = ax.contourf(pesDict["Q20"],pesDict["Q30"],pesDict["PES"].clip(0.01,30),levels=45,\
+    cf = ax.contourf(pesDict["Q20"],pesDict["Q30"],pesDict["PES"].clip(0.01,30),levels=MaxNLocator(nbins = 45).tick_values(0,25),\
                      cmap="Spectral_r",extend="both")
     cs = ax.contour(pesDict["Q20"],pesDict["Q30"],pesDict["PES"].clip(0.01,30),levels=10,\
-                    linestyles="solid",colors="black")
+                    linestyles="solid",colors="black",linewidths=.5)
     ax.contour(pesDict["Q20"],pesDict["Q30"],pesDict["PES"],levels=[0],colors="white",linewidths=2.5)
     ax.clabel(cs,inline=1,fontsize=5,colors="black")
     
