@@ -45,7 +45,7 @@ def make_MB_potential():
         return result
     return MB_potential
 ### Plot title
-plt_title = 'MB_plot_v3.pdf'
+plt_title = 'MB_plot.pdf'
 
 ### Paths to plot
 # './PyNeb_6_camel_back_symm_LAP_path.txt'
@@ -106,20 +106,21 @@ maxima,minima,saddle = utilities.get_crit_pnts(V_func, MEP_path,method='central'
 
 ### Plot the results
 
-fig, mainAx = plt.subplots(1,1,figsize = (8, 6))
+fig, mainAx = plt.subplots(1,1)
 axins = zoomed_inset_axes(mainAx,5)
 
 for ax in [mainAx,axins]:
     im = ax.contourf(grids[0],grids[1],EE.clip(0,195),cmap='Spectral_r',extend='both',levels=45)
-    cs = ax.contour(grids[0],grids[1],EE.clip(0,195),colors=['black'],levels=10)  
-    
+    cs = ax.contour(grids[0],grids[1],EE.clip(0,195),colors=['black'],levels=7,linewidths=.5)  
+    #cs = ax.contour(grids[0],grids[1],EE.clip(0,195),colors=['black'],levels=np.arange(0,195,50),linewidths=.5) 
+    #ax.contour(grids[0],grids[1],EE.clip(40,195),colors=['black'],levels=np.arange(40,195,50),linewidths=.5) 
     colorsDict = {'DP':"black","EL":"cyan","NEB-LAP":"magenta","NEB-MEP":"red","Dijkstra":"lime"}
     for key, path in paths.items():
-        ax.plot(*path.T,label=key,linestyle="-",color=colorsDict[key],linewidth=2.0)    
+        ax.plot(*path.T,label=key,linestyle="-",color=colorsDict[key],linewidth=1.0)    
+    ax.clabel(cs,inline=1,fontsize=6,colors="black")
+    ax.plot(MEP_path[:,0][saddle],MEP_path[:,1][saddle],'*',color='black',markersize=8)
+    ax.plot(MEP_path[:,0][minima],MEP_path[:,1][minima],'X',color='yellow',markersize=6)
     
-    ax.plot(MEP_path[:,0][saddle],MEP_path[:,1][saddle],'*',color='black',markersize=14)
-    ax.plot(MEP_path[:,0][minima],MEP_path[:,1][minima],'X',color='yellow',markersize=12)
-    ax.clabel(cs,inline=1,fontsize=8,colors="black")
     
 axins.set_xlim(-0.65, -0.45)
 axins.set_ylim(1.3, 1.5)
@@ -130,14 +131,15 @@ axins.axvline(MEP_path[:,0][minima][0],ls="--",color="yellow")
 
 mark_inset(mainAx,axins, edgecolor="black",loc1=2,loc2=3)
 
-plt.xticks(fontsize=14)
-plt.yticks(fontsize=14)
-mainAx.tick_params(labelsize=14)
-mainAx.set_xlabel(r'$x$',size=24)
-mainAx.set_ylabel(r'$y$',size=24)
+#plt.xticks(fontsize=14)
+#plt.yticks(fontsize=14)
+#mainAx.tick_params(labelsize=14)
+mainAx.set_xlabel(r'$x$')
+mainAx.set_ylabel(r'$y$')
 
 cbar = fig.colorbar(im,ax=mainAx)
-cbar.ax.tick_params(labelsize=14) 
-
+#cbar.ax.tick_params(labelsize=14) 
+#plt.setp(mainAx.get_yticklabels()[0], visible=False)    
+#plt.setp(mainAx.get_xticklabels()[0], visible=False)  
 plt.savefig(plt_title,bbox_inches="tight")
 plt.show()

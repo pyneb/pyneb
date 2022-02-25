@@ -10,7 +10,7 @@ import pandas as pd
 # rootDir = os.getcwd()+"..//.."
 # print(rootDir)
 
-pyNebDir = os.path.expanduser("~/Research/ActionMinimization/py_neb/")
+pyNebDir = os.path.expanduser("~/ActionMinimization/py_neb/")
 if pyNebDir not in sys.path:
     sys.path.insert(0,pyNebDir)
     
@@ -36,7 +36,7 @@ def get_unique_inds(arr):
     return list(res)
 
 def read_potential():
-    fileDir = os.path.expanduser("~/Research/ActionMinimization/PES/")
+    fileDir = os.path.expanduser("~/ActionMinimization/PES/")
     
     dsetsToGet = ["Q20","Q30","PES","B2020","B2030","B3030"]
     dsetsDict = {}
@@ -55,7 +55,7 @@ def read_potential():
 
 coordNms = ["Q20","Q30"]
 
-pathsDir = os.path.expanduser("~/Research/ActionMinimization/Paths/232U/")
+pathsDir = os.path.expanduser("~/ActionMinimization/Paths/232U/")
 pathFiles = [f for f in os.listdir(pathsDir) if f.endswith(".txt")]
 
 pathsDict = {}
@@ -72,11 +72,11 @@ pesDict = read_potential()
 def make_fig():
     fig, ax = plt.subplots()
     # nLevels = 15
-    cf = ax.contourf(pesDict["Q20"],pesDict["Q30"],pesDict["PES"].clip(-5,30),levels=45,\
+    cf = ax.contourf(pesDict["Q20"],pesDict["Q30"],pesDict["PES"].clip(0.01,30),levels=45,\
                      cmap="Spectral_r",extend="both")
-    cs = ax.contour(pesDict["Q20"],pesDict["Q30"],pesDict["PES"].clip(-5,30),levels=10,\
-                    linestyles="solid",colors="gray")
-    ax.contour(pesDict["Q20"],pesDict["Q30"],pesDict["PES"],levels=[0],colors="black")
+    cs = ax.contour(pesDict["Q20"],pesDict["Q30"],pesDict["PES"].clip(0.01,30),levels=10,\
+                    linestyles="solid",colors="black")
+    ax.contour(pesDict["Q20"],pesDict["Q30"],pesDict["PES"],levels=[0],colors="white",linewidths=2.5)
     ax.clabel(cs,inline=1,fontsize=5,colors="black")
     
     colorsDict = {"neb-lap":"blue","neb-mep":"green","dpm":"orange",
