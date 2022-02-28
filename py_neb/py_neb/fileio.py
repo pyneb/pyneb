@@ -192,6 +192,12 @@ class ForceLogger:
             h5File.close()
         return None
     
+    def write_runtime(runTime):
+        h5File = h5py.File(self.fileName,"a")
+        h5File.attrs.create("runTime",runTime)
+        h5File.close()
+        return None
+    
     def write_early_stop_params(self,earlyStopParams):
         if self.logLevel != 0:
             h5File = h5py.File(self.fileName,"a")

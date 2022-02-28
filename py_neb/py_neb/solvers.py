@@ -666,6 +666,7 @@ class VerletMinimization:
         tStepArr[0] = tStep
         alphaArr[0] = fireParams["aStart"]
         
+        t0 = time.time()
         try:
             for step in range(1,maxIters+1):
                 #TODO: check potential off-by-one indexing on tStep
@@ -706,8 +707,10 @@ class VerletMinimization:
                 self.allPts[-1] = self.allPts[-2] + tStepArr[-1]*self.allVelocities[-1] + \
                     0.5*self.allForces[-1]*tStepArr[-1]**2
         finally:
+            t1 = time.time()
             self.nebObj.logger.flush()
             self.nebObj.write_fire_params(tStepArr,alphaArr,stepsSinceReset,fireParams)
+            self.nebObj.write_runtime(t1-t0)
             if earlyStop:
                 self.nebObj.write_early_stop_params(earlyStopParams)
         
