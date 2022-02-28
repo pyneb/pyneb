@@ -177,6 +177,30 @@ class ForceLogger:
                 
                 h5File.close()
         return None
+    
+    def write_fire_params(self,tStep,alpha,stepsSinceReset,fireParams):
+        if self.logLevel != 0:
+            h5File = h5py.File(self.fileName,"a")
+            h5File.create_dataset("tStep",data=tStep)
+            h5File.create_dataset("alpha",data=alpha)
+            h5File.create_dataset("stepsSinceReset",data=stepsSinceReset)
+            
+            h5File.create_group("fire_params")
+            for (key,val) in fireParams.items():
+                h5File["fire_params"].attrs.create(key,val)
+            
+            h5File.close()
+        return None
+    
+    def write_early_stop_params(self,earlyStopParams):
+        if self.logLevel != 0:
+            h5File = h5py.File(self.fileName,"a")
+            h5File.create_group("early_stop_params")
+            for (key, val) in earlyStopParams.items():
+                h5File["early_stop_params"].attrs.create(key,val)
+            h5File.close()
+            
+        return None
         
 class LoadForceLogger:
     def __init__(self,file):
@@ -221,7 +245,7 @@ class VerletLogger:
                 
 class NDInterpLogger:
     def __init__(self):
-        print("asdf")
+        raise NotImplementedError
         #TODO: add logger when the class is instantiated. Then, e.g. ForceLogger
         #can point to these files
 

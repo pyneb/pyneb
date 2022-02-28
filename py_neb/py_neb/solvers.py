@@ -707,6 +707,9 @@ class VerletMinimization:
                     0.5*self.allForces[-1]*tStepArr[-1]**2
         finally:
             self.nebObj.logger.flush()
+            self.nebObj.write_fire_params(tStepArr,alphaArr,stepsSinceReset,fireParams)
+            if earlyStop:
+                self.nebObj.write_early_stop_params(earlyStopParams)
         
         return tStepArr, alphaArr, stepsSinceReset
     
