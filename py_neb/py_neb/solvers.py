@@ -798,7 +798,8 @@ class VerletMinimization:
         
         return tStepArr, alphaArr, stepsSinceReset
     
-    def fire2(self,tStep,maxIters,fireParams={},useLocal=False):
+    def fire2(self,tStep,maxIters,fireParams={},useLocal=False,earlyStop=False,
+              earlyStopParams={}):
         """
         Wrapper for fast inertial relaxation engine 2.
         FIRE step taken from http://dx.doi.org/10.1103/PhysRevLett.97.170201
@@ -843,6 +844,17 @@ class VerletMinimization:
             if key not in fireParams.keys():
                 fireParams[key] = defaultFireParams[key]
                 
+        defaultStopParams = {"startCheckIter":300,"nStabIters":50,"checkFreq":10,\
+                             "stabPerc":0.002}
+        
+        for key in earlyStopParams.keys():
+            if key not in defaultStopParams.keys():
+                raise ValueError("Key "+key+" in earlyStopParams not allowed")
+                
+        for key in defaultStopParams.keys():
+            if key not in earlyStopParams.keys():
+                earlyStopParams[key] = defaultStopParams[key]
+                
         self.allPts = np.zeros((maxIters+2,self.nPts,self.nDims))
         self.allVelocities = np.zeros((maxIters+1,self.nPts,self.nDims))
         self.allForces = np.zeros((maxIters+1,self.nPts,self.nDims))
@@ -863,6 +875,7 @@ class VerletMinimization:
         tStepArr[0] = tStep
         alphaArr[0] = fireParams["aStart"]
         
+        t0 = time.time()
         try:
             for step in range(1,maxIters+1):
                 #TODO: check potential off-by-one indexing on tStep
@@ -874,6 +887,17 @@ class VerletMinimization:
                     tStepArr,alphaArr,stepsSinceReset = \
                         self._global_fire2_iter(step,tStepArr,alphaArr,stepsSinceReset,\
                                                fireParams)
+                            
+                if earlyStop:
+                    stopBool = self._check_early_stop(step,earlyStopParams)
+                    if stopBool:
+                        self.allPts = self.allPts[:step+2]
+                        self.allVelocities = self.allVelocities[:step]
+                        self.allForces = self.allForces[:step]
+                        
+                        tStepArr = tStepArr[:step]
+                        alphaArr = alphaArr[:step]
+                        break
             
             if useLocal:
                 tStepFinal = tStepArr[-1].reshape((-1,1))
@@ -891,7 +915,13 @@ class VerletMinimization:
                 self.allPts[-1] = self.allPts[-2] + tStepArr[-1]*self.allVelocities[-1] + \
                     0.5*self.allForces[-1]*tStepArr[-1]**2
         finally:
+            t1 = time.time()
             self.nebObj.logger.flush()
+            self.nebObj.logger.write_fire_params(tStepArr,alphaArr,stepsSinceReset,fireParams)
+            self.nebObj.logger.write_runtime(t1-t0)
+            if earlyStop:
+                self.nebObj.logger.write_early_stop_params(earlyStopParams)
+            
         
         return tStepArr, alphaArr, stepsSinceReset
     
