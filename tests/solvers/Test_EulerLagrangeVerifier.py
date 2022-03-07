@@ -3,8 +3,7 @@ from context import *
 import unittest
 import warnings
 
-#pyNebDir imported from context; perhaps bad practice?
-print("\nRunning "+os.path.relpath(__file__,pyNebDir))
+print("\nRunning "+os.path.relpath(__file__))
 
 class __init___(unittest.TestCase):
     #Does, in fact, run this class, despite starting with two underscores

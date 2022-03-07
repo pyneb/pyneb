@@ -3,8 +3,7 @@ from context import *
 import unittest
 import warnings
 
-#pyNebDir imported from context; perhaps bad practice?
-print("\nRunning "+os.path.relpath(__file__,pyNebDir))
+print("\nRunning "+os.path.relpath(__file__))
 
 class _solve_id_inertia_(unittest.TestCase):
     def test_flat_pes(self):

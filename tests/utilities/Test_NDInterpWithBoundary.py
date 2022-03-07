@@ -3,8 +3,7 @@ from context import *
 import unittest
 import warnings
 
-#pyNebDir imported from context; perhaps bad practice?
-print("\nRunning "+os.path.relpath(__file__,pyNebDir))
+print("\nRunning "+os.path.relpath(__file__))
 
 class __init___(unittest.TestCase):
     def test_2d_init_same_symmExtend_everywhere(self):
