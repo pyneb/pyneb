@@ -1,7 +1,6 @@
 #Appears to be common/best practice to import required packages in every file
 #they are used in
 import numpy as np
-from scipy.ndimage import filters, morphology #For minimum finding
 
 #For ND interpolation
 # from scipy.interpolate import interpnd, RectBivariateSpline
@@ -978,51 +977,14 @@ class VerletMinimization:
 
 
     def _local_fire2_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
-        tStepPrev = tStepArr[step-1].reshape((-1,1)) #For multiplication below
-        
-        shift = tStepPrev*self.allVelocities[step-1] + \
-                0.5*self.allForces[step-1]*tStepPrev**2
-
-        for ptIter in range(self.nPts):
-            for dimIter in range(self.nDims):
-                if(abs(shift[ptIter,dimIter])>fireParams["maxmove"][dimIter]):
-                    shift[ptIter] = shift[ptIter] * \
-                        fireParams["maxmove"][dimIter]/abs(shift[ptIter,dimIter])
-
-        self.allPts[step] = self.allPts[step-1] + shift
-        
-        self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
-        #What the Wikipedia article on velocity Verlet uses
-        self.allVelocities[step] = \
-            0.5*tStepPrev*(self.allForces[step]+self.allForces[step-1])
-        
-        for ptIter in range(self.nPts):
-            alpha = alphaArr[step-1,ptIter]
-            
-            product = np.dot(self.allVelocities[step-1,ptIter],self.allForces[step,ptIter])
-            if product > 0:
-                vMag = np.linalg.norm(self.allVelocities[step-1,ptIter])
-                fHat = self.allForces[step,ptIter]/np.linalg.norm(self.allForces[step,ptIter])
-                self.allVelocities[step,ptIter] += (1-alpha)*self.allVelocities[step-1,ptIter] + \
-                    alpha*vMag*fHat
-                
-                if stepsSinceReset[ptIter] > fireParams["nAccel"]:
-                    tStepArr[step,ptIter] = \
-                        min(tStepArr[step-1,ptIter]*fireParams["fInc"],fireParams["dtMax"])
-                    alphaArr[step,ptIter] = alpha*fireParams["fAlpha"]
-                else:
-                    tStepArr[step,ptIter] = tStepArr[step-1,ptIter]
-                
-                stepsSinceReset[ptIter] += 1
-            else:
-                tStepArr[step,ptIter] = \
-                    max(tStepArr[step-1,ptIter]*fireParams["fDecel"],fireParams["dtMin"])
-                alphaArr[step,ptIter] = fireParams["aStart"]
-                stepsSinceReset[ptIter] = 0
-        
-        return tStepArr, alphaArr, stepsSinceReset
+        warnings.warn("Local FIRE2 currently calls local FIRE update")
+        return self._local_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,fireParams)
     
     def _check_early_stop(self,currentIter,stopParams):
+        
+        #TODO: update to use variance in image position, rather than variance
+        #in target function - MEP is not an action-like functional, so this fails
+        
         ret = False
         
         startCheckIter = stopParams["startCheckIter"]
@@ -1540,7 +1502,6 @@ class DynamicProgramming:
     def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,allowedMask=None,\
                  target_func=TargetFunctions.action,allowedEndpoints=None,\
                  trimVals=[10**(-4),None],logLevel=1,fName=None,logFreq=50):
-        warnings.warn("DynamicProgramming class is still under development")
         self.initialPoint = initialPoint
         self.coordMeshTuple = coordMeshTuple
         self.uniqueCoords = [np.unique(c) for c in self.coordMeshTuple]
