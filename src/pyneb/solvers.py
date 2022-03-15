@@ -475,7 +475,6 @@ class MinimumEnergyPath:
             
         return netForce
     
-#TODO: do we compute the action for all points after optimizing? or let someone else do that? 
 class VerletMinimization:
     """
     :Maintainer: Daniel
@@ -760,8 +759,33 @@ class VerletMinimization:
         
         return tStepArr, alphaArr, stepsSinceReset
 
-
     def _global_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
+        """
+        
+
+        Parameters
+        ----------
+        step : TYPE
+            DESCRIPTION.
+        tStepArr : TYPE
+            DESCRIPTION.
+        alphaArr : TYPE
+            DESCRIPTION.
+        stepsSinceReset : TYPE
+            DESCRIPTION.
+        fireParams : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        tStepArr : TYPE
+            DESCRIPTION.
+        alphaArr : TYPE
+            DESCRIPTION.
+        stepsSinceReset : TYPE
+            DESCRIPTION.
+
+        """
         self.allPts[step] = self.allPts[step-1] + \
             tStepArr[step-1]*self.allVelocities[step-1] + \
             0.5*self.allForces[step-1]*tStepArr[step-1]**2
@@ -805,10 +829,6 @@ class VerletMinimization:
         
         Velocity update taken from 
         https://en.wikipedia.org/wiki/Verlet_integration#Velocity_Verlet
-        
-        TODO: consider making FIRE its own class, or allowing for attributes
-        like fireParams and etc
-        TODO: add maxmove parameter to prevent path exploding
 
         Parameters
         ----------
@@ -833,7 +853,8 @@ class VerletMinimization:
         
         defaultFireParams = \
             {"dtMax":10.,"dtMin":0.001,"nAccel":10,"fInc":1.1,"fAlpha":0.99,\
-             "fDecel":0.5,"aStart":0.1,"maxmove":np.full(self.nDims,1.0)}
+             "fDecel":0.5,"aStart":0.1,"maxmove":np.full(self.nDims,1.0),\
+             "minDecelIter":20}
             
         for key in fireParams.keys():
             if key not in defaultFireParams.keys():
@@ -862,8 +883,7 @@ class VerletMinimization:
         self.allForces[0] = self.nebObj.compute_force(self.allPts[0])
         
         if useLocal:
-            tStepArr = np.zeros((maxIters+1,self.nPts))
-            tStepArr[:,:] = tStep
+            tStepArr = tStep*np.ones((maxIters+1,self.nPts))
             alphaArr = np.zeros((maxIters+1,self.nPts))
             stepsSinceReset = np.zeros((self.nPts))
         else:
@@ -877,15 +897,14 @@ class VerletMinimization:
         t0 = time.time()
         try:
             for step in range(1,maxIters+1):
-                #TODO: check potential off-by-one indexing on tStep
                 if useLocal:
                     tStepArr,alphaArr,stepsSinceReset = \
                         self._local_fire2_iter(step,tStepArr,alphaArr,stepsSinceReset,\
-                                              fireParams)
+                                               fireParams)
                 else:
                     tStepArr,alphaArr,stepsSinceReset = \
                         self._global_fire2_iter(step,tStepArr,alphaArr,stepsSinceReset,\
-                                               fireParams)
+                                                fireParams)
                             
                 if earlyStop:
                     stopBool = self._check_early_stop(step,earlyStopParams)
@@ -924,46 +943,73 @@ class VerletMinimization:
         
         return tStepArr, alphaArr, stepsSinceReset
     
+    def _local_fire2_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
+        warnings.warn("Local FIRE2 currently calls local FIRE update")
+        return self._local_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,fireParams)
+    
     def _global_fire2_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
-        self.allForces[0] = self.nebObj.compute_force(self.allPts[step-1])
+        """
+        Updates position, velocity and force arrays for every image
+
+        Parameters
+        ----------
+        step : TYPE
+            DESCRIPTION.
+        tStepArr : TYPE
+            DESCRIPTION.
+        alphaArr : TYPE
+            DESCRIPTION.
+        stepsSinceReset : TYPE
+            DESCRIPTION.
+        fireParams : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        tStepArr : TYPE
+            DESCRIPTION.
+        alphaArr : TYPE
+            DESCRIPTION.
+        stepsSinceReset : TYPE
+            DESCRIPTION.
+
+        """
         vdotf = 0.0
         for ptIter in range(self.nPts):
-            vdotf += np.dot(self.allVelocities[0,ptIter],self.allForces[0,ptIter])
+            vdotf += np.dot(self.allVelocities[step-1,ptIter],self.allForces[step-1,ptIter])
 
         if(vdotf > 0.0):
             vdotv = 0.0
             fdotf = 0.0
             for ptIter in range(self.nPts):
-                vdotv += np.dot(self.allVelocities[0,ptIter],self.allVelocities[0,ptIter])
-                fdotf += np.dot(self.allForces[0,ptIter],self.allForces[0,ptIter])
-            scale = 1.0 - alphaArr[0]
-            scale2= alphaArr[0]*np.sqrt(vdotv/fdotf)
-            if(fdotf <= 2e-20): scale2 = 0.0
+                vdotv += np.dot(self.allVelocities[step-1,ptIter],self.allVelocities[step-1,ptIter])
+                fdotf += np.dot(self.allForces[step-1,ptIter],self.allForces[step-1,ptIter])
+            scale = 1.0 - alphaArr[step-1]
+            scale2= alphaArr[step-1]*np.sqrt(vdotv/fdotf)
+            if(fdotf <= 2e-20):
+                scale2 = 0.0
             if stepsSinceReset > fireParams["nAccel"]:
-                tStepArr[0] = \
-                    min(tStepArr[0]*fireParams["fInc"],fireParams["dtMax"])
-                alphaArr[0] = alphaArr[0]*fireParams["fAlpha"]
+                tStepArr[step] = \
+                    min(tStepArr[step-1]*fireParams["fInc"],fireParams["dtMax"])
+                alphaArr[step] = alphaArr[step-1]*fireParams["fAlpha"]
             else:
-                tStepArr[0] = tStepArr[0]
+                tStepArr[step] = tStepArr[step-1]
                 
             stepsSinceReset += 1
         else:
-            if(step > 20):
-                alphaArr[0] = fireParams["aStart"]
-                tStepArr[0] = \
-                    max(tStepArr[0]*fireParams["fDecel"],fireParams["dtMin"])
-            self.allPts[step,:,:] = self.allPts[step-1] - 0.5*tStepArr[0]*self.allVelocities[0,:,:]
-            self.allVelocities[0,:,:] = 0.0
-            #v0 = True
-
-        #if (v0):
-        #    self.allVelocities[0,:,:] = tStepArr[0]*self.allForces[0,:,:]
-
-        self.allVelocities[0,:,:] += tStepArr[0]*self.allForces[0,:,:]
+            if(step > fireParams["minDecelIter"]):
+                alphaArr[step] = fireParams["aStart"]
+                tStepArr[step] = \
+                    max(tStepArr[step-1]*fireParams["fDecel"],fireParams["dtMin"])
+            self.allPts[step] = self.allPts[step-1] - 0.5*tStepArr[step]*self.allVelocities[step-1,:,:]
+            self.allVelocities[step] = 0.0
+            
+        self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
+        self.allVelocities[step] += tStepArr[step]*self.allForces[step]
         if(vdotf > 0.0):
-            self.allVelocities[0,:,:] = scale*self.allVelocities[0,:,:] + \
-                scale2*self.allForces[0,:,:]
-        shift = tStepArr[0]*self.allVelocities[0,:,:]
+            self.allVelocities[step] = scale*self.allVelocities[step] + \
+                scale2*self.allForces[step]
+        shift = tStepArr[step]*self.allVelocities[step]
 
         for ptIter in range(self.nPts):
             for dimIter in range(self.nDims):
@@ -974,11 +1020,6 @@ class VerletMinimization:
         self.allPts[step] = self.allPts[step-1] + shift
 
         return tStepArr, alphaArr, stepsSinceReset
-
-
-    def _local_fire2_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
-        warnings.warn("Local FIRE2 currently calls local FIRE update")
-        return self._local_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,fireParams)
     
     def _check_early_stop(self,currentIter,stopParams):
         
@@ -992,7 +1033,6 @@ class VerletMinimization:
         nStabIters = stopParams["nStabIters"]
         checkFreq = stopParams["checkFreq"]
         
-        #TODO: could cache energies/masses for use here
         if (currentIter >= startCheckIter) and (currentIter % checkFreq == 0):
             tfs = np.array([self.nebObj.target_func(pt,self.nebObj.potential,self.nebObj.mass)[0] \
                             for pt in self.allPts[currentIter-nStabIters:currentIter]])

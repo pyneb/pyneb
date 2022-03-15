@@ -132,6 +132,82 @@ class _local_fire_iter_(unittest.TestCase):
         
         return None
     
+class _global_fire_iter_(unittest.TestCase):
+    def test_single_step(self):
+        def pot(coords):
+            return coords[:,0]**2 + 2*coords[:,1]**2
+        
+        nPts = 3
+        nDims = 2
+        lap = LeastActionPath(pot,nPts,nDims,logLevel=0)
+        
+        initialPoints = np.array([[0.,0.],[1.,2.],[2.,3]])
+        
+        maxIters = 1
+        minObj = VerletMinimization(lap,initialPoints)
+        minObj.allPts = np.zeros((maxIters+2,nPts,nDims))
+        minObj.allPts[0] = initialPoints
+        
+        minObj.allVelocities = np.zeros((maxIters+1,nPts,nDims))
+        minObj.allForces = np.zeros((maxIters+1,nPts,nDims))
+        
+        minObj.allForces[0] = lap.compute_force(initialPoints)
+        
+        step = 1
+        tStepArr = 0.1*np.ones((2,nPts))
+        alphaArr = 0.1*np.ones((2,nPts))
+        stepsSinceReset = np.zeros(nPts)
+        fireParams = \
+            {"dtMax":10.,"dtMin":0.001,"nAccel":10,"fInc":1.1,"fAlpha":0.99,\
+             "fDecel":0.5,"aStart":0.1,"maxmove":np.full(nDims,1.0)}
+                
+        minObj._global_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,fireParams)
+        
+        #No idea yet what's correct
+        print(minObj.allPts)
+        print(minObj.allVelocities)
+        print(minObj.allForces)
+
+        return None
+    
+class _global_fire2_iter_(unittest.TestCase):
+    def test_single_step(self):
+        def pot(coords):
+            return coords[:,0]**2 + 2*coords[:,1]**2
+        
+        nPts = 3
+        nDims = 2
+        lap = LeastActionPath(pot,nPts,nDims,logLevel=0)
+        
+        initialPoints = np.array([[0.,0.],[1.,2.],[2.,3]])
+        
+        maxIters = 1
+        minObj = VerletMinimization(lap,initialPoints)
+        minObj.allPts = np.zeros((maxIters+2,nPts,nDims))
+        minObj.allPts[0] = initialPoints
+        
+        minObj.allVelocities = np.zeros((maxIters+1,nPts,nDims))
+        minObj.allForces = np.zeros((maxIters+1,nPts,nDims))
+        
+        minObj.allForces[0] = lap.compute_force(initialPoints)
+        
+        step = 1
+        tStepArr = 0.1*np.ones((2,nPts))
+        alphaArr = 0.1*np.ones((2,nPts))
+        stepsSinceReset = np.zeros(nPts)
+        fireParams = \
+            {"dtMax":10.,"dtMin":0.001,"nAccel":10,"fInc":1.1,"fAlpha":0.99,\
+             "fDecel":0.5,"aStart":0.1,"maxmove":np.full(nDims,1.0),"minDecelIter":20}
+                
+        minObj._global_fire2_iter(step,tStepArr,alphaArr,stepsSinceReset,fireParams)
+        
+        #No idea yet what's correct
+        print(minObj.allPts)
+        print(minObj.allVelocities)
+        print(minObj.allForces)
+
+        return None
+    
 # class fire_(unittest.TestCase):
 #     def 
     
