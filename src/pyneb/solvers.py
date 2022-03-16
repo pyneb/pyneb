@@ -1052,10 +1052,24 @@ class VerletMinimization:
         return tStepArr, alphaArr, stepsSinceReset
     
     def _check_early_stop(self,currentIter,stopParams):
-        
-        #TODO: update to use variance in image position, rather than variance
-        #in target function - MEP is not an action-like functional, so this fails
-        
+        """
+        Computes standard deviation in location of every image over the previous
+        stopParams["nStabIters"] iterations. Returns True if std is less than
+        stopParams["stabPerc"] for every image.
+
+        Parameters
+        ----------
+        currentIter : TYPE
+            DESCRIPTION.
+        stopParams : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        ret : TYPE
+            DESCRIPTION.
+
+        """
         ret = False
         
         startCheckIter = stopParams["startCheckIter"]
@@ -1064,12 +1078,8 @@ class VerletMinimization:
         checkFreq = stopParams["checkFreq"]
         
         if (currentIter >= startCheckIter) and (currentIter % checkFreq == 0):
-            tfs = np.array([self.nebObj.target_func(pt,self.nebObj.potential,self.nebObj.mass)[0] \
-                            for pt in self.allPts[currentIter-nStabIters:currentIter]])
-            mean = np.mean(tfs)
-            std = np.std(tfs)
-            
-            if std <= stabPerc:# * mean:
+            std = np.std(self.allPts[currentIter-nStabIters:currentIter],axis=0)
+            if np.all(std <= stabPerc):
                 ret = True
         
         return ret
