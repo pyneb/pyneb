@@ -59,6 +59,8 @@ if __name__ == "__main__":
     tStep = 0.1
     nIters = 100
     
+    fireParams = {"maxmove":np.array(2*[0.2])}
+    
     #Simple Verlet minimization
     loggerSettings = {"logName":"verlet"}
     lap = pyneb.LeastActionPath(camelback,nPts,nDims,endpointSpringForce=False,
@@ -92,15 +94,15 @@ if __name__ == "__main__":
     #Global FIRE
     loggerSettings = {"logName":"global_fire"}
     lap = pyneb.LeastActionPath(camelback,nPts,nDims,endpointSpringForce=False,
-                                endpointHarmonicForce=False,loggerSettings=loggerSettings)#,
+                                endpointHarmonicForce=False,loggerSettings=loggerSettings)
                                 # target_func=pyneb.TargetFunctions.action_squared)#,
                                 # nebParams={"k":1})
     
     initialPath = np.array([np.linspace(-1.7,1.7,nPts),np.linspace(0.79,-0.79,nPts)]).T
     nebObj = pyneb.VerletMinimization(lap,initialPath)
     
-    nebObj.fire(tStep,nIters,useLocal=False,earlyStop=False)#,
-                # fireParams={"maxmove":np.array([0.01,0.01])})
+    nebObj.fire(tStep,nIters,useLocal=False,earlyStop=False,
+                fireParams=fireParams)
     
     acts = [pyneb.TargetFunctions.action(p,camelback)[0] for p in nebObj.allPts]
     
@@ -116,7 +118,7 @@ if __name__ == "__main__":
     nebObj = pyneb.VerletMinimization(lap,initialPath)
     
     tStepArr, alphaArr, stepsSinceReset = nebObj.fire2(tStep,nIters,useLocal=False,earlyStop=False,
-                                                       fireParams={"maxmove":np.array([0.1,0.1])})
+                                                       fireParams=fireParams)
     
     acts = [pyneb.TargetFunctions.action(p,camelback)[0] for p in nebObj.allPts]
     
@@ -127,8 +129,8 @@ if __name__ == "__main__":
     actAx.legend()
     
     # fig, ax = plt.subplots()
-    # ax.plot(tStepArr)
-    # ax.set(title="dt")
+    # ax.plot(alphaArr)
+    # ax.set(title="alpha")
     
     # vFig, vAx = plt.subplots()
     # for f in nebObj.allVelocities:

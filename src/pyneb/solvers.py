@@ -761,7 +761,12 @@ class VerletMinimization:
 
     def _global_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
         """
-        
+        Implements the FIRE algorithm from doi.org/10.1016/j.commatsci.2020.109584
+        (algorithm 1) using a mixed semi-implicit Euler update (algorithm 4). Note
+        that there is a typo in the mixing: line 2 should involve v(t + \Delta t) on
+        the right-hand side, rather than v(t). Line 10 of algorithm 1 is ignored;
+        performance appears to be way better (or even correct at all) when mixing
+        occurs in the integration step
 
         Parameters
         ----------
@@ -790,44 +795,48 @@ class VerletMinimization:
         for ptIter in range(self.nPts):
             vdotf += np.dot(self.allVelocities[step-1,ptIter],self.allForces[step-1,ptIter])
         
-        self.allPts[step] = self.allPts[step-1] + \
-            tStepArr[step-1]*self.allVelocities[step-1] + \
-            0.5*self.allForces[step-1]*tStepArr[step-1]**2
-        self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
-        # print(self.allForces[step])
+        if vdotf > 0:
+            stepsSinceReset += 1
+            
+            if stepsSinceReset > fireParams["nAccel"]:
+                tStepArr[step] = min(tStepArr[step-1]*fireParams["fInc"],fireParams["dtMax"])
+                alphaArr[step] = alphaArr[step-1]**fireParams["fAlpha"]
+            else:
+                tStepArr[step] = tStepArr[step-1]
+                alphaArr[step] = alphaArr[step-1]            
+        else:
+            stepsSinceReset = 0
+            self.allVelocities[step-1,ptIter] = np.zeros(self.nDims)
+            tStepArr[step] = max(tStepArr[step-1]*fireParams["fDecel"],fireParams["dtMin"])
+            alphaArr[step] = fireParams["aStart"]
+            
+        #Semi-implicit Euler integration
+        self.allVelocities[step] = self.allVelocities[step-1] + tStepArr[step]*self.allForces[step-1]
         
-        #Doesn't seem to make a difference
-        #What the Wikipedia article on velocity Verlet uses
-        self.allVelocities[step] = \
-            0.5*tStepArr[step-1]*(self.allForces[step]+self.allForces[step-1])
-        #What Eric uses
-        # self.allVelocities[step] = tStepArr[step-1]*self.allForces[step]
+        vdotv = 0.
+        fdotf = 0.
+        for ptIter in range(self.nPts):
+            vdotv += np.linalg.norm(self.allVelocities[step,ptIter])
+            fdotf += np.linalg.norm(self.allForces[step-1,ptIter])
+        
+        if fdotf > 10**(-16):
+            scale = vdotv/fdotf
+        else:
+            scale = 0.
+        
+        self.allVelocities[step] = (1-alphaArr[step]) * self.allVelocities[step]\
+            + alphaArr[step] * scale * self.allForces[step-1]
+        
+        shift = tStepArr[step]*self.allVelocities[step]
         
         for ptIter in range(self.nPts):
-            alpha = alphaArr[step-1]
-            
-            # product = np.dot(self.allVelocities[step-1,ptIter],self.allForces[step,ptIter])
-            if vdotf > 0:#product > 0:
-                vMag = np.linalg.norm(self.allVelocities[step-1,ptIter])
-                fNorm = np.linalg.norm(self.allForces[step,ptIter])
-                if fNorm > 10**(-16):
-                    fHat = self.allForces[step,ptIter]/fNorm#np.linalg.norm(self.allForces[step,ptIter])
-                else:
-                    fHat = np.zeros(self.nDims)
-                vp = (1-alpha)*self.allVelocities[step-1,ptIter] + alpha*vMag*fHat
-                self.allVelocities[step,ptIter] += vp
-                
-                if stepsSinceReset > fireParams["nAccel"]:
-                    tStepArr[step] = min(tStepArr[step-1]*fireParams["fInc"],fireParams["dtMax"])
-                    alphaArr[step] = alpha*fireParams["fAlpha"]
-                
-                stepsSinceReset += 1
-            else:
-                tStepArr[step] = max(tStepArr[step-1]*fireParams["fDecel"],fireParams["dtMin"])
-                # self.allVelocities[step,ptIter] = np.zeros(self.nDims)
-                self.allVelocities[step] = 0
-                alphaArr[step] = fireParams["aStart"]
-                stepsSinceReset = 0
+            for dimIter in range(self.nDims):
+                if(abs(shift[ptIter,dimIter])>fireParams["maxmove"][dimIter]):
+                    shift[ptIter] = shift[ptIter] * \
+                        fireParams["maxmove"][dimIter]/abs(shift[ptIter,dimIter])
+        
+        self.allPts[step] = self.allPts[step-1] + shift
+        self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
         
         return tStepArr, alphaArr, stepsSinceReset
     
@@ -999,6 +1008,7 @@ class VerletMinimization:
                 alphaArr[step] = alphaArr[step-1]*fireParams["fAlpha"]
             else:
                 tStepArr[step] = tStepArr[step-1]
+                alphaArr[step] = alphaArr[step-1]
         else:
             alphaArr[step] = fireParams["aStart"]
             if(step > fireParams["minDecelIter"]):
@@ -1009,8 +1019,7 @@ class VerletMinimization:
             self.allPts[step-1] = self.allPts[step-1] - 0.5*tStepArr[step]*self.allVelocities[step-1,:,:]
             self.allVelocities[step-1] = 0.0
             
-        #Velocity update is semi-implicit Euler, and mixes velocity at current step
-        #with force at previous step
+        #Semi-implicit Euler integration
         self.allVelocities[step] = self.allVelocities[step-1] + tStepArr[step] * self.allForces[step-1]
         
         #For mixing
