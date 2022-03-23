@@ -562,6 +562,7 @@ class VerletMinimization:
          
         vProj = np.zeros((self.nPts,self.nDims))
         
+        t0 = time.time()
         try:
             for step in range(1,maxIters+1):
                 self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
@@ -583,7 +584,9 @@ class VerletMinimization:
                 self.allPts[step+1] = self.allPts[step] + self.allVelocities[step]*tStep + \
                     0.5*accel*tStep**2
         finally:
+            t1 = time.time()
             self.nebObj.logger.flush()
+            self.nebObj.logger.write_runtime(t1-t0)
             
         return None
     
