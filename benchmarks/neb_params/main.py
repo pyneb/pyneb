@@ -39,6 +39,13 @@ def asymm_camelback(coords):
     return camelback(coords) + 0.5*y
 
 def run(params):
+    nDims = 2
+    
+    tStep = 0.1
+    nIters = 1000
+    
+    fireParams = {"maxmove":np.array(2*[0.2])}
+    
     nPts, k, optString = params
     
     loggerSettings = {"logName":optString+"_k-"+str(k)+"_nPts-"+str(nPts)}
@@ -63,13 +70,6 @@ def run(params):
     return None
 
 if __name__ == "__main__":    
-    nDims = 2
-    
-    tStep = 0.1
-    nIters = 1000
-    
-    fireParams = {"maxmove":np.array(2*[0.2])}
-    
     nPtsArr = np.arange(20,210,20)
     kVals = np.array([0.01,0.05,0.1,0.5,1,5,10])
     optStrings = ["verlet","local_fire","global_fire","global_fire2"]
