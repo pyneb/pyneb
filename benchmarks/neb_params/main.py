@@ -43,7 +43,8 @@ def run(params):
     
     loggerSettings = {"logName":optString+"_k-"+str(k)+"_nPts-"+str(nPts)}
     lap = pyneb.LeastActionPath(camelback,nPts,nDims,endpointSpringForce=False,
-                                endpointHarmonicForce=False,loggerSettings=loggerSettings)
+                                endpointHarmonicForce=False,loggerSettings=loggerSettings,
+                                nebParams={"k":k})
     
     initialPath = np.array([np.linspace(-1.7,1.7,nPts),np.linspace(0.79,-0.79,nPts)]).T
     nebObj = pyneb.VerletMinimization(lap,initialPath)
