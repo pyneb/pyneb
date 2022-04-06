@@ -591,7 +591,7 @@ class VerletMinimization:
         return None
     
     def fire(self,tStep,maxIters,fireParams={},useLocal=True,earlyStop=True,
-             earlyStopParams={}):
+             earlyStopParams={},earlyAbort=False,earlyAbortParams={}):
         """
         Wrapper for fast inertial relaxation engine.
         FIRE step taken from http://dx.doi.org/10.1103/PhysRevLett.97.170201
@@ -646,6 +646,17 @@ class VerletMinimization:
         for key in defaultStopParams.keys():
             if key not in earlyStopParams.keys():
                 earlyStopParams[key] = defaultStopParams[key]
+                
+        defaultAbortParams = {"startCheckIter":20,"nStabIters":10,"checkFreq":10,\
+                              "variance":1}
+            
+        for key in earlyAbortParams.keys():
+            if key not in defaultAbortParams.keys():
+                raise ValueError("Key "+key+" in earlyStopParams not allowed")
+                
+        for key in defaultAbortParams.keys():
+            if key not in earlyAbortParams.keys():
+                earlyAbortParams[key] = defaultAbortParams[key]
         
         self.allPts = np.zeros((maxIters+2,self.nPts,self.nDims))
         self.allVelocities = np.zeros((maxIters+1,self.nPts,self.nDims))
@@ -666,6 +677,8 @@ class VerletMinimization:
         
         tStepArr[0] = tStep
         alphaArr[0] = fireParams["aStart"]
+        
+        endsWithoutError = True
         
         t0 = time.time()
         try:
@@ -689,6 +702,12 @@ class VerletMinimization:
                         
                         tStepArr = tStepArr[:step]
                         alphaArr = alphaArr[:step]
+                        break
+                    
+                if earlyAbort:
+                    stopBool = self._check_early_abort(step,earlyAbortParams)
+                    if stopBool:
+                        endsWithoutError = False
                         break
                     
             #Final iteration
@@ -715,7 +734,7 @@ class VerletMinimization:
             if earlyStop:
                 self.nebObj.logger.write_early_stop_params(earlyStopParams)
         
-        return tStepArr, alphaArr, stepsSinceReset
+        return tStepArr, alphaArr, stepsSinceReset, endsWithoutError
     
     def _local_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
         tStepPrev = tStepArr[step-1].reshape((-1,1)) #For multiplication below
@@ -1085,6 +1104,21 @@ class VerletMinimization:
             if np.all(std <= stabPerc):
                 ret = True
         
+        return ret
+    
+    def _check_early_abort(self,currentIter,breakParams):
+        
+        ret = False
+        
+        startCheckIter = breakParams["startCheckIter"]
+        allowedVariance = breakParams["variance"]
+        nStabIters = breakParams["nStabIters"]
+        checkFreq = breakParams["checkFreq"]
+        
+        if (currentIter >= startCheckIter) and (currentIter % checkFreq == 0):
+            std = np.std(self.allPts[currentIter-nStabIters:currentIter],axis=0)
+            if np.any(std >= allowedVariance):
+                ret = True
         return ret
     
 class EulerLagrangeSolver:
