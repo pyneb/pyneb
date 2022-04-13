@@ -1077,7 +1077,7 @@ class SurfaceUtils:
         -------
         allowedEndpoints : TYPE
             DESCRIPTION.
-        allowedIndices : asdf
+        allowedIndices : TYPE
 
         """
         if returnAllPoints:
@@ -1150,7 +1150,7 @@ class NDInterpWithBoundary:
     :Maintainer: Daniel
     """
     def __init__(self,gridPoints,gridVals,boundaryHandler="exponential",symmExtend=None,\
-                 splKWargs={}):
+                 transformFuncName="identity",splKWargs={}):
         """
         Initializes the class instance. Carries out basic error checking on inputs.
         Defines self._call as the method to evaluate a point that's within the
@@ -1170,6 +1170,9 @@ class NDInterpWithBoundary:
         symmExtend : bool or ndarray of bools, optional
             Whether to symmetrically extend gridVals when evaluating. See notes.
             The default is None.
+        transformFuncName : string, optional
+            The function to apply to the interpolated function after interpolating.
+            The default is "identity", in which no post-processing is applied.
         splKWargs : dict, optional
             Extra arguments for spline interpolation, in the 2D case. The default
             is {}.
@@ -1247,6 +1250,10 @@ class NDInterpWithBoundary:
             self._call = self._call_2d
         else:
             self._call = self._call_nd
+            
+        postEvalDict = {"identity":self._identity_transform_function,
+                        "smooth_abs":self._smooth_abs_transform_function}
+        self.post_eval = postEvalDict[transformFuncName]
                 
         self.gridPoints = tuple([np.asarray(p) for p in gridPoints])
         self.gridVals = gridVals
@@ -1296,7 +1303,8 @@ class NDInterpWithBoundary:
             else:
                 result[ptIter] = self.boundaryHandler(point,isInBounds)
         
-        result = result.reshape(originalShape) 
+        result = self.post_eval(result)
+        result = result.reshape(originalShape)
         
         return result
     
@@ -1470,6 +1478,28 @@ class NDInterpWithBoundary:
         result = valAtNearest*np.exp(np.sqrt(dist))
         return result
     
+    def _identity_transform_function(self,normalEvaluation):
+        """
+        Not sure if it's faster to have this dummy function in place, or to have
+        an "if-else" statement every time we check if we should call a transform
+        function.
+
+        Parameters
+        ----------
+        normalEvaluation : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        normalEvaluation : TYPE
+            DESCRIPTION.
+
+        """
+        return normalEvaluation
+    
+    def _smooth_abs_transform_function(self,normalEvaluation):
+        return np.sqrt(normalEvaluation**2 + 10**(-4))
+    
 class PositiveSemidefInterpolator:
     def __init__(self,gridPoints,listOfVals,ndInterpKWargs={}):
         """
@@ -1477,13 +1507,18 @@ class PositiveSemidefInterpolator:
 
         Parameters
         ----------
-        gridPoints : TYPE
-            DESCRIPTION.
-        listOfVals : TYPE
-            Expected to be ordered by row for the matrix, e.g.
-                [[l[0],l[1],...,l[n]],
-                 [-,l[n+1],...,l[2n-1]],
-                 ...]
+        gridPoints : tuple
+            Elements are the unique coordinates of the grid. Shapes are
+                (N1,N2,...,Nn).
+        listOfVals : list
+            A positive semidefinite matrix M has unique values
+                M = [[M00, M01, ..., M0n],
+                     [M01, M11, ..., M1n],
+                     ...,
+                     [M0n, M1n, ..., Mnn]].
+            The components of listOfVals are the numpy arrays
+                [M00, M01, ..., M0n, M11, M12, ..., M1n, ..., Mnn].
+            Each Mij is of shape (N2,N1,N3,...), as in the output of np.meshgrid.
         ndInterpKWargs : TYPE, optional
             DESCRIPTION. The default is {}.
 
@@ -1497,11 +1532,11 @@ class PositiveSemidefInterpolator:
         
         #Stupid case for nDims == 1. For higher dimensions, pass through
         #NDInterpWithBoundary in components individually
-        if self.nDims != 2: #Unused case self.nDims == 1
+        if self.nDims != 2:
             raise NotImplementedError
         
         #Standard error checking
-        assert self.nDims == len(listOfVals)
+        assert len(listOfVals) == int(self.nDims*(self.nDims+1)/2)
         
         for i, p in enumerate(gridPoints):
             if not np.all(np.diff(p) > 0.):
@@ -1542,18 +1577,35 @@ class PositiveSemidefInterpolator:
         self.eigenVecInterp = NDInterpWithBoundary(self.gridPoints,thetaVals,**ndInterpKWargs)
         
     def __call__(self,points):
+        originalShape = points.shape[:-1]
+        if originalShape == ():
+            originalShape = (1,)
+        
+        if points.shape[-1] != self.nDims:
+            raise ValueError("The requested sample points have dimension "
+                             "%d, but this NDInterpWithBoundary expects "
+                             "dimension %d" % (points.shape[-1], self.nDims))
+            
+        points = points.reshape((-1,self.nDims))
+        
         eigenVals = [e(points) for e in self.eigenValInterps]
         theta = self.eigenVecInterp(points)
         
+        ct = np.cos(theta)
+        st = np.sin(theta)
+        
         eigenVals = [e.clip(0) for e in eigenVals]
         
-        ret = np.zeros(points.shape[:-1]+(self.nDims,self.nDims))
-        # evalMat = np.stack([np.diag(e) for e in np.stack(eigenVals).T])
-        # evecMat = 
-        
-        return None
-                    
+        ret = np.zeros(points.shape[0]+(2,2))
+        for (ptIter,point) in enumerate(points):
+            ret[ptIter,0,0] = eigenVals[0][ptIter]*ct[ptIter]**2 + \
+                eigenVals[1][ptIter]*st[ptIter]**2
+            ret[ptIter,1,0] = (eigenVals[1][ptIter]-eigenVals[0][ptIter])*st[ptIter]*ct[ptIter]
+            ret[ptIter,0,1] = ret[ptIter,1,0]
+            ret[ptIter,1,1] = eigenVals[0][ptIter]*st[ptIter]**2 + \
+                eigenVals[1][ptIter]*ct[ptIter]**2
                 
+        return ret.reshape(originalShape+(2,2))
     
 def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
     """
