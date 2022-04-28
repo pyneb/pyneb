@@ -3,14 +3,18 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import time
 import sys
-from datetime import date
 ### add pyneb
-sys.path.insert(0, '../../py_neb/')
-sys.path.insert(0, '../../../flynn_code/py_neb_demos')
+sys.path.insert(0, '../../src/pyneb')
 import solvers
 import utilities
-import utils
-today = date.today()
+
+def linear_path(R0,RN,NImgs):
+    ## returns the initial positions of every point on the chain.
+    path = np.zeros((NImgs,len(R0)))
+    for i in range(len(R0)):
+        xi = np.linspace(R0[i],RN[i],NImgs)
+        path[:,i] = xi
+    return(path)
 
 class LepsPot():
     def __init__(self,params={}):
@@ -91,8 +95,7 @@ class LepsPot():
         return vOut
 
 
-surface_name = "LEPSHO" # for output files
-save_data = True
+
 #Define potential function
 V_func = LepsPot()
 M_func = None # for LAP 
@@ -120,7 +123,8 @@ V_min = V_func([minima_coords[:,0],minima_coords[:,1]])
 #########
 gs_coord = minima_coords[0]
 E_gs = V_func(gs_coord)
-print('E_gs: ',E_gs)
+print(f'Ground State Location: {gs_coord}')
+print(f'Ground State Energy: {E_gs}')
 V_func_shift = utilities.shift_func(V_func,shift=E_gs)#shift by the ground state
 EE = V_func_shift(np.array([xx,yy]))
 
@@ -128,7 +132,7 @@ EE = V_func_shift(np.array([xx,yy]))
 
 #### Starting NEB
 
-NImgs = 62 # number of images
+NImgs = 42 # number of images
 k = 2.0 # spring constant for entire band
 kappa = 1.0 # harmonic force strength (only used if force_RN or force_R0 is True)
 E_const = E_gs # energy contour to constrain the end points to
@@ -142,8 +146,8 @@ springForceFix = (springR0,springRN)
 
 ### Optimization parameters 
 ## Velocity Verlet parameter set
-dt = .5
-NIterations = 5000
+dt = .01
+NIterations = 500
 
 
 ### define initial path
@@ -151,28 +155,18 @@ NIterations = 5000
 R0 = [0.74, 1.30]
 # end point
 RN = [ 3.00, -1.30]
-print('R0: ',R0)
-print('RN: ',RN)
+
 #init_path_constructor = utils.init_NEB_path(R0,RN,NImgs)
 #init_path = init_path_constructor.linear_path()
-init_path = np.loadtxt('PyNeb_LEPSHO_LAP_path_bootstrap.txt',delimiter=',',skiprows=1)
-path_call = utilities.InterpolatedPath(init_path)
-t = np.linspace(0,1,NImgs)
-interp_path = np.array(path_call.__call__(t)).T
-init_path = interp_path
+init_path = linear_path(R0,RN,NImgs)
 ### Define parameter dictionaries (mostly for book keeping)
 neb_params ={'k':k,'kappa':kappa,'constraintEneg':E_const}
-method_dict = {'k':k,'kappa':kappa,'NImages': NImgs,'Iterations':NIterations,'dt':dt,'optimization':'Local FIRE','HarmonicForceEnds': endPointFix, \
-                   'SpringForceEnds': springForceFix,'logLevel':0}
 
-    
-    
-      
 #### Compute LAP
 # LAP function you want to minimize
 target_func_LAP = utilities.TargetFunctions.action
 # LAP specialized function that takes the gradient of target function
-target_func_grad_LAP = utilities.GradientApproximations().forward_action_grad
+target_func_grad_LAP = utilities.GradientApproximations().discrete_action_grad_const
 
 LAP_params = {'potential':V_func_shift,'nPts':NImgs,'nDims':nDims,'mass':M_func,'endpointSpringForce': springForceFix ,\
                  'endpointHarmonicForce':endPointFix,'target_func':target_func_LAP,\
@@ -190,36 +184,20 @@ minObj_LAP = solvers.VerletMinimization(lap,initialPoints=init_path)
 ### Begining the optimization procedure. Results are all of the velocities
 ### band positions, and forces for each iteration of the optimization.
 t0 = time.time()
-tStepArr, alphaArr, stepsSinceReset = minObj_LAP.fire(dt,NIterations,useLocal=True)
+tStepArr, alphaArr, stepsSinceReset = minObj_LAP.fire2(dt,NIterations,useLocal=False)
 allPaths_LAP = minObj_LAP.allPts
 final_path_LAP = allPaths_LAP[-1]
 
 
 t1 = time.time()
 total_time_LAP = t1 - t0
-print('total_time LAP: ',total_time_LAP)
+print(f'Total Time LAP: {total_time_LAP}')
 action_array_LAP = np.zeros(NIterations+2)
 for i,path in enumerate(allPaths_LAP):
-    action_array_LAP[i] = utilities.TargetFunctions.action(path, V_func_shift,M_func)[0]
+    ## computer action over interpolated path using 500 points
+    path_call = utilities.InterpolatedPath(path)
+    action_array_LAP[i] = np.around(path_call.compute_along_path(utilities.TargetFunctions.action,500,tfArgs=[V_func_shift])[1][0],3)
 min_action_LAP = np.around(action_array_LAP[-1],4)
-
-## Save metadata
-title = 'PyNeb_'+surface_name+'_LAP'
-
-metadata = {'title':title,'Created_by': 'Eric','Created_on':today.strftime("%b-%d-%Y"),'method':'NEB-LAP','method_description':method_dict, \
-                'masses':None,'E_gs': str(E_gs),'action':action_array_LAP[-1],'run_time':total_time_LAP ,\
-                    'initial_start_point': R0,'initial_end_point': RN}
-utils.make_metadata(metadata)
-
-# write final path to txt.
-if save_data == True:
-    np.savetxt(title+'_path.txt',final_path_LAP,comments='',delimiter=',',header="x,y")
-
-
-
-
-
-
 
 
 #### Compute MEP
@@ -233,57 +211,48 @@ MEP_params = {'potential':V_func,'nPts':NImgs,'nDims':nDims,'auxFunc':auxFunc,'e
 t0 = time.time()
 mep = solvers.MinimumEnergyPath(**MEP_params)
 minObj_MEP = solvers.VerletMinimization(mep,initialPoints=init_path)
-tStepArr, alphaArr, stepsSinceReset = minObj_MEP.fire(dt,NIterations,useLocal=True)
+tStepArr, alphaArr, stepsSinceReset = minObj_MEP.fire2(dt,NIterations,useLocal=False)
 allPaths_MEP = minObj_MEP.allPts
 
 t1 = time.time()
 total_time_MEP = t1 - t0
 final_path_MEP = allPaths_MEP[-1]
-print('total_time MEP: ',total_time_MEP)
+print(f'Total Time MEP: {total_time_MEP}')
 ### Compute the action of each path in allPts_MEP
 action_array_MEP = np.zeros(NIterations+2)
 for i,path in enumerate(allPaths_MEP):
-    action_array_MEP[i] = utilities.TargetFunctions.action(path, V_func_shift ,None)[0]   # endPointFix = (force_R0,force_RN) springForceFix
+    ## computer action over interpolated path using 500 points
+    path_call = utilities.InterpolatedPath(path)
+    action_array_MEP[i] = np.around(path_call.compute_along_path(utilities.TargetFunctions.action,500,tfArgs=[V_func_shift])[1][0],3)
 min_action_MEP =  np.around(action_array_MEP[-1],4)
 
 
-## Save metadata
-title = 'PyNeb_'+surface_name+'_MEP'
+### Find stationary points on domain using the MEP
+maxima,minima,saddle = utilities.get_crit_pnts(V_func, final_path_MEP,method='central')
 
-metadata = {'title':title,'Created_by': 'Eric','Created_on':today.strftime("%b-%d-%Y"),'method':'NEB-MEP','method_description':method_dict, \
-                'masses':None,'E_gs': str(E_gs),'action':action_array_MEP[-1],'run_time':total_time_MEP ,\
-                    'initial_start_point': R0,'initial_end_point': RN}
-utils.make_metadata(metadata)
 
-if save_data == True:
-    np.savetxt(title+'_path.txt',final_path_MEP,comments='',delimiter=',',header="Q20,Q30")
-### Plot the results.
-fig, ax = plt.subplots(1,1,figsize = (12, 10))
-
+# Plot the results.
+### Make surface contour plot
+fig, ax = plt.subplots(1,1)
 im = ax.contourf(grids[0],grids[1],EE,cmap='Spectral_r',extend='both',levels=MaxNLocator(nbins = 200).tick_values(0,6))
 ax.contour(grids[0],grids[1],EE,colors=['black'],levels=MaxNLocator(nbins = 15).tick_values(0,6))  
 ax.plot(init_path[:, 0], init_path[:, 1], '.-', color = 'green',ms=10,label='Initial Path')
 ax.plot(final_path_LAP[:, 0], final_path_LAP[:, 1], '.-',ms=10,label='LAP',color='purple')
 ax.plot(final_path_MEP[:, 0], final_path_MEP[:, 1], '.-',ms=10,label='MEP',color='red')    
-
-
+ax.plot(final_path_MEP[:,0][saddle],final_path_MEP[:,1][saddle],'*',color='black',markersize=12)
+ax.plot(final_path_MEP[:,0][minima],final_path_MEP[:,1][minima],'X',color='yellow',markersize=12)
 ax.set_ylabel('$y$',size=20)
 ax.set_xlabel('$x$',size=20)
-ax.set_title('M = '+str(NIterations)+' N = '+str(NImgs)+' k='+str(k)+' kappa='+str(kappa))
-
-
+ax.set_title(f'N = {NImgs}, k={k}, kappa={kappa}')
 ax.legend(frameon=True,fancybox=True)
 cbar = fig.colorbar(im)
-if save_data ==True:
-    plt.savefig(surface_name+'_M='+str(NIterations)+'_N='+str(NImgs)+'_k='+str(k)+'_kappa='+str(kappa)+'.pdf')
 plt.show()  
 plt.clf()
 
-plt.plot(range(NIterations+2),action_array_LAP,label='LAP '+str(min_action_LAP))
-plt.plot(range(NIterations+2),action_array_MEP,label='MEP '+str(min_action_MEP))
+### Plot actions
+plt.plot(range(NIterations+2),action_array_LAP,label='Final LAP '+str(min_action_LAP))
+plt.plot(range(NIterations+2),action_array_MEP,label='Final MEP '+str(min_action_MEP))
 plt.xlabel('Iterations')
 plt.ylabel('Action')
 plt.legend(frameon=True,fancybox=True)
-if save_data == True:
-    plt.savefig(surface_name+'_M='+str(NIterations)+'_N='+str(NImgs)+'_k='+str(k)+'_kappa='+str(kappa)+'_action.pdf')
 plt.show()
