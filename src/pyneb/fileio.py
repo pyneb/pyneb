@@ -172,7 +172,7 @@ class ForceLogger:
             if idx != (self.loggerSettings["writeFreq"] - 1):
                 h5File = h5py.File(self.fileName,"a")
                 for nm in self.loggedVariables[self.logLevel]:
-                    h5File[nm].resize((self.iterCounter+1,)+tuple(h5File[nm].shape[1:]))
+                    h5File[nm].resize((self.iterCounter,)+tuple(h5File[nm].shape[1:]))
                     h5File[nm][-idx:] = self.logDict[nm][:idx]
                 
                 h5File.close()
