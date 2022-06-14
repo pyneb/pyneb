@@ -1,7 +1,5 @@
 from fileio import *
 
-#Appears to be common/best practice to import required packages in every file
-#they are used in
 import numpy as np
 #import numdifftools as nd
 import numdifftools as nd
@@ -1064,7 +1062,8 @@ class SurfaceUtils:
         return indsOut, gridValsOut
     
     @staticmethod
-    def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False,eneg=0):
+    def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False,eneg=0,
+                               returnIndices=False):
         """
         
 
@@ -1086,6 +1085,8 @@ class SurfaceUtils:
         
         nDims = len(coordMeshTuple)
         uniqueCoords = [np.unique(c) for c in coordMeshTuple]
+        
+        potArr = _get_correct_shape(uniqueCoords,potArr)
         
         allContours = SurfaceUtils.find_approximate_contours(coordMeshTuple,potArr,eneg=eneg)
         
@@ -1116,8 +1117,11 @@ class SurfaceUtils:
         
         allowedEndpoints = np.unique(allowedEndpoints,axis=0)
         allowedIndices = np.unique(allowedIndices,axis=0)
-                
-        return allowedEndpoints, allowedIndices
+        
+        if returnIndices:
+            return allowedEndpoints, allowedIndices
+        else:
+            return allowedEndpoints
 
 def shift_func(func_in,shift=10**(-4)):
     """
@@ -1141,6 +1145,46 @@ def shift_func(func_in,shift=10**(-4)):
     def func_out(coords):
         return func_in(coords) - shift
     return func_out
+
+def _get_correct_shape(gridPoints,arrToCheck):
+    """
+    Utility for automatically correcting the shape of an array, to deal with
+    nonsense regarding np.meshgrid's default setup
+
+    Parameters
+    ----------
+    gridPoints : TYPE
+        DESCRIPTION.
+    arrToCheck : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    None.
+
+    """
+    defaultMeshgridShape = np.array([len(g) for g in gridPoints])
+    possibleOtherShape = tuple(defaultMeshgridShape)
+    defaultMeshgridShape[[1,0]] = defaultMeshgridShape[[0,1]]
+    defaultMeshgridShape = tuple(defaultMeshgridShape)
+    
+    isSquare = False
+    if defaultMeshgridShape[0] == defaultMeshgridShape[1]:
+        isSquare = True
+        warnings.warn("Grid is square; cannot check if data is transposed."+\
+                      " Note that gridVals should be of shape (x.size,y.size).")
+    
+    if arrToCheck.shape == defaultMeshgridShape:
+        pass
+    elif arrToCheck.shape == possibleOtherShape and not isSquare:
+        arrToCheck = np.swapaxes(arrToCheck,0,1)
+    else:
+        raise ValueError("arrToCheck.shape "+str(arrToCheck.shape)+\
+                         " does not match expected shape "+\
+                         str(defaultMeshgridShape)+" or possible shape "+\
+                         str(possibleOtherShape))
+    
+    return arrToCheck
 
 class NDInterpWithBoundary:
     """
@@ -1223,22 +1267,8 @@ class NDInterpWithBoundary:
         
         self.symmExtend = symmExtend
         
-        defaultMeshgridShape = tuple([len(g) for g in gridPoints])
-        possibleOtherShape = np.array(defaultMeshgridShape)
-        possibleOtherShape[[1,0]] = possibleOtherShape[[0,1]]
-        possibleOtherShape = tuple(possibleOtherShape)
-        
-        if defaultMeshgridShape[0] == defaultMeshgridShape[1]:
-            warnings.warn("Grid is square; cannot check if data is transposed."+\
-                          " Note that gridVals should be of shape (x.size,y.size).")
-        
-        if gridVals.shape != defaultMeshgridShape:
-            if gridVals.shape == possibleOtherShape:
-                gridVals = np.swapaxes(gridVals,0,1)
-            else:
-                raise ValueError("gridVals.shape does not match expected shape "+\
-                                 str(defaultMeshgridShape)+" or possible shape "+\
-                                 str(possibleOtherShape))
+        self.gridPoints = tuple([np.asarray(p) for p in gridPoints])
+        self.gridVals = _get_correct_shape(gridPoints,gridVals)
         
         for i, p in enumerate(gridPoints):
             if not np.all(np.diff(p) > 0.):
@@ -1246,7 +1276,7 @@ class NDInterpWithBoundary:
                                  "ascending" % i)
         
         if self.nDims == 2:
-            self.rbv = RectBivariateSpline(*gridPoints,gridVals,**splKWargs)
+            self.rbv = RectBivariateSpline(*gridPoints,self.gridVals.T,**splKWargs)
             self._call = self._call_2d
         else:
             self._call = self._call_nd
@@ -1254,9 +1284,6 @@ class NDInterpWithBoundary:
         postEvalDict = {"identity":self._identity_transform_function,
                         "smooth_abs":self._smooth_abs_transform_function}
         self.post_eval = postEvalDict[transformFuncName]
-                
-        self.gridPoints = tuple([np.asarray(p) for p in gridPoints])
-        self.gridVals = gridVals
 
     def __call__(self,points):
         """
@@ -1543,29 +1570,11 @@ class PositiveSemidefInterpolator:
                 raise ValueError("The points in dimension %d must be strictly "
                                  "ascending" % i)
         
-        defaultMeshgridShape = np.array([len(g) for g in gridPoints])
-        possibleOtherShape = tuple(defaultMeshgridShape)
-        defaultMeshgridShape[[1,0]] = defaultMeshgridShape[[0,1]]
-        defaultMeshgridShape = tuple(defaultMeshgridShape)
+        self.gridValsList = [_get_correct_shape(gridPoints,l) for l in listOfVals]
         
-        if defaultMeshgridShape[0] == defaultMeshgridShape[1]:
-            warnings.warn("Grid is square; cannot check if data is transposed."+\
-                          " Note that gridVals should be of shape (x.size,y.size).")
-        
-        self.gridValsList = []
-        for l in listOfVals:            
-            if l.shape == defaultMeshgridShape:
-                self.gridValsList.append(l)
-            elif l.shape == possibleOtherShape:
-                self.gridValsList.append(np.swapaxes(l,0,1))
-            else:
-                raise ValueError("One supplied gridVals.shape does not match expected shape "+\
-                                 str(defaultMeshgridShape)+" or possible shape "+\
-                                 str(possibleOtherShape))
-                    
         #Taking shortcuts because I only care about D=2 right now
-        self.gridVals = np.stack((np.stack(self.gridValsList[0],self.gridValsList[1]),\
-                                  np.stack(self.gridValsList[1],self.gridValsList[2])))
+        self.gridVals = np.stack((np.stack((self.gridValsList[0],self.gridValsList[1])),\
+                                  np.stack((self.gridValsList[1],self.gridValsList[2]))))
         self.gridVals = np.moveaxis(self.gridVals,[0,1],[2,3])
         
         self.eigenVals, self.eigenVecs = np.linalg.eig(self.gridVals)
@@ -1573,7 +1582,7 @@ class PositiveSemidefInterpolator:
         
         #Constructing interpolators
         self.eigenValInterps = [NDInterpWithBoundary(self.gridPoints,e,**ndInterpKWargs)\
-                                for e in self.eigenVals]
+                                for e in self.eigenVals.T]
         self.eigenVecInterp = NDInterpWithBoundary(self.gridPoints,thetaVals,**ndInterpKWargs)
         
     def __call__(self,points):
@@ -1596,7 +1605,7 @@ class PositiveSemidefInterpolator:
         
         eigenVals = [e.clip(0) for e in eigenVals]
         
-        ret = np.zeros(points.shape[0]+(2,2))
+        ret = np.zeros((len(points),2,2))
         for (ptIter,point) in enumerate(points):
             ret[ptIter,0,0] = eigenVals[0][ptIter]*ct[ptIter]**2 + \
                 eigenVals[1][ptIter]*st[ptIter]**2
