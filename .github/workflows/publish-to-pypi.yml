@@ -41,4 +41,4 @@ jobs:
       uses: pypa/gh-action-pypi-publish@master
       with:
         password: ${{ secrets.TWINE_TOKEN }}
-        repository_url: https://upload.pypi.org/legacy
+        repository_url: https://upload.pypi.org/legacy/
