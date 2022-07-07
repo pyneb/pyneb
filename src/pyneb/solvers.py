@@ -207,21 +207,22 @@ class LeastActionPath:
             self.target_func_grad(points,self.potential,energies,self.mass,masses,\
                                   self.target_func)
                 
-        negIntegGrad = -gradOfAction
-        trueForce = -gradOfPes
+        negIntegGrad = -gradOfAction.copy()
+        trueForce = -gradOfPes.copy()
         
         projection = np.array([np.dot(negIntegGrad[i],tangents[i]) \
                                for i in range(self.nPts)])
-        parallelForce = np.array([projection[i]*tangents[i] for i in range(self.nPts)])
-        perpForce = negIntegGrad - parallelForce
 
+        parallelForce = np.array([projection[i]*tangents[i] for i in range(self.nPts)])
+
+        
+        perpForce = negIntegGrad - parallelForce
         springForce = self._spring_force(points,tangents)
         
         #Computing optimal tunneling path force
         netForce = np.zeros(points.shape)
         for i in range(1,self.nPts-1):
             netForce[i] = perpForce[i] + springForce[i]
-        
         #TODO: add check if force is very small...?
         
         #Avoids throwing divide-by-zero errors, but also deals with points with
@@ -524,8 +525,7 @@ class VerletMinimization:
         
         TODO: that paper has many errors, esp. off-by-one errors. Could lead
         to issues. Consult http://dx.doi.org/10.1063/1.2841941 instead.
-        TODO: modify to edit self.allPts and etc
-
+        
         Parameters
         ----------
         tStep : TYPE
@@ -585,10 +585,17 @@ class VerletMinimization:
                     0.5*accel*tStep**2
         finally:
             t1 = time.time()
+            
+            if sys.exc_info()[0] is None:
+                endsWithoutError = True
+            else:
+                endsWithoutError = False
+            
+            t1 = time.time()
             self.nebObj.logger.flush()
             self.nebObj.logger.write_runtime(t1-t0)
             
-        return None
+            return endsWithoutError
     
     def fire(self,tStep,maxIters,fireParams={},useLocal=True,earlyStop=True,
              earlyStopParams={},earlyAbort=False,earlyAbortParams={}):
@@ -734,7 +741,7 @@ class VerletMinimization:
             if earlyStop:
                 self.nebObj.logger.write_early_stop_params(earlyStopParams)
         
-        return tStepArr, alphaArr, stepsSinceReset, endsWithoutError
+            return tStepArr, alphaArr, stepsSinceReset, endsWithoutError
     
     def _local_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
         tStepPrev = tStepArr[step-1].reshape((-1,1)) #For multiplication below
@@ -981,8 +988,7 @@ class VerletMinimization:
             if earlyStop:
                 self.nebObj.logger.write_early_stop_params(earlyStopParams)
             
-        
-        return tStepArr, alphaArr, stepsSinceReset
+            return tStepArr, alphaArr, stepsSinceReset
     
     def _local_fire2_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
         warnings.warn("Local FIRE2 currently calls local FIRE update")
