@@ -9,17 +9,18 @@ import fileio
 import warnings
 
 def cluster_paths_by_endpoints(listOfPaths,dbscanParams={}):
-    warnings.warn("Method still in development")
+    # warnings.warn("Method still in development")
     
-    defaultDbscanParams = {"eps":0.1,"min_samples":1}
+    defaultDbscanParams = {"eps":0.3,"min_samples":1}
     for (key,val) in defaultDbscanParams.items():
         if key not in dbscanParams:
             dbscanParams[key] = val
     
     endPoints = np.array([p[-1] for p in listOfPaths])
     
-    rescaledPoints = StandardScaler().fit_transform(endPoints)
+    rescaledPoints = StandardScaler(with_std=False).fit_transform(endPoints)
     db = DBSCAN(**dbscanParams).fit(rescaledPoints)
+    
     labels = np.array(db.labels_)
     nClusters = len(set(labels)) - (1 if -1 in labels else 0)
     
