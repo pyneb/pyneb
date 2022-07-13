@@ -215,7 +215,7 @@ class LoadForceLogger:
         if fileExt not in allowedExtensions:
             raise TypeError("File "+str(file)+" has unrecognized extension "+fileExt)
             
-        scalarAttrs = ["potential","target_func","target_func_grad","mass"]
+        scalarAttrs = ["potential","target_func","target_func_grad","mass","runTime"]
         arrayAttrs = ["endpointSpringForce","endpointHarmonicForce"]
                     
         self.fileName = file
