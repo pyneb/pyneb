@@ -7,5 +7,6 @@ if dirName not in sys.path:
 from solvers import *
 from utilities import *
 from analysis import *
+from fileio import *
 
-import solvers, utilities, analysis
+import solvers, utilities, analysis, fileio

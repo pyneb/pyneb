@@ -33,7 +33,7 @@ def cluster_paths_by_endpoints(listOfPaths,dbscanParams={}):
     
     return uniquePaths, uniqueInds
 
-def find_most_similar_paths(firstList,secondList):
+def find_most_similar_paths(firstList,secondList,removeDuplicates=False):
     """
     For every path in firstList, finds the path in secondList that is the closest.
     
@@ -56,19 +56,38 @@ def find_most_similar_paths(firstList,secondList):
     None.
 
     """
-    warnings.warn("Method still in development")
+    # warnings.warn("Method still in development")
     
-    distancesDict = {}
-    nearestIndsDict = {}
+    nearestIndsArr = np.nan*np.ones(len(firstList),dtype=int)
+    distancesArr = np.inf*np.ones(len(firstList))
     for (p1Iter,p1) in enumerate(firstList):
         e1 = p1[-1]
-        distancesDict[p1Iter] = np.inf
         for (p2Iter,p2) in enumerate(secondList):
             e2 = p2[-1]
             dist = np.linalg.norm(e2-e1)
-            if dist < distancesDict[p1Iter]:
-                distancesDict[p1Iter] = dist
-                nearestIndsDict[p1Iter] = p2Iter
+            if dist < distancesArr[p1Iter]:
+                distancesArr[p1Iter] = dist
+                nearestIndsArr[p1Iter] = p2Iter
     
-    return nearestIndsDict, distancesDict
-    
+    if removeDuplicates:
+        for uniqueP2Inds in np.unique(nearestIndsArr):
+            indsToCheck = np.where(nearestIndsArr==uniqueP2Inds)[0]
+            minInd = indsToCheck[0]
+            minDist = distancesArr[indsToCheck[0]]
+            for i in indsToCheck[1:]:
+                d = distancesArr[i]
+                if d < minDist:
+                    nearestIndsArr[minInd] = np.nan
+                    distancesArr[minInd] = np.nan
+                    minDist = d
+                    minInd = i
+                else:
+                    nearestIndsArr[i] = np.nan
+                    distancesArr[i] = np.nan
+    #     nOccurrences = np.zeros(len(set(nearestIndsDict.values())))
+    #     for p2Ind in nearestIndsDict.values():
+    #         nOccurrences[p2Ind] += 1
+    #     print(nOccurrences)
+        # for (p1Ind,p2Ind) in nearestIndsDict.items():
+            
+    return nearestIndsArr, distancesArr
