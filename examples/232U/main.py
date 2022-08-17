@@ -47,8 +47,7 @@ zz -= zz[gsInds]
 potential = pyneb.NDInterpWithBoundary(uniqueCoords,zz.T)
 
 #Finding endpoints
-allowedEndpoints, allowedIndices = \
-    pyneb.SurfaceUtils.find_endpoints_on_grid(coordMeshTuple,zz)
+allowedEndpoints = pyneb.SurfaceUtils.find_endpoints_on_grid(coordMeshTuple,zz)
 
 start = gsLoc
 end = np.array([298.,31.2]) #Selected with prior knowledge of the PES to be near
