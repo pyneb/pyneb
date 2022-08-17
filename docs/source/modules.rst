@@ -1,7 +1,7 @@
-py_neb
+pyneb
 ======
 
 .. toctree::
    :maxdepth: 4
 
-   py_neb
+   pyneb

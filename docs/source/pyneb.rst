@@ -1,37 +1,39 @@
-py\_neb package
+pyneb package
 ===============
 
 Submodules
 ----------
 
-py\_neb.fileio module
+pyneb.fileio module
 ---------------------
 
-.. automodule:: py_neb.fileio
+.. automodule:: pyneb.fileio
    :members:
    :undoc-members:
    :show-inheritance:
 
-py\_neb.solvers module
+pyneb.solvers module
 ----------------------
 
-.. automodule:: py_neb.solvers
+.. automodule:: pyneb.solvers
    :members:
    :undoc-members:
    :show-inheritance:
-
-py\_neb.utilities module
+   :special-members: __init__
+  
+pyneb.utilities module
 ------------------------
 
-.. automodule:: py_neb.utilities
+.. automodule:: pyneb.utilities
    :members:
    :undoc-members:
    :show-inheritance:
+   :special-members: __init__
 
 Module contents
 ---------------
 
-.. automodule:: py_neb
+.. automodule:: pyneb
    :members:
    :undoc-members:
    :show-inheritance:
