@@ -20,7 +20,7 @@ class TargetFunctions:
     @staticmethod
     def action(path,potential,masses=None):
         """
-        
+
         TODO: docs
         Allowed masses:
             -Constant mass; set masses = None
@@ -29,12 +29,13 @@ class TargetFunctions:
         Allowed potential:
             -Array of values; set potential to a numpy array of shape (nPoints,)
             -A function; set masses to a function
-            
+
         Computes action as
             $ S = sum_{i=1}^{nPoints} sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
-            
+
         :Maintainer: Daniel
         """
+        
         nPoints, nDims = path.shape
         
         if masses is None:

@@ -1,9 +1,5 @@
-#Appears to be common/best practice to import required packages in every file
-#they are used in
 import numpy as np
 
-#For ND interpolation
-# from scipy.interpolate import interpnd, RectBivariateSpline
 import itertools
 
 from scipy.integrate import solve_bvp
@@ -16,18 +12,64 @@ import warnings
 from utilities import *
 from fileio import *
 
-"""
-CONVENTIONS:
-    -Paths should be of shape (nPoints, nDimensions)
-    -Functions (e.g. a potential) that take in a single point should assume the
-        first index of the array iterates over the points
-    -Similarly, functions (e.g. the action) that take in many points should also
-        assume the first index iterates over the points
-"""
-    
 class LeastActionPath:
     """
-    class documentation...?
+    Computes the net force on a band, when minimizing an action-type functional,
+    of the form
+    
+    $$ S = \int_{s_0}^{s_1} \sqrt{2 M_{ij}\dot{x}_i\dot{x}_j E(x(s))} ds. $$
+    
+    Can be generalized to functionals of the form
+    
+    $$ S = \int_{s_0}^{s_1} f(s) ds $$
+    
+    by choosing target_func differently. A common example is minimizing
+    
+    $$ S = \int_{s_0}^{s_1} M_{ij}\dot{x}_i\dot{x}_j E(x(s)) ds, $$
+    
+    with no square root inside of the integral.
+    
+    Attributes
+    ----------
+    potential : function
+        Evaluates the energy along the path
+    nPts : int
+        The number of images in the path (path.shape[0])
+    nDims : int
+        The number of coordinates (path.shape[1])
+    mass : function
+        Evaluates the metric tensor M_{ij} along the path. The default is None,
+        in which case M_{ij} is treated as the identity matrix at all points
+    endpointSpringForce : bool or list of bools
+        Whether to turn on the endpoint spring force. Can be controlled for
+        both endpoints individually. If a list of bools, the elements
+        correspond to the first and the last endpoint. If a single bool, is applied
+        to both endpoints. The default is True.
+    endpointHarmonicForce : bool or list of bools
+        The same as endpointSpringForce, except for the harmonic force term. Disabling
+        both forces keeps an endpoint fixed. The default is True.
+    target_func : function
+        The functional to be minimized. The default is utilities.TargetFunctions.action
+    target_func_grad : function
+        The approximation of the gradient of target_func. The default is
+        utilities.GradientApproximations().forward_action_grad
+    logger : instance of fileio.ForceLogger
+        Controls logging of the methods in this class
+    nebParams : dict
+        Contains the spring and harmonic force strengths, and the energy
+        the endpoints are constrained to. Maintained for compatibility with
+        self.logger
+    k : float
+        The spring force parameter
+    kappa : float
+        The harmonic force parameter
+    constraintEneg : float
+        The energy the endpoints are constrained to
+    
+    Methods
+    -------
+    compute_force(points)
+        Computes the net force at every point in points
     
     :Maintainer: Daniel
     """
@@ -36,44 +78,48 @@ class LeastActionPath:
                  target_func_grad=GradientApproximations().forward_action_grad,\
                  nebParams={},logLevel=1,loggerSettings={}):
         """
-        asdf
-
         Parameters
         ----------
-        potential : Function
-            To be called as potential(path). Is passed to "target_func".
-        endpointSpringForce : Bool or tuple of bools
-            If a single bool, behavior is applied to both endpoints. If is a tuple
-            of bools, the first stands for the index 0 on the path; the second stands
-            for the index -1 on the path. TODO: possibly allow for a complicated
-            function that returns a bool?
-        nPts : Int
-            Number of points on the band, including endpoints.
-        nDims : Int
-            Number of dimensions of the collective coordinates. For instance,
-            when working with (Q20,Q30), nDims = 2.
-        mass : Function, optional
-            To be called as mass(path). Is passed to "target_func". If mass == None,
-            the collective inertia is the identity matrix. The default is None.
-        target_func : Function, optional
-            The approximation of the action integral. Should take as arguments
+        potential : function
+            Evaluates the energy along the path. To be called as potential(path). 
+            Is passed to "target_func".
+        nPts : int
+            The number of images in the path (path.shape[0])
+        nDims : int
+            The number of coordinates (path.shape[1])
+        mass : function, optional
+            Evaluates the metric tensor M_{ij} along the path. To be called as mass(path). 
+            Is passed to "target_func".The default is None, in which case $M_{ij}$ 
+            is treated as the identity matrix at all points
+        endpointSpringForce : bool or list of bools, optional
+            Whether to turn on the endpoint spring force. Can be controlled for
+            both endpoints individually. If a list of bools, the elements
+            correspond to the first and the last endpoint. If a single bool, is applied
+            to both endpoints. The default is True.
+        endpointHarmonicForce : bool or list of bools, optional
+            The same as endpointSpringForce, except for the harmonic force term. Disabling
+            both forces keeps an endpoint fixed. The default is True.
+        target_func : function, optional
+            The functional to be minimized. Should take as arguments
             (path, potential, mass). Should return (action, potentialAtPath, massesAtPath).
-            The default is action.
-        target_func_grad : Function, optional
-            Approximate derivative of the action integral with respect to every point.
-            Should take as arguments 
+            The default is utilities.TargetFunctions.action
+        target_func_grad : function, optional
+            The approximation of the gradient of target_func. Should take as arguments 
                 (path, potentialFunc, potentialOnPath, massFunc, massOnPath, target_func),
             where target_func is the action integral approximation. Should return 
-            (gradOfAction, gradOfPes). The default is forward_action_grad.
-        nebParams : Dict, optional
-            Keyword arguments for the nudged elastic band (NEB) method. Controls
-            the spring force and the harmonic oscillator potential. Default
-            parameters are controlled by a dictionary in the __init__ method.
-            The default is {}.
-
-        Returns
-        -------
-        None.
+            (gradOfAction, gradOfPes). The default is
+            utilities.GradientApproximations().forward_action_grad
+        nebParams : dict, optional
+            Contains the spring force and the harmonic oscillator potential parameters,
+            as well as the energy the endpoints are constrained to. The default is {}, 
+            in which case the parameters are
+                {"k":10,"kappa":20,"constraintEneg":0}
+        logLevel : int, optional
+            Controls how much information is tracked. Level 0 turns off logging.
+            See fileio.ForceLogger, or a .lap file, for documentation on other
+            tracked information
+        loggerSettings : dict, optional
+            See fileio.ForceLogger for documentation
 
         """
         #TODO: consider not having NEB parameters as a dictionary. Could be confusing...?
@@ -82,7 +128,6 @@ class LeastActionPath:
             if key not in nebParams:
                 nebParams[key] = defaultNebParams[key]
         
-        #Not sure why I did things this way...
         for key in nebParams.keys():
             setattr(self,key,nebParams[key])
         #For compatibility with the logger
@@ -113,20 +158,7 @@ class LeastActionPath:
     
     def _compute_tangents(self,points,energies):
         """
-        Here for testing sphinx autodoc
-        
-        Parameters
-        ----------
-        points : TYPE
-            DESCRIPTION.
-        energies : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        tangents : TYPE
-            DESCRIPTION.
-
+        Computes tangent vectors along the path
         """
         tangents = np.zeros((self.nPts,self.nDims))
         
@@ -159,20 +191,8 @@ class LeastActionPath:
     
     def _spring_force(self,points,tangents):
         """
-        Spring force taken from https://doi.org/10.1063/1.5007180 eqns 20-22
-
-        Parameters
-        ----------
-        points : TYPE
-            DESCRIPTION.
-        tangents : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        springForce : TYPE
-            DESCRIPTION.
-
+        Computes the spring force along the path. Equations taken from 
+        https://doi.org/10.1063/1.5007180 eqns 20-22
         """
         springForce = np.zeros((self.nPts,self.nDims))
         for i in range(1,self.nPts-1):
@@ -189,6 +209,20 @@ class LeastActionPath:
         return springForce
     
     def compute_force(self,points):
+        """
+        Computes the net force along the path
+
+        Parameters
+        ----------
+        points : np.ndarray
+            The path to evaluate the force along. Of shape (self.nPts,self.nDims)
+
+        Returns
+        -------
+        netForce : np.ndarray
+            The force at each image on the path. Of shape (self.nPts,self.nDims)
+
+        """
         expectedShape = (self.nPts,self.nDims)
         if points.shape != expectedShape:
             if (points.T).shape == expectedShape:
@@ -478,6 +512,17 @@ class MinimumEnergyPath:
     
 class VerletMinimization:
     """
+    Iterative algorithms for minimizing the force along a path, e.g. the least
+    action path, or a minimum energy path.
+    
+    Attributes
+    ----------
+    
+    
+    Methods
+    -------
+    
+    
     :Maintainer: Daniel
     """
     def __init__(self,nebObj,initialPoints):
