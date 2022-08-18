@@ -19,7 +19,7 @@ pyneb.solvers module
    :members:
    :undoc-members:
    :show-inheritance:
-   :special-members: __init__
+   :special-members: __init__, __call__
   
 pyneb.utilities module
 ------------------------
@@ -28,7 +28,7 @@ pyneb.utilities module
    :members:
    :undoc-members:
    :show-inheritance:
-   :special-members: __init__
+   :special-members: __init__, __call__
 
 Module contents
 ---------------
