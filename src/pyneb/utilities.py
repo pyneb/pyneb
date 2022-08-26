@@ -16,22 +16,69 @@ global fdTol
 fdTol = 10**(-8)
 
 class TargetFunctions:
-    #No need to do any compatibility checking with gradients here.
+    """
+    Class containing integral-type functionals that are commonly minimized. 
+    Generically of the form
+    
+    $$ S = \int_{s_0}^{s_1} f(s) ds. $$
+
+    Functionals are discretized as
+
+    $$ S \approx \sum_{i=1}^{nPoints} f(s_i) (s_i-s_{i-1}). $$
+    
+    Methods
+    -------
+    action(points,potential,masses)
+        The standard action functional
+    term_in_action_sum(points,potential,masses)
+        One of the discrete terms in the functional computed in "action"
+    action_squared(points,potential,masses)
+        The action functional, but without a square root
+    term_in_action_squared_sum(points,potential,masses)
+        Same as term_in_action_sum, but for the functional computed in "action_squared"
+    mep_default(points,potential,masses)
+        Wrapper to be used when finding the minimum energy path. See solvers.MinimumEnergyPath for
+        documentation on this unique case
+    
+    :Maintainer: Daniel
+    """
     @staticmethod
     def action(path,potential,masses=None):
         """
+        The standard action functional
 
-        TODO: docs
-        Allowed masses:
-            -Constant mass; set masses = None
-            -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
-            -A function; set masses to a function
-        Allowed potential:
-            -Array of values; set potential to a numpy array of shape (nPoints,)
-            -A function; set masses to a function
+        $$ S = \int_{s_0}^{s_1} \sqrt{2 M_{ij}\dot{x}_i\dot{x}_j E(x(s))} ds $$
 
-        Computes action as
-            $ S = sum_{i=1}^{nPoints} sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
+        Parameters
+        ----------
+        path : np.ndarray
+            The path to evaluate the action along
+        potential : np.ndarray or function
+            The energy along path. If an array, is the energy values; if a function, evaluates the
+            energy along the path
+        masses : None, np.ndarray, or function, optional
+            The collective inertia along the path. If an array, is the inertia values; if a function,
+            evaluates the inertia along the path. If is None, the inertia is the identity at all
+            points along the path. The default is None
+
+        Returns
+        -------
+        actOut : float
+            The action value
+        potArr : np.ndarray
+            The energy values for each point in path
+        massArr : np.ndarray
+            The collective inertia tensor for each point in path
+
+        Raises
+        ------
+        ValueError
+            If one of potential or masses is np.ndarray, and not the same length as path
+
+        Notes
+        -----
+        Trims the potential, and the distance between points, to have a minimum value of zero, rather
+        than throwing an error
 
         :Maintainer: Daniel
         """
@@ -70,10 +117,6 @@ class TargetFunctions:
             dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
             if dist<0:
                 dist = 0
-            #     print(dist)
-            #     print(path)
-            #     print(potArr)
-            #     print(massArr)
             actOut += np.sqrt(2*potArr[ptIter]*dist)
         
         return actOut, potArr, massArr
@@ -81,18 +124,31 @@ class TargetFunctions:
     @staticmethod
     def term_in_action_sum(points,potential,masses=None):
         """
-        
-        TODO: docs
-        Allowed masses:
-            -Constant mass; set masses = None
-            -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
-            -A function; set masses to a function
-        Allowed potential:
-            -Array of values; set potential to a numpy array of shape (nPoints,)
-            -A function; set masses to a function
-            
-        Computes action as
-            $ S = sum_{i=1}^{nPoints} sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
+        One of the discrete terms in the functional computed in "action"
+
+        Parameters
+        ----------
+        See :py:func:`action`
+
+        Returns
+        -------
+        actOut : float
+            The action value of this segment
+        potArr : np.ndarray
+            The energy values for each point in path
+        massArr : np.ndarray
+            The collective inertia tensor for each point in path
+
+        Raises
+        ------
+        ValueError
+            If one of potential or masses is np.ndarray, and not the correct shape
+        ValueError
+            If more than two points are fed in as points
+
+        Notes
+        -----
+        See :py:func:`action`
             
         :Maintainer: Daniel
         """
@@ -135,6 +191,8 @@ class TargetFunctions:
         coordDiff = points[1] - points[0]
         #The M_{ab} dx^a dx^b bit
         dist = np.dot(coordDiff,np.dot(massArr,coordDiff))
+        if dist<0:
+                dist = 0
         actOut = np.sqrt(2*potArr[0]*dist)
         
         return actOut, potArr, massArr
@@ -142,41 +200,31 @@ class TargetFunctions:
     @staticmethod
     def action_squared(path,potential,masses=None):
         '''
+        The functional
+
+        $$ S = \int_{s_0}^{s_1} 2 M_{ij}\dot{x}_i\dot{x}_j E(x(s)) ds $$
         
         Parameters
         ----------
-        path : ndarray
-            np.ndarray of shape (Nimgs,nDim) containing postions of all images.
-        potential : object or ndarray
-            Allowed potential:
-            -Array of values; set potential to a numpy array of shape (nPoints,)
-            -A function; set masses to a function
-        masses : object or ndarray, Optional
-            Allowed masses:
-            -Constant mass; set masses = None
-            -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
-            -A function; set masses to a function
-
-        Raises
-        ------
-        ValueError
-            DESCRIPTION.
+        See :py:func:`action`
 
         Returns
         -------
         actOut : float
-            
-        potArr : ndarray
-            ndarray of shape (Nimgs,1) containing the PES values for each image in path
-        massArr : ndarray
-            ndarray of shape (Nimgs,nDim,nDim) containing the mass tensors for each image in path.
-            
+            The functional value along the path
+        potArr : np.ndarray
+            The energy values for each point in path
+        massArr : np.ndarray
+            The collective inertia tensor for each point in path
+
+        Raises
+        ------
+        ValueError
+            See :py:func:`action`
+
         :Maintainer: Eric
         '''
-        """    
-        Computes action as
-            $ S = sum_{i=1}^{nPoints} E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b $
-        """
+
         nPoints, nDims = path.shape
         
         if masses is None:
@@ -212,20 +260,27 @@ class TargetFunctions:
     @staticmethod
     def term_in_action_squared_sum(points,potential,masses=None):
         """
-        
-        TODO: docs
-        Allowed masses:
-            -Constant mass; set masses = None
-            -Array of values; set masses to a numpy array of shape (nPoints, nDims, nDims)
-            -A function; set masses to a function
-        Allowed potential:
-            -Array of values; set potential to a numpy array of shape (nPoints,)
-            -A function; set masses to a function
+        One of the discrete terms in the functional computed in "action_squared"
+
+        Parameters
+        ----------
+        See :py:func:`action`
+
+        Returns
+        -------
+        actOut : float
+            The value of this segment
+        potArr : np.ndarray
+            The energy values for each point in path
+        massArr : np.ndarray
+            The collective inertia tensor for each point in path
+
+        Raises
+        ------
+        ValueError
+            See :py:func:`term_in_action_sum`
             
-        Computes action as
-            $ S = sum_{i=1}^{nPoints} sqrt{2 E(x_i) M_{ab}(x_i) (x_i-x_{i-1})^a(x_i-x_{i-1})^b} $
-            
-        :Maintainer: Daniel
+        :Maintainer: Eric
         """
         nDims = points.shape[1]
         if points.shape[0] != 2:
@@ -273,7 +328,7 @@ class TargetFunctions:
     @staticmethod
     def mep_default(points,potential,auxFunc=None):
         '''
-        
+        #TODO
         Essentially a wrapper function for the potential. Expected points to be 
         a (nPts,nDim) matrix. Potential should be a function capable of returning 
         a (nPts,nDim) matrix.
