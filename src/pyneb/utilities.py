@@ -1220,40 +1220,44 @@ class NDInterpWithBoundary:
     """
     Interpolates a grid in D dimensions, with extra handling for points outside
     of the grid. The D>2 case is based on scipy.interpolate.RegularGridInterpolator
+
+    Methods
+    -------
+    __call__(points)
+        Evaluates the interpolator
     
     :Maintainer: Daniel
     """
     def __init__(self,gridPoints,gridVals,boundaryHandler="exponential",symmExtend=None,\
                  transformFuncName="identity",splKWargs={}):
         """
-        Initializes the class instance. Carries out basic error checking on inputs.
-        Defines self._call as the method to evaluate a point that's within the
-        grid boundaries. It is also used in the boundary handlers, to evaluate
-        e.g. the nearest allowed point once it is found.
-
         Parameters
         ----------
-        gridPoints : tuple of ndarrays
-            The unique grid points. Each array must be sorted in ascending order.
-        gridVals : ndarray
+        gridPoints : tuple of np.ndarrays
+            The unique grid points. Each array must be sorted in ascending order
+        gridVals : np.ndarray
             The grid values to be interpolated. Expected to be of shape (N2,N1,N3,...),
-            as in the output of np.meshgrid.
+            as in the output of np.meshgrid
         boundaryHandler : str, optional
             How points outside of the interpolation region are handled. The 
-            default is 'exponential'.
-        symmExtend : bool or ndarray of bools, optional
-            Whether to symmetrically extend gridVals when evaluating. See notes.
-            The default is None.
+            default is 'exponential'
+        symmExtend : None or np.ndarray of bools, optional
+            Whether to symmetrically extend gridVals when evaluating. The default is
+            None, in which case the second coordinate is symmetrized
         transformFuncName : string, optional
             The function to apply to the interpolated function after interpolating.
-            The default is "identity", in which no post-processing is applied.
+            The default is "identity", in which no post-processing is applied
         splKWargs : dict, optional
             Extra arguments for spline interpolation, in the 2D case. The default
-            is {}.
+            is {}
 
-        Returns
-        -------
-        None.
+        Raises
+        ------
+        NotImplementedError
+            Fewer than 2 coordinates
+        ValueError
+            Any unallowed boundaryHandler or transformFuncName; a wrong-shaped
+            array; or an unsorted gridVals
         
         Notes
         -----
@@ -1317,18 +1321,18 @@ class NDInterpWithBoundary:
 
     def __call__(self,points):
         """
-        Interpolation at coordinates.
+        Interpolation at points
         
         Parameters
         ----------
-        points : ndarray
+        points : np.ndarray
             The coordinates to sample the gridded data at. Can be more than 2D,
-            as in points.shape == complexShape + (self.nDims,).
+            as in points.shape == complexShape + (self.nDims,)
             
         Returns
         -------
-        result : ndarray
-            The interpolated function evaluated at points. Is of shape complexShape.
+        result : np.ndarray
+            The interpolated function evaluated at points. Is of shape complexShape
         
         """
         originalShape = points.shape[:-1]
@@ -1369,18 +1373,7 @@ class NDInterpWithBoundary:
         """
         Evaluates the RectBivariateSpline instance at a single point. Defined
         as a wrapper here so that self._call has the same calling signature
-        regardless of dimension.
-
-        Parameters
-        ----------
-        point : ndarray
-            Of shape (2,). A single point to evaluate at.
-
-        Returns
-        -------
-        ndarray of floats
-            The RectBivariateSpline evaluation. Of shape (1,).
-
+        regardless of dimension
         """
         return self.rbv(point[0],point[1],grid=False)
     
@@ -1389,16 +1382,6 @@ class NDInterpWithBoundary:
         Repeated linear interpolation. For the 2D case, see e.g.
         https://en.wikipedia.org/wiki/Bilinear_interpolation#Weighted_mean
 
-        Parameters
-        ----------
-        point : ndarray
-            The point to evaluate at. Of shape (self.nDims,)
-
-        Returns
-        -------
-        value : float
-            The linear interpolated value.
-            
         Notes
         -----
         Original implementation, taken from scipy.interpolate.RegularGridInterpolator,
@@ -1428,23 +1411,9 @@ class NDInterpWithBoundary:
         the previous gridpoint (not the nearest), normalized such that the next 
         gridpoint (in a particular dimension) is distance 1 from the nearest gridpoint
         (called unity units). The distance is normed to make the interpolation 
-        simpler.
+        simpler
         
         Taken from scipy.interpolate.RegularGridInterpolator.
-
-        Parameters
-        ----------
-        points : Numpy array
-            Array of coordinate(s) to evaluate at. Of shape (ndims,_)
-
-        Returns
-        -------
-        indices : Tuple of ndarrays
-            The indices of the nearest gridpoint for all points of points. Can
-            be used as indices of a numpy array
-        normDistances : ndarray
-            The distance along each dimension to the nearest gridpoint. Of shape
-            points.shape
 
         Example
         -------
@@ -1489,22 +1458,6 @@ class NDInterpWithBoundary:
         scaling factor. This should smoothly continue the surface, in an effort
         to push force-based solvers back into the interpolated region.
 
-        Parameters
-        ----------
-        point : ndarray
-            The point that's out of bounds. Of shape (self.nDims,).
-        isInBounds : ndarray of bools
-            Array detailing where the point fails. Of shape (2,self.nDims).
-            isInBounds[0] deals with the lower bound; isInBounds[1] deals with
-            the upper bound. False means the point is out of bounds in that dimension,
-            in that position.
-            
-
-        Returns
-        -------
-        result : float
-            The scaled result.
-            
         Notes
         -----
         Does not allow for evaluation of multiple points at a time.
@@ -1537,31 +1490,35 @@ class NDInterpWithBoundary:
     
     def _identity_transform_function(self,normalEvaluation):
         """
-        Not sure if it's faster to have this dummy function in place, or to have
-        an "if-else" statement every time we check if we should call a transform
-        function.
-
-        Parameters
-        ----------
-        normalEvaluation : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        normalEvaluation : TYPE
-            DESCRIPTION.
-
+        Returns normal evaluation. Not sure if it's faster to have this dummy
+        function in place, or to have an "if-else" statement every time we check
+        if we should call a transform function
         """
         return normalEvaluation
     
     def _smooth_abs_transform_function(self,normalEvaluation):
+        """
+        A smooth approximation of the absolute value of the energy
+        """
         return np.sqrt(normalEvaluation**2 + 10**(-4))
     
 class PositiveSemidefInterpolator:
+    """
+    Interpolates a positive semidefinite function in two dimensions. Takes
+    eigenvalue decomposition, interpolates eigenvalues and unique components
+    of eigenvectors using NDInterpWithBoundary, and truncates eigenvalues at 0
+
+    Methods
+    -------
+    __call__(points)
+        Evaluates the interpolators
+
+    Notes
+    -----
+    Interpolator for D > 2 is intended but not implemented
+    """
     def __init__(self,gridPoints,listOfVals,ndInterpKWargs={}):
         """
-        
-
         Parameters
         ----------
         gridPoints : tuple
@@ -1576,13 +1533,13 @@ class PositiveSemidefInterpolator:
             The components of listOfVals are the numpy arrays
                 [M00, M01, ..., M0n, M11, M12, ..., M1n, ..., Mnn].
             Each Mij is of shape (N2,N1,N3,...), as in the output of np.meshgrid.
-        ndInterpKWargs : TYPE, optional
-            DESCRIPTION. The default is {}.
+        ndInterpKWargs : dict, optional
+            Options to feed into NDInterpWithBoundary. The default is {}
 
-        Returns
-        -------
-        None.
-
+        Raises
+        ------
+        NotImplementedError
+            If D != 2
         """
         self.nDims = len(gridPoints)
         self.gridPoints = gridPoints
@@ -1594,11 +1551,6 @@ class PositiveSemidefInterpolator:
         
         #Standard error checking
         assert len(listOfVals) == int(self.nDims*(self.nDims+1)/2)
-        
-        for i, p in enumerate(gridPoints):
-            if not np.all(np.diff(p) > 0.):
-                raise ValueError("The points in dimension %d must be strictly "
-                                 "ascending" % i)
         
         self.gridValsList = [_get_correct_shape(gridPoints,l) for l in listOfVals]
         
@@ -1616,6 +1568,24 @@ class PositiveSemidefInterpolator:
         self.eigenVecInterp = NDInterpWithBoundary(self.gridPoints,thetaVals,**ndInterpKWargs)
         
     def __call__(self,points):
+        """
+        Evaluates the interpolator
+
+        Parameters
+        ----------
+        points : np.ndarray
+            The points to evaluate at
+
+        Raises
+        ------
+        ValueError
+            If points is not the correct number of dimensions
+
+        Returns
+        -------
+        np.ndarray
+            The function evaluation
+        """
         originalShape = points.shape[:-1]
         if originalShape == ():
             originalShape = (1,)
@@ -1649,7 +1619,7 @@ class PositiveSemidefInterpolator:
 def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
     """
     Formats a collection of functions for use in computing the inertia tensor.
-    Assumes the inertia tensor is symmetric.
+    Assumes the inertia tensor is symmetric
     
     Parameters
     ----------
@@ -1671,10 +1641,16 @@ def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
                     [[M_{30,30}, M_{30,20}]
                      [M_{20,30}, M_{20,20}]].
 
+    Raises
+    ------
+    ValueError
+        If the number of functions supplied is not the expected number
+        for D collective coordinates
+
     Returns
     -------
     func_out : function
-        The inertia tensor. Can be called as func_out(coords).
+        The inertia tensor. Can be called as func_out(coords)
         
     :Maintainer: Daniel
     """
@@ -1722,26 +1698,34 @@ def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
 
 class InterpolatedPath:
     """
+    Interpolates along a path, with unit path length
+
+    Methods
+    -------
+    __call__(t)
+        Evaluates the path at some point t in [0,1]
+    compute_along_path(target_func,nImages,tfArgs,tfKWargs)
+        Evaluates a functional along the path, with a specific number
+        of interpolation points along the path
+
     :Maintainer: Daniel
     """
     def __init__(self,discretePath,kwargs={}):
         """
+        Parameters
+        ----------
+        discretePath : np.ndarray
+            The path to interpolate
+        kwargs : dict, optional
+            The keyword arguments for scipy's splprep. The default is {}, in
+            which case the defaults are taken from defaultKWargs
+
+        Notes
+        -----
         Note that when one considers a 1D curve embedded in 2D, e.g. in a plot 
         of a function, one should specify 'u' in kwargs. Otherwise, 'u' will
         be computed based on the distance between points on the path, which
-        will generally lead to a different plot than what is desired.
-
-        Parameters
-        ----------
-        discretePath : TYPE
-            DESCRIPTION.
-        kwargs : TYPE, optional
-            DESCRIPTION. The default is {}.
-
-        Returns
-        -------
-        None.
-
+        will generally lead to a different plot than what is desired
         """
         self.path = discretePath
         
@@ -1763,12 +1747,46 @@ class InterpolatedPath:
             self.tck, self.u = splprep(listOfCoords,**kwargs)
         
     def __call__(self,t):
+        """
+        Evaluates the path at a point t in [0,1]
+
+        Parameters
+        ----------
+        t : float
+            The point on the arc length
+        
+        Raises
+        ------
+        ValueError
+            If t is not in [0,1]
+
+        Returns
+        -------
+        np.ndarray
+            The points at t
+        """
         if np.any(t>1) or np.any(t<0):
             raise ValueError("t must be between 0 and 1 for interpolation")
         
         return splev(t,self.tck)
     
-    def compute_along_path(self,target_func,nImages,tfArgs=[],tfKWargs={}):
+    def compute_along_path(self,target_func,nImages,tfArgs,tfKWargs):
+        """
+        Computes a functional, from TargetFunctions, along the path
+
+        Parameters
+        ----------
+        target_func : function
+            The functional to evaluate
+        nImages : int
+            The number of sample points along the path to use when evaluating
+            target_func
+        tfArgs : list
+            The arguments for target_func. See :py:func:`action`
+        tfKWargs : dict
+            The keyword arguments for target_func. See :py:func:`action`
+
+        """
         t = np.linspace(0,1,nImages)
         path = np.array(self.__call__(t)).T
         tfOut = target_func(path,*tfArgs,**tfKWargs)
