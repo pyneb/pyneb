@@ -1,7 +1,6 @@
 from fileio import *
 
 import numpy as np
-#import numdifftools as nd
 import numdifftools as nd
 import sys
 import matplotlib.pyplot as plt
@@ -30,12 +29,8 @@ class TargetFunctions:
     -------
     action(points,potential,masses)
         The standard action functional
-    term_in_action_sum(points,potential,masses)
-        One of the discrete terms in the functional computed in "action"
     action_squared(points,potential,masses)
         The action functional, but without a square root
-    term_in_action_squared_sum(points,potential,masses)
-        Same as term_in_action_sum, but for the functional computed in "action_squared"
     mep_default(points,potential,masses)
         Wrapper to be used when finding the minimum energy path. See solvers.MinimumEnergyPath for
         documentation on this unique case
@@ -122,35 +117,9 @@ class TargetFunctions:
         return actOut, potArr, massArr
     
     @staticmethod
-    def term_in_action_sum(points,potential,masses=None):
+    def _term_in_action_sum(points,potential,masses=None):
         """
         One of the discrete terms in the functional computed in "action"
-
-        Parameters
-        ----------
-        See :py:func:`action`
-
-        Returns
-        -------
-        actOut : float
-            The action value of this segment
-        potArr : np.ndarray
-            The energy values for each point in path
-        massArr : np.ndarray
-            The collective inertia tensor for each point in path
-
-        Raises
-        ------
-        ValueError
-            If one of potential or masses is np.ndarray, and not the correct shape
-        ValueError
-            If more than two points are fed in as points
-
-        Notes
-        -----
-        See :py:func:`action`
-            
-        :Maintainer: Daniel
         """
         nDims = points.shape[1]
         if points.shape[0] != 2:
@@ -258,29 +227,9 @@ class TargetFunctions:
         return actOut, potArr, massArr
     
     @staticmethod
-    def term_in_action_squared_sum(points,potential,masses=None):
+    def _term_in_action_squared_sum(points,potential,masses=None):
         """
         One of the discrete terms in the functional computed in "action_squared"
-
-        Parameters
-        ----------
-        See :py:func:`action`
-
-        Returns
-        -------
-        actOut : float
-            The value of this segment
-        potArr : np.ndarray
-            The energy values for each point in path
-        massArr : np.ndarray
-            The collective inertia tensor for each point in path
-
-        Raises
-        ------
-        ValueError
-            See :py:func:`term_in_action_sum`
-            
-        :Maintainer: Eric
         """
         nDims = points.shape[1]
         if points.shape[0] != 2:
@@ -391,8 +340,8 @@ class GradientApproximations:
         :Maintainer: Daniel
         """
         self.targetFuncToComponentMap = \
-            {"action":TargetFunctions.term_in_action_sum,
-             "action_squared":TargetFunctions.term_in_action_squared_sum}
+            {"action":TargetFunctions._term_in_action_sum,
+             "action_squared":TargetFunctions._term_in_action_squared_sum}
     
     def discrete_element(self,mass,path,gradOfPes,dr,drp1,beff,beffp1,beffm1,pot,potp1,potm1):
         """
