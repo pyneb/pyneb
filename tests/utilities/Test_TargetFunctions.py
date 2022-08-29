@@ -135,12 +135,12 @@ class action_(unittest.TestCase):
         
         return None
     
-class term_in_action_sum_(unittest.TestCase):
+class _term_in_action_sum_(unittest.TestCase):
     def test_array_potential_none_mass(self):
         path = np.arange(4).reshape((2,2))
         potential = np.array([2])
         
-        act, eneg, mass = TargetFunctions.term_in_action_sum(path,potential)
+        act, eneg, mass = TargetFunctions._term_in_action_sum(path,potential)
         
         correctAction = 4*np.sqrt(2)
         correctMass = np.identity(2)
@@ -158,7 +158,7 @@ class term_in_action_sum_(unittest.TestCase):
         path = np.arange(4).reshape((2,2))
         potential = 2
         
-        act, eneg, mass = TargetFunctions.term_in_action_sum(path,potential,\
+        act, eneg, mass = TargetFunctions._term_in_action_sum(path,potential,\
                                                               masses=mass)
         
         correctAction = 8.
@@ -177,7 +177,7 @@ class term_in_action_sum_(unittest.TestCase):
         path = np.arange(4).reshape((2,2))
         mass = np.array([[1.,1.],[0.,2.]])
         
-        act, eneg, mass = TargetFunctions.term_in_action_sum(path,pot,\
+        act, eneg, mass = TargetFunctions._term_in_action_sum(path,pot,\
                                                              masses=mass)
         
         correctAction = 8.
@@ -194,7 +194,7 @@ class term_in_action_sum_(unittest.TestCase):
         potential = np.arange(6)
         
         with self.assertRaises(ValueError):
-            TargetFunctions.term_in_action_sum(points,potential)
+            TargetFunctions._term_in_action_sum(points,potential)
             
         return None
     
@@ -203,7 +203,7 @@ class term_in_action_sum_(unittest.TestCase):
         potential = np.arange(2)
         
         with self.assertRaises(ValueError):
-            TargetFunctions.term_in_action_sum(points,potential)
+            TargetFunctions._term_in_action_sum(points,potential)
             
         return None
     
@@ -213,7 +213,7 @@ class term_in_action_sum_(unittest.TestCase):
         mass = np.full((3,2,2),np.identity(2))
         
         with self.assertRaises(ValueError):
-            TargetFunctions.term_in_action_sum(points,potential,masses=mass)
+            TargetFunctions._term_in_action_sum(points,potential,masses=mass)
             
         return None
 
