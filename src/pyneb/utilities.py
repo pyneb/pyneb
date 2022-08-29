@@ -712,6 +712,7 @@ def potential_central_grad(points,potential,auxFunc=None):
     
     :Maintainer: Eric
     '''
+    warnings.warn("Likely to be moved to GradientApproximations.mep_grad",DeprecationWarning)
     h = 10**(-8)
     ## check if it is a scalar is done inside midpoint_grad
     gradPES = midpoint_grad(potential,points,eps=h)
@@ -733,6 +734,7 @@ def midpoint_grad(func,points,eps=10**(-8)):
     
     :Maintainer: Eric
     """
+    warnings.warn("Likely to be moved to GradientApproximations._midpoint_grad",DeprecationWarning)
     if len(points.shape) == 1:
         points = points.reshape((1,-1))
     nPoints, nDims = points.shape
@@ -754,9 +756,10 @@ def midpoint_grad(func,points,eps=10**(-8)):
 def beff_grad(func,points,dr,eps=10**(-8)):
     """
     Midpoint finite difference of B_eff mass.
-    
+    TODO: can this be lumped into a better midpoint_grad?
     :Maintainer: Kyle
     """
+    warnings.warn("Likely to be lumped into midpoint_grad, once generalized by shape",DeprecationWarning)
     if len(points.shape) == 1:
         points = points.reshape((1,-1))
         #dr = dr.reshape((1,-1))
