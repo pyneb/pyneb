@@ -56,6 +56,11 @@ class TargetFunctions:
             evaluates the inertia along the path. If is None, the inertia is the identity at all
             points along the path. The default is None
 
+        Raises
+        ------
+        ValueError
+            If one of potential or masses is np.ndarray, and not the same length as path
+
         Returns
         -------
         actOut : float
@@ -64,11 +69,6 @@ class TargetFunctions:
             The energy values for each point in path
         massArr : np.ndarray
             The collective inertia tensor for each point in path
-
-        Raises
-        ------
-        ValueError
-            If one of potential or masses is np.ndarray, and not the same length as path
 
         Notes
         -----
@@ -177,6 +177,11 @@ class TargetFunctions:
         ----------
         See :py:func:`action`
 
+        Raises
+        ------
+        ValueError
+            See :py:func:`action`
+
         Returns
         -------
         actOut : float
@@ -186,14 +191,10 @@ class TargetFunctions:
         massArr : np.ndarray
             The collective inertia tensor for each point in path
 
-        Raises
-        ------
-        ValueError
-            See :py:func:`action`
 
         :Maintainer: Eric
         '''
-        
+
         nPoints, nDims = path.shape
         
         if masses is None:
@@ -281,9 +282,14 @@ class TargetFunctions:
 
         Parameters
         ----------
-        auxFunc : function or None (optional)
+        auxFunc : function or None, optional
             A placeholder function. The default is None
         others : See :py:func:`action`
+
+        Raises
+        ------
+        ValueError
+            See :py:func:`action`
 
         Returns
         -------
@@ -291,11 +297,6 @@ class TargetFunctions:
             The action along points
         auxEnergies : np.ndarray (None)
             If auxFunc is a function, is auxFunc evaluated at points. Else, is None
-        
-        Raises
-        ------
-        ValueError
-            See :py:func:`action`
             
         :Maintainer: Eric
         '''
@@ -323,7 +324,15 @@ class GradientApproximations:
     
     Methods
     -------
-    
+    forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,
+                        target_func)
+        Approximates the gradient of the action with respect to the location of each
+        point in path
+    forward_action_component_grad(path,potential,potentialOnPath,mass,massOnPath,
+                                  target_func)
+        Approximates the gradient of each term in the action sum, with respect to the
+        location of the rightmost point in the component
+
     Notes
     -----
     When calling a method of GradientApproximations, we always supply a member of
@@ -776,8 +785,22 @@ def beff_grad(func,points,dr,eps=10**(-8)):
 
 class SurfaceUtils:
     """
-    Defined for namespace purposes
-    
+    Contains methods for getting information about a surface
+
+    Methods
+    -------
+    find_all_local_minimum(arr)
+        Finds local minima, including edges, of an array
+    find_local_minimum(arr,searchPerc,returnOnlySmallest)
+        Finds the smallest local minimum in a percent region of arr
+    find_approximate_contours(coordMeshTuple,zz,eneg,show)
+        Finds contours of energy eneg in D dimensions
+    round_points_to_grid(coordMeshTuple,ptsArr)
+        Rounds points to their nearest grid location
+    find_endpoints_on_grid(coordMeshTuple,potArr,**kwargs)
+        Finds contours of a specified energy, and rounds them to
+        a grid
+
     :Maintainer: Daniel
     """
     @staticmethod
@@ -786,6 +809,18 @@ class SurfaceUtils:
         Returns the indices corresponding to the local minimum values. Taken
         originally from https://stackoverflow.com/a/3986876
         
+        Parameters
+        ----------
+        arr : np.ndarray
+            The array to find minima of. Is D dimensional
+    
+        Returns
+        -------
+        minIndsOut : Tuple of numpy arrays
+            D arrays of length k, describing k minima found
+
+        Notes
+        -----
         Finder checks along the cardinal directions. If all neighbors in those
         directions are greater than or equal to the current value, the index
         is returned as a minimum. For the border, the array is reflected about
@@ -793,18 +828,7 @@ class SurfaceUtils:
         local minima. However, we do want the border results - in practice,
         nuclei often have a ground state at zero deformation in one collective
         coordinate; to find that, we must include the border indices. To exclude
-        them, one can then call SurfaceUtils.find_local_minimum.
-        
-        Parameters
-        ----------
-        arr : Numpy array
-            A D-dimensional array.
-    
-        Returns
-        -------
-        minIndsOut : Tuple of numpy arrays
-            D arrays of length k, for k minima found
-    
+        them, one can then call SurfaceUtils.find_local_minimum
         """
         neighborhood = morphology.generate_binary_structure(len(arr.shape),1)
         #Test case was giving floating-point differences along the outer edge of
@@ -822,67 +846,34 @@ class SurfaceUtils:
         minIndsOut = tuple([allMinInds[coordIter,:] for \
                             coordIter in range(allMinInds.shape[0])])
         return minIndsOut
-    
-    def find_all_local_maximum(arr):
-        """
-        Returns the indices corresponding to the local maximum values. Taken
-        originally from https://stackoverflow.com/a/3986876
-        
-        Finder checks along the cardinal directions. If all neighbors in those
-        directions are greater than or equal to the current value, the index
-        is returned as a minimum. For the border, the array is reflected about
-        the axis. As a result, many indices are found that are not technically
-        local minima. However, we do want the border results - in practice,
-        nuclei often have a ground state at zero deformation in one collective
-        coordinate; to find that, we must include the border indices. 
-        
-        Parameters
-        ----------
-        arr : Numpy array
-            A D-dimensional array.
-    
-        Returns
-        -------
-        maxIndsOut : Tuple of numpy arrays
-            D arrays of length k, for k maxima found
-    
-        """
-        neighborhood = morphology.generate_binary_structure(len(arr.shape),1)
-        #Test case was giving floating-point differences along the outer edge of
-        #the array
-        local_max = np.isclose(filters.maximum_filter(arr, footprint=neighborhood,\
-                                                      mode="nearest"),arr,atol=10**(-15))
-        
-        background = (arr==0)
-        eroded_background = morphology.binary_erosion(background,\
-                                                      structure=neighborhood,\
-                                                      border_value=1)
-            
-        detected_maxima = local_max ^ eroded_background
-        allMaxInds = np.vstack(local_max.nonzero())
-        maxIndsOut = tuple([allMaxInds[coordIter,:] for \
-                            coordIter in range(allMaxInds.shape[0])])
-        return maxIndsOut
-    
+
+    @staticmethod
     def find_local_minimum(arr,searchPerc=[0.25,0.25],returnOnlySmallest=True):
         """
         Returns the indices corresponding to the local minimum values within a
-        desired part of the PES.
+        desired part of the PES
         
         Parameters
         ----------
-        arr : Numpy array
-            A D-dimensional array.
-        searchPerc : List
+        arr : np.ndarray
+            The array to find minima of. Is D dimensional
+        searchPerc : list, optional
             Percentage of each coordinate that the minimum is allowed to be in.
-            See Notes for a note on searchPerc
-        returnOnlySmallest : Bool. Default is True
+            The default is [0.25,0.25]
+        returnOnlySmallest : bool, optional
             If True, returns only the (first) smallest value. If False, returns
-            all minima in the searched region.
-    
+            all minima in the searched region. The default is True
+
+        Raises
+        ------
+        TypeError
+            If arr has a different number of dimensions than len(searchPerc)
+        ValueError
+            If any of searchPerc are greater than 1
+
         Returns
         -------
-        minIndsOut : Tuple of numpy arrays
+        minIndsOut : Tuple of np.ndarrays
             D arrays of length k, for k minima found in the region. If returnOnlySmallest,
             returns a tuple, not a tuple of arrays
             
@@ -923,26 +914,55 @@ class SurfaceUtils:
             
         return minIndsOut
     
+    def find_all_local_maximum(arr):
+        """
+        
+        Parameters
+        ----------
+        arr : Numpy array
+            A D-dimensional array.
+    
+        Returns
+        -------
+        maxIndsOut : Tuple of numpy arrays
+            D arrays of length k, for k maxima found
+    
+        :Maintainer: Eric
+        """
+        warnings.warn("May be removed from code base, depending on usage",DeprecationWarning)
+
+        neighborhood = morphology.generate_binary_structure(len(arr.shape),1)
+        #Test case was giving floating-point differences along the outer edge of
+        #the array
+        local_max = np.isclose(filters.maximum_filter(arr, footprint=neighborhood,\
+                                                      mode="nearest"),arr,atol=10**(-15))
+        
+        background = (arr==0)
+        eroded_background = morphology.binary_erosion(background,\
+                                                      structure=neighborhood,\
+                                                      border_value=1)
+            
+        detected_maxima = local_max ^ eroded_background
+        allMaxInds = np.vstack(local_max.nonzero())
+        maxIndsOut = tuple([allMaxInds[coordIter,:] for \
+                            coordIter in range(allMaxInds.shape[0])])
+        return maxIndsOut
+    
     @staticmethod
     def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
         """
-        Finds 2D contours on a D-dimensional surface. Does so by considering
-        2D surfaces, using the first 2 indices of zz, and iterating over all other
-        indices. At every set of indices, pyplot.contour is called, to get the
-        2D contour(s) on the surface at that level. The contours are not filled
-        with the value of the coordinates with the other indices - i.e. each
-        segment is of shape (k,2), regardless of the number of dimensions.
+        Finds 2D contours of energy eneg on a D-dimensional surface
 
         Parameters
         ----------
-        coordMeshTuple : tuple of ndarray
+        coordMeshTuple : tuple of np.ndarray
             Coordinate mesh, e.g. output of np.meshgrid
-        zz : ndarray
+        zz : np.ndarray
             Potential on mesh
         eneg : float, optional
-            Energy of the desired contour. The default is 0.
+            Energy of the desired contour. The default is 0
         show : bool, optional
-            Whether to plot the contours. The default is False.
+            Whether to plot the contours. The default is False
 
         Raises
         ------
@@ -955,6 +975,14 @@ class SurfaceUtils:
             Each element is the returned value of ax.contour.allsegs[0], i.e.
             a list consisting of 2D arrays describing the contour on that slize
             of zz
+
+        Notes
+        -----
+        Takes 2D surfaces, using the first 2 indices of zz, and iterating over all other
+        indices. At every set of indices, pyplot.contour is called, to get the
+        2D contour(s) on the surface at that level. The contours are not filled
+        with the value of the coordinates with the other indices - i.e. each
+        segment is of shape (k,2), regardless of the number of dimensions
 
         """
         nDims = len(coordMeshTuple)
@@ -991,22 +1019,29 @@ class SurfaceUtils:
     @staticmethod
     def round_points_to_grid(coordMeshTuple,ptsArr):
         """
-        Rounds an array of points to the nearest point on a grid.
+        Rounds an array of points to the nearest point on a grid
 
         Parameters
         ----------
-        coordMeshTuple : tuple of ndarrays
+        coordMeshTuple : tuple of np.ndarrays
             The grid. Taken as output of np.meshgrid
-        ptsArr : ndarray
+        ptsArr : np.ndarray
             The points to round. Of shape (nPoints,nDims), where nDims is the
-            number of coordinates.
+            number of coordinates
+
+        Raises
+        ------
+        NotImplementedError
+            Called with nDims < 2
+        ValueError
+            If ptsArr is the wrong shape
 
         Returns
         -------
-        indsOut : ndarray of ints
-            The indices of the points. Of shape (nPoints,nDims). See notes.
-        gridValsOut : ndarray
-            The nearest grid values. Of shape (nPoints,nDims).
+        indsOut : np.ndarray
+            The indices of the points. Of shape (nPoints,nDims). See notes
+        gridValsOut : np.ndarray
+            The nearest grid values. Of shape (nPoints,nDims)
         
         Notes
         -----
@@ -1018,7 +1053,7 @@ class SurfaceUtils:
         """        
         nDims = len(coordMeshTuple)
         if nDims < 2:
-            raise TypeError("Expected nDims >= 2; recieved "+str(nDims))
+            raise NotImplementedError("Expected nDims >= 2; recieved "+str(nDims))
             
         uniqueCoords = [np.unique(c) for c in coordMeshTuple]
         
@@ -1062,18 +1097,28 @@ class SurfaceUtils:
     def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False,eneg=0,
                                returnIndices=False):
         """
-        
+        Finds points on grid nearest to points of energy eneg
 
         Parameters
         ----------
-        returnAllPoints : TYPE, optional
-            DESCRIPTION. The default is False.
+        coordMeshTuple : tuple of np.ndarrays
+            The grid. Taken as output of np.meshgrid
+        potArr : np.ndarray
+            The energy on the grid
+        returnAllPoints : bool, optional
+            Whether to return all indices. The default is False, in which case
+            only the connected contour with the most points is returned
+        eneg : float, optional
+            The energy to end at. The default is 0
+        returnIndices : bool, optional
+            Whether to return the indices of the gridpoints. The default is False
 
         Returns
         -------
-        allowedEndpoints : TYPE
-            DESCRIPTION.
-        allowedIndices : TYPE
+        allowedEndpoints : np.ndarray
+            The allowed endpoints
+        allowedIndices : np.ndarray
+            The indices for the endpoints. Only returned if returnIndices is True
 
         """
         if returnAllPoints:
@@ -1124,7 +1169,7 @@ def shift_func(func_in,shift=10**(-4)):
     """
     Shifts func_in output down by shift. Especially for use with interpolators 
     where the minimum of the interpolator may be a bit lower than the minimum of
-    the array.
+    the array
 
     Parameters
     ----------
@@ -1147,18 +1192,6 @@ def _get_correct_shape(gridPoints,arrToCheck):
     """
     Utility for automatically correcting the shape of an array, to deal with
     nonsense regarding np.meshgrid's default setup
-
-    Parameters
-    ----------
-    gridPoints : TYPE
-        DESCRIPTION.
-    arrToCheck : TYPE
-        DESCRIPTION.
-
-    Returns
-    -------
-    None.
-
     """
     defaultMeshgridShape = np.array([len(g) for g in gridPoints])
     possibleOtherShape = tuple(defaultMeshgridShape)
