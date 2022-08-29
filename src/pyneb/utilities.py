@@ -193,7 +193,7 @@ class TargetFunctions:
 
         :Maintainer: Eric
         '''
-
+        
         nPoints, nDims = path.shape
         
         if masses is None:
@@ -277,31 +277,25 @@ class TargetFunctions:
     @staticmethod
     def mep_default(points,potential,auxFunc=None):
         '''
-        #TODO
-        Essentially a wrapper function for the potential. Expected points to be 
-        a (nPts,nDim) matrix. Potential should be a function capable of returning 
-        a (nPts,nDim) matrix.
+        Wrapper to have standard form as other TargetFunctions. For finding the minimum energy path
 
         Parameters
         ----------
-        points : TYPE
-            DESCRIPTION.
-        potential : TYPE
-            DESCRIPTION.
-        auxFunc : TYPE, optional
-            DESCRIPTION. The default is None.
-
-        Raises
-        ------
-        ValueError
-            DESCRIPTION.
+        auxFunc : function or None (optional)
+            A placeholder function. The default is None
+        others : See :py:func:`action`
 
         Returns
         -------
-        energies : TYPE
-            DESCRIPTION.
-        auxEnergies : TYPE
-            DESCRIPTION.
+        energies : np.ndarray
+            The action along points
+        auxEnergies : np.ndarray (None)
+            If auxFunc is a function, is auxFunc evaluated at points. Else, is None
+        
+        Raises
+        ------
+        ValueError
+            See :py:func:`action`
             
         :Maintainer: Eric
         '''
@@ -324,19 +318,24 @@ class TargetFunctions:
         return energies, auxEnergies
 
 class GradientApproximations:
+    """
+    Class containing different gradient approximations for TargetFunctions
+    
+    Methods
+    -------
+    
+    Notes
+    -----
+    When calling a method of GradientApproximations, we always supply a member of
+    TargetFunctions, such as TargetFunctions.action. However, sometimes we
+    only want the gradient with respect to one term in the sum that makes up 
+    target_func. So, we map target_func to a function that evaluates exactly one component
+    in the sum. This mapping is defined in GradientApproximations.__init__
+
+    :Maintainer: Daniel
+    """
     def __init__(self):
         """
-        
-        When calling a method of GradientApproximations, we always supply a
-        target_func, such as TargetFunctions.action. However, sometimes we
-        only want the gradient wrt one term in the sum that makes up target_func.
-        So, we map target_func to a function that evaluates exactly one component
-        in the sum. This mapping is defined here.
-
-        Returns
-        -------
-        None.
-        
         :Maintainer: Daniel
         """
         self.targetFuncToComponentMap = \
@@ -345,7 +344,7 @@ class GradientApproximations:
     
     def discrete_element(self,mass,path,gradOfPes,dr,drp1,beff,beffp1,beffm1,pot,potp1,potm1):
         """
-        
+        #TODO: what is this calculating?
 
         Parameters
         ----------
@@ -390,10 +389,12 @@ class GradientApproximations:
             (beff*pot + beffp1*potp1)*dhatP1+\
             (beff*gradOfPes + pot*gradOfBeff)*(dnorm+dnormP1))
         return gradOfAction
+
     def discrete_sqr_action_grad_mp(self,path,potential,potentialOnPath,mass,massOnPath,\
-                                 target_func):
+                                    target_func):
         """
-        
+        #TODO: what is this calculating?
+
         Performs discretized action gradient, needs numerical PES still
         
         
@@ -432,7 +433,8 @@ class GradientApproximations:
     def discrete_sqr_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
                                  target_func):
         """
-        
+        #TODO: what is this calculating?
+
         Performs discretized action gradient, needs numerical PES still
         
         :Maintainer: Kyle
@@ -477,6 +479,7 @@ class GradientApproximations:
     def discrete_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
                                  target_func):
         """
+        #TODO: what is this calculating?
 
         Performs discretized action gradient, needs numerical PES still
 
@@ -525,6 +528,7 @@ class GradientApproximations:
     def discrete_action_grad_const(self,path,potential,potentialOnPath,mass,massOnPath,\
                             target_func):
         """
+        #TODO: what is this calculating?
         
         Performs discretized action gradient, needs numerical PES still
         
@@ -559,24 +563,17 @@ class GradientApproximations:
     def forward_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
                             target_func):
         """
-        Takes forwards finite difference approx of any action-like function.
-        See e.g. TargetFunctions.action. Note that the full action is computed
-        at every finite difference step.
+        Takes forwards finite difference gradient of any action-like functional
         
-        Does not return the gradient of the mass function, as that's not used 
-        elsewhere.
-
         Parameters
         ----------
-        path : ndarray
-            The path. Of shape (nPoints,nDims)
-        potential : -
-            As allowed in TargetFunctions.action
-        potentialOnPath : ndarray
+        path : np.ndarray
+            The path to evaluate the gradient along
+        potential : See :py:func:`action`
+        potentialOnPath : np.ndarray
             Potential on the path. Of shape (nPoints,).
-        mass : -
-            As allowed in TargetFunctions.action
-        massOnPath : ndarray or None
+        mass : See :py:func:`action`
+        massOnPath : np.ndarray or None
             Mass on path. If not None, of shape (nPoints,nDims,nDims).
         target_func : function
             Function whose gradient is being computed
@@ -584,7 +581,14 @@ class GradientApproximations:
         Returns
         -------
         gradOfAction : ndarray
+            The gradient of the action
         gradOfPes : ndarray
+            The gradient of the energy at each point in path
+
+        Notes
+        -----
+        The full action is computed at every finite difference step. Does not return the gradient 
+        of the mass function, as that's not used elsewhere
         
         :Maintainer: Daniel
         """
@@ -611,38 +615,26 @@ class GradientApproximations:
     def forward_action_component_grad(self,path,potential,potentialOnPath,mass,\
                                       massOnPath,target_func):
         """
-        Requires an approximation of the action that just sums up values along
+        Requires an approximation of the action that sums up values along
         the path, such as TargetFunctions.action. Then, this computes the
-        forwards finite difference approximation of every *term in the sum*.
+        forwards finite difference approximation of every term in the sum.
         
         Note the difference with GradientApproximations().forward_action_grad:
         there, the full action is computed for every step. Here, only the component
         at that step is computed.
-        
-        Does not return the gradient of the mass function, as that's not used 
-        elsewhere.
 
         Parameters
         ----------
-        path : ndarray
-            The path. Of shape (nPoints,nDims)
-        potential : function.
-            Must take as input an array of shape path.shape
-        potentialOnPath : ndarray
-            Potential on the path. Of shape (nPoints,).
-        mass : function or None
-        massOnPath : ndarray or None
-            Mass on path. If not None, of shape (nPoints,nDims,nDims).
         target_func : function
             Any term in TargetFunctions that is the sum of some constituent
             terms (e.g. TargetFunctions.action). Uses target_func.__name__
             to select the gradient of a term in the sum, such as 
-            TargetFunctions.term_in_action_sum
+            TargetFunctions._term_in_action_sum
+        others : See :py:func:`forward_action_grad`
 
         Returns
         -------
-        gradOfAction : ndarray
-        gradOfPes : ndarray
+        See :py:func:`forward_action_grad`
         
         :Maintainer: Daniel
         """
