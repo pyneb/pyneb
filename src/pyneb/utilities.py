@@ -1546,48 +1546,55 @@ class PositiveSemidefInterpolator:
         """
         self.nDims = len(gridPoints)
         self.gridPoints = gridPoints
-        
-        #Stupid case for nDims == 1. For higher dimensions, pass through
-        #NDInterpWithBoundary in components individually
-        if self.nDims != 2:
-            raise NotImplementedError
+        self.ndInterpKWargs = ndInterpKWargs
         
         #Standard error checking
         assert len(listOfVals) == int(self.nDims*(self.nDims+1)/2)
         
         self.gridValsList = [_get_correct_shape(gridPoints,l) for l in listOfVals]
         
+        if self.nDims == 2:
+            self._construct_interps_2d()
+            self._call = self._call_2d
+        elif self.nDims > 2:
+            warnings.warn("Interpolation for D > 2 not positive semidefinite")
+            self._construct_interps_nd()
+            self._call = self._call_nd
+        else:
+            raise NotImplementedError
+        
+    def _construct_interps_2d(self):
+        """
+        Takes eigen decomposition of matrix, and interpolates the eigenvalues
+        and unique component of the eigenvectors using NDInterpWithBoundary
+        """
         #Taking shortcuts because I only care about D=2 right now
         self.gridVals = np.stack((np.stack((self.gridValsList[0],self.gridValsList[1])),\
                                   np.stack((self.gridValsList[1],self.gridValsList[2]))))
         self.gridVals = np.moveaxis(self.gridVals,[0,1],[2,3])
         
-        self.eigenVals, self.eigenVecs = np.linalg.eig(self.gridVals)
-        thetaVals = np.arccos(self.eigenVecs[:,:,0,0])
+        eigenVals, eigenVecs = np.linalg.eig(self.gridVals)
+        thetaVals = np.arccos(eigenVecs[:,:,0,0])
         
         #Constructing interpolators
-        self.eigenValInterps = [NDInterpWithBoundary(self.gridPoints,e,**ndInterpKWargs)\
-                                for e in self.eigenVals.T]
-        self.eigenVecInterp = NDInterpWithBoundary(self.gridPoints,thetaVals,**ndInterpKWargs)
+        self._eigenValInterps = [NDInterpWithBoundary(self.gridPoints,e,**self.ndInterpKWargs)\
+                                 for e in eigenVals.T]
+        self._eigenVecInterp = NDInterpWithBoundary(self.gridPoints,thetaVals,**self.ndInterpKWargs)
         
-    def __call__(self,points):
+        return None
+        
+    def _construct_interps_nd(self):
         """
-        Evaluates the interpolator
-
-        Parameters
-        ----------
-        points : np.ndarray
-            The points to evaluate at
-
-        Raises
-        ------
-        ValueError
-            If points is not the correct number of dimensions
-
-        Returns
-        -------
-        np.ndarray
-            The function evaluation
+        Interpolates unique components of the inertia using NDInterpWithBoundary
+        """
+        self._componentInterps = [NDInterpWithBoundary(self.gridPoints,m,**self.ndInterpKWargs)\
+                                  for m in self.gridValsList]
+        
+        return None
+    
+    def _call_2d(self,points):
+        """
+        Evaluates the interpolator in 2 dimensions
         """
         originalShape = points.shape[:-1]
         if originalShape == ():
@@ -1600,8 +1607,8 @@ class PositiveSemidefInterpolator:
             
         points = points.reshape((-1,self.nDims))
         
-        eigenVals = [e(points) for e in self.eigenValInterps]
-        theta = self.eigenVecInterp(points)
+        eigenVals = [e(points) for e in self._eigenValInterps]
+        theta = self._eigenVecInterp(points)
         
         ct = np.cos(theta)
         st = np.sin(theta)
@@ -1619,85 +1626,43 @@ class PositiveSemidefInterpolator:
                 
         return ret.reshape(originalShape+(2,2))
     
-def mass_funcs_to_array_func(dictOfFuncs,uniqueKeys):
-    """
-    Formats a collection of functions for use in computing the inertia tensor.
-    Assumes the inertia tensor is symmetric
+    def _call_nd(self,points):
+        """
+        Evaluates the interpolator in D>2 dimensions
+        """
+        evaluatedComponents = [f(points) for f in self._componentInterps]
+        
+        ret = np.zeros(points.shape[:-1]+(self.nDims,self.nDims))
+        
+        upperTriInds = np.triu_indices(self.nDims)
+        
+        sliceTuple = (ret.ndim-2)*(slice(None),)
+        for (evalIter,evalArr) in enumerate(evaluatedComponents):
+            rowIter = upperTriInds[0][evalIter]
+            colIter = upperTriInds[1][evalIter]
+            
+            ret[sliceTuple+(rowIter,colIter)] = evalArr
+            #Symmetrizing
+            ret[sliceTuple+(colIter,rowIter)] = evalArr
+            
+        return ret
     
-    Parameters
-    ----------
-    dictOfFuncs : dict
-        Contains functions for each component of the inertia tensor
-        
-    uniqueKeys : list
-        Labels the unique coordinates of the inertia tensor, in the order they
-        are used in the inertia. For instance, if one uses (q20, q30) as the 
-        coordinates in this order, one should feed in ['20','30'], and the
-        inertia will be reshaped as
-        
-                    [[M_{20,20}, M_{20,30}]
-                     [M_{30,20}, M_{30,30}]].
-                    
-        Contrast this with feeding in ['30','20'], in which the inertia will
-        be reshaped as
-        
-                    [[M_{30,30}, M_{30,20}]
-                     [M_{20,30}, M_{20,20}]].
+    def __call__(self,points):
+        """
+        Evaluates the matrix at points
 
-    Raises
-    ------
-    ValueError
-        If the number of functions supplied is not the expected number
-        for D collective coordinates
+        Parameters
+        ----------
+        points : np.ndarray
+            The evaluation location
 
-    Returns
-    -------
-    func_out : function
-        The inertia tensor. Can be called as func_out(coords)
-        
-    :Maintainer: Daniel
-    """
-    nDims = len(uniqueKeys)
-    pairedKeys = np.array([c1+c2 for c1 in uniqueKeys for c2 in uniqueKeys]).reshape(2*(nDims,))
-    dictKeys = np.zeros(pairedKeys.shape,dtype=object)
-    
-    for (idx, key) in np.ndenumerate(pairedKeys):
-        for dictKey in dictOfFuncs.keys():
-            if key in dictKey:
-                dictKeys[idx] = dictKey
-                
-    nFilledKeys = np.count_nonzero(dictKeys)
-    nExpectedFilledKeys = nDims*(nDims+1)/2
-    if nFilledKeys != nExpectedFilledKeys:
-        raise ValueError("Expected "+str(nExpectedFilledKeys)+" but found "+\
-                         str(nFilledKeys)+" instead. dictKeys = "+str(dictKeys))
-    
-    def func_out(coords):
-        originalShape = coords.shape[:-1]
-        if originalShape == ():
-            originalShape = (1,)
-        
-        if coords.shape[-1] != nDims:
-            raise ValueError("The requested sample points have dimension "
-                             "%d, but this NDInterpWithBoundary expects "
-                             "dimension %d" % (coords.shape[-1], nDims))
-        
-        coords = coords.reshape((-1,nDims))
-        
-        nPoints = coords.shape[0]
-        outVals = np.zeros((nPoints,)+2*(nDims,))
-        
-        #Mass array is always 2D
-        for iIter in range(nDims):
-            for jIter in np.arange(iIter,nDims):
-                key = dictKeys[iIter,jIter]
-                fEvals = dictOfFuncs[key](coords)
-                
-                outVals[:,iIter,jIter] = fEvals
-                outVals[:,jIter,iIter] = fEvals
-                
-        return outVals.reshape(originalShape+2*(nDims,))
-    return func_out
+        Returns
+        -------
+        np.ndarray
+            The evaluated array
+
+        """
+        return self._call(points)
 
 class InterpolatedPath:
     """
