@@ -301,7 +301,7 @@ class MinimumEnergyPath:
     def __init__(self,potential,nPts,nDims,endpointSpringForce=True,\
                  endpointHarmonicForce=True,auxFunc=None,\
                  target_func=TargetFunctions.mep_default,\
-                 target_func_grad=potential_central_grad,nebParams={},\
+                 target_func_grad=GradientApproximations().mep_default,nebParams={},\
                  logLevel=1,loggerSettings={}):
         """
         Parameters
