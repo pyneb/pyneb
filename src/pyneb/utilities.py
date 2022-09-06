@@ -917,40 +917,6 @@ class SurfaceUtils:
             
         return minIndsOut
     
-    def find_all_local_maximum(arr):
-        """
-        
-        Parameters
-        ----------
-        arr : Numpy array
-            A D-dimensional array.
-    
-        Returns
-        -------
-        maxIndsOut : Tuple of numpy arrays
-            D arrays of length k, for k maxima found
-    
-        :Maintainer: Eric
-        """
-        warnings.warn("May be removed from code base, depending on usage",DeprecationWarning)
-
-        neighborhood = morphology.generate_binary_structure(len(arr.shape),1)
-        #Test case was giving floating-point differences along the outer edge of
-        #the array
-        local_max = np.isclose(filters.maximum_filter(arr, footprint=neighborhood,\
-                                                      mode="nearest"),arr,atol=10**(-15))
-        
-        background = (arr==0)
-        eroded_background = morphology.binary_erosion(background,\
-                                                      structure=neighborhood,\
-                                                      border_value=1)
-            
-        detected_maxima = local_max ^ eroded_background
-        allMaxInds = np.vstack(local_max.nonzero())
-        maxIndsOut = tuple([allMaxInds[coordIter,:] for \
-                            coordIter in range(allMaxInds.shape[0])])
-        return maxIndsOut
-    
     @staticmethod
     def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
         """
