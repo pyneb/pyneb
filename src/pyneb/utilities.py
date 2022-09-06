@@ -388,7 +388,7 @@ class GradientApproximations:
         :Maintainer: Kyle
         """
         eps = fdTol
-        gradOfBeff = beff_grad(mass,path,dr,eps=eps)
+        gradOfBeff = self._beff_grad(mass,path,dr,eps=eps)
         dnorm=np.linalg.norm(dr)
         dnormP1=np.linalg.norm(drp1)
         dhat = dr/dnorm
@@ -420,7 +420,7 @@ class GradientApproximations:
         nPts, nDims = path.shape
         
         #Build grad of potential
-        gradOfPes = midpoint_grad(potential,path,eps=eps)
+        gradOfPes = self._midpoint_grad(potential,path,eps=eps)
 
         dr[1:,:] = np.array([path[ptIter] - path[ptIter-1] \
                                for ptIter in range(1,nPts)])
@@ -459,7 +459,7 @@ class GradientApproximations:
         nPts, nDims = path.shape
         
         #Build grad of potential
-        gradOfPes = midpoint_grad(potential,path,eps=eps)
+        gradOfPes = self._midpoint_grad(potential,path,eps=eps)
         
         dr[1:,:] = np.array([path[ptIter] - path[ptIter-1] \
                                for ptIter in range(1,nPts)])
@@ -468,7 +468,7 @@ class GradientApproximations:
         
         if mass is not None:
             for ptIter in range(1,nPts-1):
-                gradOfBeff[ptIter] = beff_grad(mass,path[ptIter],dr[ptIter],eps=eps)
+                gradOfBeff[ptIter] = self._beff_grad(mass,path[ptIter],dr[ptIter],eps=eps)
         
         for ptIter in range(1,nPts-1):
             beff[ptIter+1] = np.dot(np.dot(massOnPath[ptIter+1],dr[ptIter+1]),dr[ptIter+1])/np.sum(dr[ptIter+1,:]**2)
@@ -505,7 +505,7 @@ class GradientApproximations:
         nPts, nDims = path.shape
 
         #Build grad of potential
-        gradOfPes = midpoint_grad(potential,path,eps=eps)
+        gradOfPes = self._midpoint_grad(potential,path,eps=eps)
 
         dr[1:,:] = np.array([path[ptIter] - path[ptIter-1] \
                                for ptIter in range(1,nPts)])
@@ -514,7 +514,7 @@ class GradientApproximations:
 
         for ptIter in range(1,nPts-1):
 
-            gradOfBeff[ptIter] = beff_grad(mass,path[ptIter],dr[ptIter],eps=eps)
+            gradOfBeff[ptIter] = self._beff_grad(mass,path[ptIter],dr[ptIter],eps=eps)
 
             beff[ptIter+1] = np.dot(np.dot(massOnPath[ptIter+1],dr[ptIter+1]),dr[ptIter+1])/np.sum(dr[ptIter+1,:]**2)
 
@@ -553,7 +553,7 @@ class GradientApproximations:
         actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
 
         # build gradOfAction and gradOfPes (constant mass)
-        gradOfPes = midpoint_grad(potential,path,eps=eps)
+        gradOfPes = self._midpoint_grad(potential,path,eps=eps)
         for ptIter in range(1,nPts-1):
 
             dnorm=np.linalg.norm(path[ptIter] - path[ptIter-1])
@@ -688,103 +688,94 @@ class GradientApproximations:
             gradOfPes[-1,dimIter] = (potAtStep - potentialOnPath[-1])/eps
             
         return gradOut, gradOfPes
-
-def potential_central_grad(points,potential,auxFunc=None):
-    '''
-    Used in MEP for force updates. There, one only needs the gradient of the
-    PES.
-
-    Parameters
-    ----------
-    points : TYPE
-        DESCRIPTION.
-    potential : TYPE
-        DESCRIPTION.
-    auxFunc : TYPE, optional
-        DESCRIPTION. The default is None.
-
-    Returns
-    -------
-    gradPES : TYPE
-        DESCRIPTION.
-    gradAux : TYPE
-        DESCRIPTION.
     
-    :Maintainer: Eric
-    '''
-    warnings.warn("Likely to be moved to GradientApproximations.mep_grad",DeprecationWarning)
-    h = 10**(-8)
-    ## check if it is a scalar is done inside midpoint_grad
-    gradPES = midpoint_grad(potential,points,eps=h)
-    if auxFunc is None:
-        gradAux = None
-    else: 
-        gradAux = midpoint_grad(auxFunc,points,eps=h)
-    return gradPES, gradAux
-
-def midpoint_grad(func,points,eps=10**(-8)):
-    """
-    TODO: allow for arbitrary shaped outputs, for use with inertia tensor
-    TODO: maybe only have one gradient approx ever
-    
-    Midpoint finite difference. Probably best if not used with actual DFT calculations,
-        vs a forwards/reverse finite difference
-    Assumes func only depends on a single point (vs the action, which depends on
-          all of the points)
-    
-    :Maintainer: Eric
-    """
-    warnings.warn("Likely to be moved to GradientApproximations._midpoint_grad",DeprecationWarning)
-    if len(points.shape) == 1:
-        points = points.reshape((1,-1))
-    nPoints, nDims = points.shape
-    gradOut = np.zeros((nPoints,nDims))
-    for dimIter in range(nDims):
-        step = np.zeros(nDims)
-        step[dimIter] = 1
+    def _midpoint_grad(self,func,points,eps=fdTol):
+        """
+        Midpoint finite difference. Probably best if not used with actual DFT calculations,
+            vs a forwards/reverse finite difference
+        Assumes func only depends on a single point (vs the action, which depends on
+              all of the points)
         
-        forwardStep = points + eps/2*step
-        backwardStep = points - eps/2*step
+        :Maintainer: Eric
+        """
+        if len(points.shape) == 1:
+            points = points.reshape((1,-1))
+        nPoints, nDims = points.shape
+        gradOut = np.zeros((nPoints,nDims))
+        for dimIter in range(nDims):
+            step = np.zeros(nDims)
+            step[dimIter] = 1
+            
+            forwardStep = points + eps/2*step
+            backwardStep = points - eps/2*step
+            
+            forwardEval = func(forwardStep)
+            backwardEval = func(backwardStep)
+
+            gradOut[:,dimIter] = (forwardEval-backwardEval)/eps
         
-        forwardEval = func(forwardStep)
-        backwardEval = func(backwardStep)
-
-        gradOut[:,dimIter] = (forwardEval-backwardEval)/eps
+        return gradOut
     
-    return gradOut
+    def _beff_grad(self,func,points,dr,eps=fdTol):
+        """
+        Midpoint finite difference of B_eff mass.
+        
+        :Maintainer: Kyle
+        """
+        if len(points.shape) == 1:
+            points = points.reshape((1,-1))
+            #dr = dr.reshape((1,-1))
+        nPoints, nDims = points.shape
 
-def beff_grad(func,points,dr,eps=10**(-8)):
-    """
-    Midpoint finite difference of B_eff mass.
-    TODO: can this be lumped into a better midpoint_grad?
-    :Maintainer: Kyle
-    """
-    warnings.warn("Likely to be lumped into midpoint_grad, once generalized by shape",DeprecationWarning)
-    if len(points.shape) == 1:
-        points = points.reshape((1,-1))
-        #dr = dr.reshape((1,-1))
-    nPoints, nDims = points.shape
+        gradOut = np.zeros((nPoints,nDims))
 
-    gradOut = np.zeros((nPoints,nDims))
+        ds = np.sum(dr[:]**2)
 
-    ds = np.sum(dr[:]**2)
+        for dimIter in range(nDims):
+            step = np.zeros(nDims)
+            step[dimIter] = 1
 
-    for dimIter in range(nDims):
-        step = np.zeros(nDims)
-        step[dimIter] = 1
+            forwardStep = points + eps/2*step
+            backwardStep = points - eps/2*step
 
-        forwardStep = points + eps/2*step
-        backwardStep = points - eps/2*step
+            massP1 = func(forwardStep)
+            massM1 = func(backwardStep)
 
-        massP1 = func(forwardStep)
-        massM1 = func(backwardStep)
+            forwardEval = np.dot(np.dot(massP1,dr),dr)/ds
+            backwardEval = np.dot(np.dot(massM1,dr),dr)/ds
 
-        forwardEval = np.dot(np.dot(massP1,dr),dr)/ds
-        backwardEval = np.dot(np.dot(massM1,dr),dr)/ds
+            gradOut[:,dimIter] = (forwardEval-backwardEval)/eps 
+        return gradOut
+    
+    def mep_default(self,points,potential,auxFunc=None):
+        '''
+        Used in MEP for force updates. There, one only needs the gradient of the
+        PES.
 
-        gradOut[:,dimIter] = (forwardEval-backwardEval)/eps 
-    return gradOut
+        Parameters
+        ----------
+        points : TYPE
+            DESCRIPTION.
+        potential : TYPE
+            DESCRIPTION.
+        auxFunc : TYPE, optional
+            DESCRIPTION. The default is None.
 
+        Returns
+        -------
+        gradPES : TYPE
+            DESCRIPTION.
+        gradAux : TYPE
+            DESCRIPTION.
+        
+        :Maintainer: Eric
+        '''
+        gradPES = self._midpoint_grad(potential,points,eps=fdTol)
+        if auxFunc is None:
+            gradAux = None
+        else: 
+            gradAux = self._midpoint_grad(auxFunc,points,eps=fdTol)
+        return gradPES, gradAux
 
 class SurfaceUtils:
     """
