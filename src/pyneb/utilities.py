@@ -1464,7 +1464,7 @@ class NDInterpWithBoundary:
     
 class PositiveSemidefInterpolator:
     """
-    Interpolates a positive semidefinite function in two dimensions. Takes
+    Interpolates a positive semidefinite function in D dimensions. Takes
     eigenvalue decomposition, interpolates eigenvalues and unique components
     of eigenvectors using NDInterpWithBoundary, and truncates eigenvalues at 0
 
@@ -1475,7 +1475,8 @@ class PositiveSemidefInterpolator:
 
     Notes
     -----
-    Interpolator for D > 2 is intended but not implemented
+    Interpolator for D > 2 is not positive semidefinite, although it is
+    symmetric. Is intended to be PSD, sometime in the future
     """
     def __init__(self,gridPoints,listOfVals,ndInterpKWargs={}):
         """
