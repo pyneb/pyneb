@@ -909,7 +909,8 @@ class SurfaceUtils:
         return minIndsOut
     
     @staticmethod
-    def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False):
+    def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False,
+                                  returnAsArr=True):
         """
         Finds 2D contours of energy eneg on a D-dimensional surface
 
@@ -950,7 +951,7 @@ class SurfaceUtils:
         fig, ax = plt.subplots()
         
         if nDims == 1:
-            raise NotImplementedError("Why are you looking at D=1?")
+            raise NotImplementedError
         elif nDims == 2:
             allContours = np.zeros(1,dtype=object)
             if show:
@@ -965,14 +966,35 @@ class SurfaceUtils:
             for ind in possibleInds:
                 meshInds = 2*(slice(None),) + tuple(ind)
                 localMesh = (coordMeshTuple[0][meshInds],coordMeshTuple[1][meshInds])
-                # print(localMesh)
-                allContours[tuple(ind)] = \
-                    ax.contour(*localMesh,zz[meshInds],levels=[eneg]).allsegs[0]
+                zzCorrectShape = _get_correct_shape(tuple(np.unique(c) for c in localMesh),
+                                                    zz[meshInds])
+                # allContours[tuple(ind)] = \
+                #     ax.contour(*localMesh,zzCorrectShape,levels=[eneg]).allsegs[0]
+                contoursOnLevel = ax.contour(*localMesh,zzCorrectShape,levels=[eneg]).allsegs[0]
+                
+                levelValues = np.array([np.unique(c[meshInds]) for c in coordMeshTuple[2:]]).flatten()
+                contoursWithLevel = []
+                for c in contoursOnLevel:
+                    cOut = np.zeros((c.shape[0],nDims))
+                    cOut[:,:2] = c
+                    
+                    for (lIter,l) in enumerate(levelValues):
+                        cOut[:,lIter+2] = l
+                    contoursWithLevel.append(cOut)
+                allContours[tuple(ind)] = contoursWithLevel
+                
             if show:
                 plt.show(fig)
                 
         if not show:
             plt.close(fig)
+        
+        if returnAsArr:
+            listOfConts = []
+            for c in allContours:
+                for subC in c:
+                    listOfConts.append(subC)
+            allContours = np.vstack(listOfConts)
         
         return allContours
     
@@ -1012,6 +1034,7 @@ class SurfaceUtils:
 
         """        
         nDims = len(coordMeshTuple)
+        print(ptsArr.shape)
         if nDims < 2:
             raise NotImplementedError("Expected nDims >= 2; recieved "+str(nDims))
             
@@ -1019,7 +1042,8 @@ class SurfaceUtils:
         
         if ptsArr.shape == (nDims,):
             ptsArr = ptsArr.reshape((1,nDims))
-        
+
+        print(coordMeshTuple[0].shape)
         if ptsArr.shape[1] != nDims:
             raise ValueError("ptsArr.shape = "+str(ptsArr.shape)+\
                              "; second dimension should be nDims, "+str(nDims))
@@ -1094,11 +1118,12 @@ class SurfaceUtils:
         
         allowedEndpoints = np.zeros((0,nDims))
         allowedIndices = np.zeros((0,nDims),dtype=int)
-        
+        print(allContours)
         for contOnLevel in allContours:
             gridContOnLevel = []
             gridIndsOnLevel = []
             for cont in contOnLevel:
+                print(cont)
                 locGridInds, locGridVals = \
                     SurfaceUtils.round_points_to_grid(coordMeshTuple,cont)
                 
@@ -1242,7 +1267,8 @@ class NDInterpWithBoundary:
         if self.nDims < 2:
             raise NotImplementedError("Expected nDims >= 2")
         
-        bdyHandlerFuncs = {"exponential":self._exp_boundary_handler}
+        bdyHandlerFuncs = {"exponential":self._exp_boundary_handler,
+                           None:self._identity_boundary_handler}
         if boundaryHandler not in bdyHandlerFuncs.keys():
             raise ValueError("boundaryHandler '%s' is not defined" % boundaryHandler)
         
@@ -1448,6 +1474,9 @@ class NDInterpWithBoundary:
         result = valAtNearest*np.exp(np.sqrt(dist))
         return result
     
+    def _identity_boundary_handler(self,point,isInBounds):
+        return self._call(point)
+    
     def _identity_transform_function(self,normalEvaluation):
         """
         Returns normal evaluation. Not sure if it's faster to have this dummy
@@ -1460,7 +1489,7 @@ class NDInterpWithBoundary:
         """
         A smooth approximation of the absolute value of the energy
         """
-        return np.sqrt(normalEvaluation**2 + 10**(-4))
+        return np.sqrt(normalEvaluation**2 + 10**(-8))
     
 class PositiveSemidefInterpolator:
     """
