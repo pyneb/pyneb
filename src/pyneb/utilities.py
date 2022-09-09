@@ -1034,7 +1034,7 @@ class SurfaceUtils:
 
         """        
         nDims = len(coordMeshTuple)
-        print(ptsArr.shape)
+        
         if nDims < 2:
             raise NotImplementedError("Expected nDims >= 2; recieved "+str(nDims))
             
@@ -1043,7 +1043,6 @@ class SurfaceUtils:
         if ptsArr.shape == (nDims,):
             ptsArr = ptsArr.reshape((1,nDims))
 
-        print(coordMeshTuple[0].shape)
         if ptsArr.shape[1] != nDims:
             raise ValueError("ptsArr.shape = "+str(ptsArr.shape)+\
                              "; second dimension should be nDims, "+str(nDims))
@@ -1114,16 +1113,16 @@ class SurfaceUtils:
         
         potArr = _get_correct_shape(uniqueCoords,potArr)
         
-        allContours = SurfaceUtils.find_approximate_contours(coordMeshTuple,potArr,eneg=eneg)
+        allContours = SurfaceUtils.find_approximate_contours(coordMeshTuple,potArr,
+                                                             eneg=eneg,returnAsArr=False)
         
         allowedEndpoints = np.zeros((0,nDims))
         allowedIndices = np.zeros((0,nDims),dtype=int)
-        print(allContours)
+        
         for contOnLevel in allContours:
             gridContOnLevel = []
             gridIndsOnLevel = []
             for cont in contOnLevel:
-                print(cont)
                 locGridInds, locGridVals = \
                     SurfaceUtils.round_points_to_grid(coordMeshTuple,cont)
                 
