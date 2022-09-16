@@ -351,18 +351,18 @@ class MinimumEnergyPath:
         for key in nebParams.keys():
             setattr(self,key,nebParams[key])
         self.nebParams = nebParams
-            
+        
         if isinstance(endpointSpringForce,bool):
             endpointSpringForce = 2*(endpointSpringForce,)
-        if not isinstance(endpointSpringForce,tuple):
+        if not isinstance(endpointSpringForce,(tuple,list)):
             raise ValueError("Unknown value "+str(endpointSpringForce)+\
                              " for endpointSpringForce")
                 
         if isinstance(endpointHarmonicForce,bool):
             endpointHarmonicForce = 2*(endpointHarmonicForce,)
-        if not isinstance(endpointHarmonicForce,tuple):
+        if not isinstance(endpointHarmonicForce,(tuple,list)):
             raise ValueError("Unknown value "+str(endpointHarmonicForce)+\
-                             " for endpointSpringForce")
+                             " for endpointHarmonicForce")
         
         self.potential = potential
         self.auxFunc = auxFunc
