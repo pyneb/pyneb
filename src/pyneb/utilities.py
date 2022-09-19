@@ -1175,15 +1175,19 @@ def shift_func(func_in,shift=10**(-4)):
         return func_in(coords) - shift
     return func_out
 
-def _get_correct_shape(gridPoints,arrToCheck):
+def _get_correct_shape(gridPoints,arrToCheck,normalOrder=True):
     """
     Utility for automatically correcting the shape of an array, to deal with
     nonsense regarding np.meshgrid's default setup
     """
+    
     defaultMeshgridShape = np.array([len(g) for g in gridPoints])
     possibleOtherShape = tuple(defaultMeshgridShape)
     defaultMeshgridShape[[1,0]] = defaultMeshgridShape[[0,1]]
     defaultMeshgridShape = tuple(defaultMeshgridShape)
+    
+    if not normalOrder: #Not compliant with np.meshgrid, as in NDInterpWithBoundary for D = 3
+        defaultMeshgridShape, possibleOtherShape = possibleOtherShape, defaultMeshgridShape
     
     isSquare = False
     if defaultMeshgridShape[0] == defaultMeshgridShape[1]:
@@ -1290,7 +1294,6 @@ class NDInterpWithBoundary:
         self.symmExtend = symmExtend
         
         self.gridPoints = tuple([np.asarray(p) for p in gridPoints])
-        self.gridVals = _get_correct_shape(gridPoints,gridVals)
         
         for i, p in enumerate(gridPoints):
             if not np.all(np.diff(p) > 0.):
@@ -1298,9 +1301,11 @@ class NDInterpWithBoundary:
                                  "ascending" % i)
         
         if self.nDims == 2:
+            self.gridVals = _get_correct_shape(gridPoints,gridVals)
             self.rbv = RectBivariateSpline(*gridPoints,self.gridVals.T,**splKWargs)
             self._call = self._call_2d
         else:
+            self.gridVals = _get_correct_shape(gridPoints,gridVals,normalOrder=False)
             self._call = self._call_nd
             
         postEvalDict = {"identity":self._identity_transform_function,
@@ -1540,13 +1545,13 @@ class PositiveSemidefInterpolator:
         #Standard error checking
         assert len(listOfVals) == int(self.nDims*(self.nDims+1)/2)
         
-        self.gridValsList = [_get_correct_shape(gridPoints,l) for l in listOfVals]
-        
         if self.nDims == 2:
+            self.gridValsList = [_get_correct_shape(gridPoints,l) for l in listOfVals]
             self._construct_interps_2d()
             self._call = self._call_2d
         elif self.nDims > 2:
             warnings.warn("Interpolation for D > 2 not positive semidefinite")
+            self.gridValsList = [_get_correct_shape(gridPoints,l,normalOrder=False) for l in listOfVals]
             self._construct_interps_nd()
             self._call = self._call_nd
         else:
