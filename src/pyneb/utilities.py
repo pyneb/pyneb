@@ -947,6 +947,8 @@ class SurfaceUtils:
 
         """
         nDims = len(coordMeshTuple)
+        uniqueCoords = [np.unique(c) for c in coordMeshTuple]
+        coordMeshTuple = np.meshgrid(*uniqueCoords)
         
         fig, ax = plt.subplots()
         
@@ -968,8 +970,7 @@ class SurfaceUtils:
                 localMesh = (coordMeshTuple[0][meshInds],coordMeshTuple[1][meshInds])
                 zzCorrectShape = _get_correct_shape(tuple(np.unique(c) for c in localMesh),
                                                     zz[meshInds])
-                # allContours[tuple(ind)] = \
-                #     ax.contour(*localMesh,zzCorrectShape,levels=[eneg]).allsegs[0]
+                
                 contoursOnLevel = ax.contour(*localMesh,zzCorrectShape,levels=[eneg]).allsegs[0]
                 
                 levelValues = np.array([np.unique(c[meshInds]) for c in coordMeshTuple[2:]]).flatten()
@@ -1039,6 +1040,7 @@ class SurfaceUtils:
             raise NotImplementedError("Expected nDims >= 2; recieved "+str(nDims))
             
         uniqueCoords = [np.unique(c) for c in coordMeshTuple]
+        coordMeshTuple = np.meshgrid(*uniqueCoords)
         
         if ptsArr.shape == (nDims,):
             ptsArr = ptsArr.reshape((1,nDims))
@@ -1110,6 +1112,7 @@ class SurfaceUtils:
         
         nDims = len(coordMeshTuple)
         uniqueCoords = [np.unique(c) for c in coordMeshTuple]
+        coordMeshTuple = np.meshgrid(*uniqueCoords)
         
         potArr = _get_correct_shape(uniqueCoords,potArr)
         
