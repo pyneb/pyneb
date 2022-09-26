@@ -235,24 +235,6 @@ class LoadForceLogger:
             setattr(self,dset,np.array(h5File[dset]))
         
         h5File.close()
-        
-class LoadForceLog(LoadForceLogger):
-    def __init__(self,file):
-        warnings.warn("Deprecating LoadForceLog in favor of LoadForceLogger")
-        LoadForceLogger.__init__(self,file)
-        
-class VerletLogger:
-    def __init__(self,vltInst,logLevel):
-        self.logLevel = logLevel
-        if self.logLevel not in [0,1]:
-            raise ValueError("VerletLogger logLevel "+str(self.logLevel)+\
-                             " not allowed.")
-                
-class NDInterpLogger:
-    def __init__(self):
-        raise NotImplementedError
-        #TODO: add logger when the class is instantiated. Then, e.g. ForceLogger
-        #can point to these files
 
 class DijkstraLogger:
     def __init__(self,djkInst,logLevel=1,fName=None):

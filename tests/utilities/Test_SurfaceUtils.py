@@ -166,7 +166,8 @@ class find_endpoints_on_grid_(unittest.TestCase):
         initialPoint = np.array([2.,0.])
         
         allowedEndpoints, endpointIndices = \
-            SurfaceUtils.find_endpoints_on_grid(coordMeshTuple,zz,returnAllPoints=True)
+            SurfaceUtils.find_endpoints_on_grid(coordMeshTuple,zz,returnAllPoints=True,
+                                                returnIndices=True)
         
         lineEndpoints = np.array([[-1.9,i] for i in y])
         #Validated by looking at contours (from contourf) and how they round
@@ -208,7 +209,7 @@ class find_endpoints_on_grid_(unittest.TestCase):
         initialPoint = np.array([2.,0.])
         
         allowedEndpoints, endpointIndices = \
-            SurfaceUtils.find_endpoints_on_grid(coordMeshTuple,zz)
+            SurfaceUtils.find_endpoints_on_grid(coordMeshTuple,zz,returnIndices=True)
         
         #Same test as test_2d_return_all_points, but the only points to be returned
         #are the line, as those are the largest set

@@ -1,9 +1,5 @@
-#Appears to be common/best practice to import required packages in every file
-#they are used in
 import numpy as np
 
-#For ND interpolation
-# from scipy.interpolate import interpnd, RectBivariateSpline
 import itertools
 
 from scipy.integrate import solve_bvp
@@ -16,18 +12,61 @@ import warnings
 from utilities import *
 from fileio import *
 
-"""
-CONVENTIONS:
-    -Paths should be of shape (nPoints, nDimensions)
-    -Functions (e.g. a potential) that take in a single point should assume the
-        first index of the array iterates over the points
-    -Similarly, functions (e.g. the action) that take in many points should also
-        assume the first index iterates over the points
-"""
-    
 class LeastActionPath:
     """
-    class documentation...?
+    Computes the net force on a band, when minimizing an action-type functional,
+    of the form
+    
+    $$ S = \int_{s_0}^{s_1} \sqrt{2 M_{ij}\dot{x}_i\dot{x}_j E(x(s))} ds. $$
+    
+    Can be generalized to functionals of the form
+    
+    $$ S = \int_{s_0}^{s_1} f(s) ds $$
+    
+    by choosing target_func differently. A common example is minimizing
+    
+    $$ S = \int_{s_0}^{s_1} M_{ij}\dot{x}_i\dot{x}_j E(x(s)) ds, $$
+    
+    with no square root inside of the integral.
+    
+    Attributes
+    ----------
+    potential : function
+        Evaluates the energy along the path
+    nPts : int
+        The number of images in the path (path.shape[0])
+    nDims : int
+        The number of coordinates (path.shape[1])
+    mass : function
+        Evaluates the metric tensor M_{ij}
+    endpointSpringForce : bool or list of bools
+        Whether to turn on the endpoint spring force. Can be controlled for
+        both endpoints individually. The elements correspond to the first and 
+        the last endpoint
+    endpointHarmonicForce : bool or list of bools
+        The same as endpointSpringForce, except for the harmonic force term. Disabling
+        both forces keeps an endpoint fixed
+    target_func : function
+        The functional to be minimized
+    target_func_grad : function
+        The approximation of the gradient of target_func
+    logger : instance of fileio.ForceLogger
+        Handles storing data collected during run
+    nebParams : dict
+        Contains the spring and harmonic force strengths, and the energy
+        the endpoints are constrained to. Maintained for compatibility with
+        self.logger
+    k : float
+        The spring force parameter
+    kappa : float
+        The harmonic force parameter
+    constraintEneg : float
+        The energy the endpoints are constrained to
+    
+    Methods
+    -------
+    compute_force(points)
+        Computes the net force at every point in points
     
     :Maintainer: Daniel
     """
@@ -36,53 +75,62 @@ class LeastActionPath:
                  target_func_grad=GradientApproximations().forward_action_grad,\
                  nebParams={},logLevel=1,loggerSettings={}):
         """
-        asdf
-
         Parameters
         ----------
-        potential : Function
-            To be called as potential(path). Is passed to "target_func".
-        endpointSpringForce : Bool or tuple of bools
-            If a single bool, behavior is applied to both endpoints. If is a tuple
-            of bools, the first stands for the index 0 on the path; the second stands
-            for the index -1 on the path. TODO: possibly allow for a complicated
-            function that returns a bool?
-        nPts : Int
-            Number of points on the band, including endpoints.
-        nDims : Int
-            Number of dimensions of the collective coordinates. For instance,
-            when working with (Q20,Q30), nDims = 2.
-        mass : Function, optional
-            To be called as mass(path). Is passed to "target_func". If mass == None,
-            the collective inertia is the identity matrix. The default is None.
-        target_func : Function, optional
-            The approximation of the action integral. Should take as arguments
+        potential : function
+            Evaluates the energy along the path. To be called as potential(path). 
+            Is passed to "target_func".
+        nPts : int
+            The number of images in the path (path.shape[0])
+        nDims : int
+            The number of coordinates (path.shape[1])
+        mass : function, optional
+            Evaluates the metric tensor M_{ij} along the path. To be called as mass(path). 
+            Is passed to "target_func".The default is None, in which case $M_{ij}$ 
+            is treated as the identity matrix at all points
+        endpointSpringForce : bool or list of bools, optional
+            Whether to turn on the endpoint spring force. Can be controlled for
+            both endpoints individually. If a list of bools, the elements
+            correspond to the first and the last endpoint. If a single bool, is applied
+            to both endpoints. The default is True.
+        endpointHarmonicForce : bool or list of bools, optional
+            The same as endpointSpringForce, except for the harmonic force term. Disabling
+            both forces keeps an endpoint fixed. The default is True.
+        target_func : function, optional
+            The functional to be minimized. Should take as arguments
             (path, potential, mass). Should return (action, potentialAtPath, massesAtPath).
-            The default is action.
-        target_func_grad : Function, optional
-            Approximate derivative of the action integral with respect to every point.
-            Should take as arguments 
+            The default is utilities.TargetFunctions.action
+        target_func_grad : function, optional
+            The approximation of the gradient of target_func. Should take as arguments 
                 (path, potentialFunc, potentialOnPath, massFunc, massOnPath, target_func),
             where target_func is the action integral approximation. Should return 
-            (gradOfAction, gradOfPes). The default is forward_action_grad.
-        nebParams : Dict, optional
-            Keyword arguments for the nudged elastic band (NEB) method. Controls
-            the spring force and the harmonic oscillator potential. Default
-            parameters are controlled by a dictionary in the __init__ method.
-            The default is {}.
-
-        Returns
-        -------
-        None.
+            (gradOfAction, gradOfPes). The default is
+            utilities.GradientApproximations().forward_action_grad
+        nebParams : dict, optional
+            Contains the spring force and the harmonic oscillator potential parameters,
+            as well as the energy the endpoints are constrained to. The default is {}, 
+            in which case the parameters are
+                {"k":10,"kappa":20,"constraintEneg":0}
+        logLevel : int, optional
+            Controls how much information is tracked. Level 0 turns off logging.
+            See fileio.ForceLogger, or a .lap file, for documentation on other
+            tracked information
+        loggerSettings : dict, optional
+            See fileio.ForceLogger for documentation
+            
+        Raises
+        ------
+        ValueError
+            If one of endpointSpringForce or endpointHarmonicForce is not
+            supplied as a bool, or a list or tuple of bools
 
         """
-        #TODO: consider not having NEB parameters as a dictionary. Could be confusing...?
+        #TODO: consider not having NEB parameters as a dictionary
         defaultNebParams = {"k":10,"kappa":20,"constraintEneg":0}
         for key in defaultNebParams.keys():
             if key not in nebParams:
                 nebParams[key] = defaultNebParams[key]
         
-        #Not sure why I did things this way...
         for key in nebParams.keys():
             setattr(self,key,nebParams[key])
         #For compatibility with the logger
@@ -98,7 +146,7 @@ class LeastActionPath:
             endpointHarmonicForce = 2*(endpointHarmonicForce,)
         if not isinstance(endpointHarmonicForce,(tuple,list)):
             raise ValueError("Unknown value "+str(endpointHarmonicForce)+\
-                             " for endpointSpringForce")
+                             " for endpointHarmonicForce")
         
         self.potential = potential
         self.mass = mass
@@ -113,20 +161,7 @@ class LeastActionPath:
     
     def _compute_tangents(self,points,energies):
         """
-        Here for testing sphinx autodoc
-        
-        Parameters
-        ----------
-        points : TYPE
-            DESCRIPTION.
-        energies : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        tangents : TYPE
-            DESCRIPTION.
-
+        Computes tangent vectors along the path
         """
         tangents = np.zeros((self.nPts,self.nDims))
         
@@ -159,20 +194,8 @@ class LeastActionPath:
     
     def _spring_force(self,points,tangents):
         """
-        Spring force taken from https://doi.org/10.1063/1.5007180 eqns 20-22
-
-        Parameters
-        ----------
-        points : TYPE
-            DESCRIPTION.
-        tangents : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        springForce : TYPE
-            DESCRIPTION.
-
+        Computes the spring force along the path. Equations taken from 
+        https://doi.org/10.1063/1.5007180 eqns 20-22
         """
         springForce = np.zeros((self.nPts,self.nDims))
         for i in range(1,self.nPts-1):
@@ -189,6 +212,20 @@ class LeastActionPath:
         return springForce
     
     def compute_force(self,points):
+        """
+        Computes the net force along the path
+
+        Parameters
+        ----------
+        points : np.ndarray
+            The path to evaluate the force along. Of shape (self.nPts,self.nDims)
+
+        Returns
+        -------
+        netForce : np.ndarray
+            The force at each image on the path. Of shape (self.nPts,self.nDims)
+
+        """
         expectedShape = (self.nPts,self.nDims)
         if points.shape != expectedShape:
             if (points.T).shape == expectedShape:
@@ -223,7 +260,7 @@ class LeastActionPath:
         netForce = np.zeros(points.shape)
         for i in range(1,self.nPts-1):
             netForce[i] = perpForce[i] + springForce[i]
-        #TODO: add check if force is very small...?
+        #TODO: add check if force is very small
         
         #Avoids throwing divide-by-zero errors, but also deals with points with
             #gradient within the finite-difference error from 0. Simplest example
@@ -264,7 +301,7 @@ class MinimumEnergyPath:
     def __init__(self,potential,nPts,nDims,endpointSpringForce=True,\
                  endpointHarmonicForce=True,auxFunc=None,\
                  target_func=TargetFunctions.mep_default,\
-                 target_func_grad=potential_central_grad,nebParams={},\
+                 target_func_grad=GradientApproximations().mep_default,nebParams={},\
                  logLevel=1,loggerSettings={}):
         """
         Parameters
@@ -314,18 +351,18 @@ class MinimumEnergyPath:
         for key in nebParams.keys():
             setattr(self,key,nebParams[key])
         self.nebParams = nebParams
-            
+        
         if isinstance(endpointSpringForce,bool):
             endpointSpringForce = 2*(endpointSpringForce,)
-        if not isinstance(endpointSpringForce,tuple):
+        if not isinstance(endpointSpringForce,(tuple,list)):
             raise ValueError("Unknown value "+str(endpointSpringForce)+\
                              " for endpointSpringForce")
                 
         if isinstance(endpointHarmonicForce,bool):
             endpointHarmonicForce = 2*(endpointHarmonicForce,)
-        if not isinstance(endpointHarmonicForce,tuple):
+        if not isinstance(endpointHarmonicForce,(tuple,list)):
             raise ValueError("Unknown value "+str(endpointHarmonicForce)+\
-                             " for endpointSpringForce")
+                             " for endpointHarmonicForce")
         
         self.potential = potential
         self.auxFunc = auxFunc
@@ -478,31 +515,58 @@ class MinimumEnergyPath:
     
 class VerletMinimization:
     """
+    Iterative algorithms for minimizing the force along a path, e.g. the least
+    action path, or a minimum energy path.
+    
+    Attributes
+    ----------
+    nebObj : object
+        A class instance with method compute_force. Typically an instance of
+        LeastActionPath or MinimumEnergyPath
+    initialPoints : np.ndarray
+        The starting path to iterate from
+    nPts : int
+        The length of the path, initialPoints.shape[0]
+    nDims : int
+        The number of coordinates, initialPoints.shape[1]
+    allPts : np.ndarray
+        The points at every iteration. Of shape [:,nPts,nDims]
+    allVelocities : np.ndarray
+        The velocity at every iteration. Of shape [:,nPts,nDims]
+    allForces : np.ndarray
+        The net force at every iteration. Of shape [:,nPts,nDims]
+    
+    Methods
+    -------
+    velocity_verlet(tStep,maxIters,dampingParameter=0)
+        Uses a velocity verlet algorithm, with optional damping parameter
+    fire(tStep,maxIters,**kwargs)
+        The Fast Inertial Relaxation Algorithm, with adaptive timestep. Timestep
+        can be same for all points, or vary with the points
+    fire2(tStep,maxIters,**kwargs)
+        Similar to fire, but with different correction when overstepping in wrong
+        direction
+    
     :Maintainer: Daniel
     """
     def __init__(self,nebObj,initialPoints):
         """
-        
-
         Parameters
         ----------
-        nebObj : TYPE
-            DESCRIPTION.
-        initialPoints : TYPE
-            DESCRIPTION.
+        nebObj : object
+            A class instance with method compute_force. Typically an instance of
+            LeastActionPath or MinimumEnergyPath
+        initialPoints : np.ndarray
+            The starting path to iterate from
 
         Raises
         ------
         AttributeError
-            DESCRIPTION.
+            If nebObj has no attribute compute_force
         ValueError
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
+            If nebObj.nPts != initialPoints.shape[0]
         """
-        #It'll probably do this automatically, but whatever
+        
         if not hasattr(nebObj,"compute_force"):
             raise AttributeError("Object "+str(nebObj)+" has no attribute compute_force")
             
@@ -520,35 +584,26 @@ class VerletMinimization:
         
     def velocity_verlet(self,tStep,maxIters,dampingParameter=0):
         """
-        Implements Algorithm 6 of https://doi.org/10.1021/acs.jctc.7b00360
-        with optional damping force.
-        
-        TODO: that paper has many errors, esp. off-by-one errors. Could lead
-        to issues. Consult http://dx.doi.org/10.1063/1.2841941 instead.
+        The velocity Verlet algorithm, taken from Algorithm 6 of 
+        https://doi.org/10.1021/acs.jctc.7b00360
+        Has an optional damping force.
         
         Parameters
         ----------
-        tStep : TYPE
-            DESCRIPTION.
-        maxIters : TYPE
-            DESCRIPTION.
-        dampingParameter : TYPE, optional
-            DESCRIPTION. The default is 0.
+        tStep : float
+            The timestep in the algorithm. Suggested value is < 1
+        maxIters : int
+            The maximum number of iterations
+        dampingParameter : float, optional
+            Controls how much the algorithm slows down with time, by stepping
+            backwards according to the velocity at the current time step with
+            strength dampingParameter. The default is 0
 
         Returns
         -------
-        allPts : TYPE
-            DESCRIPTION.
-        allVelocities : TYPE
-            DESCRIPTION.
-        allForces : TYPE
-            DESCRIPTION.
-        """
-        
-        """
-        allPts is longer by 1 than the velocities/forces, because the last 
-        velocity/force computed should be used to update the points one 
-        last time (else that's computational time that's wasted)
+        endsWithoutError : bool
+            If the algorithm completes without error. For cases such as LeastActionPath,
+            data is logged to the output file regardless of this status
         """
         self.allPts = np.zeros((maxIters+2,self.nPts,self.nDims))
         self.allVelocities = np.zeros((maxIters+1,self.nPts,self.nDims))
@@ -600,35 +655,62 @@ class VerletMinimization:
     def fire(self,tStep,maxIters,fireParams={},useLocal=True,earlyStop=True,
              earlyStopParams={},earlyAbort=False,earlyAbortParams={}):
         """
-        Wrapper for fast inertial relaxation engine.
-        FIRE step taken from http://dx.doi.org/10.1103/PhysRevLett.97.170201
-        
-        Velocity update taken from 
-        https://en.wikipedia.org/wiki/Verlet_integration#Velocity_Verlet
-        
-        TODO: consider making FIRE its own class, or allowing for attributes
-        like fireParams and etc
-        TODO: add maxmove parameter to prevent path exploding
+        Wrapper for fast inertial relaxation engine. FIRE step taken from 
+        http://dx.doi.org/10.1103/PhysRevLett.97.170201 Velocity update taken 
+        from https://en.wikipedia.org/wiki/Verlet_integration#Velocity_Verlet
+        FIRE has an adaptive timestep, that increases when travelling along the
+        desired trajectory towards the minimum-desired path. When the path 
+        goes too far in that direction, progress is reset to the previous iteration,
+        and the velocity is zeroed out
 
         Parameters
         ----------
-        tStep : TYPE
-            DESCRIPTION.
-        maxIters : TYPE
-            DESCRIPTION.
-        fireParams : TYPE, optional
-            DESCRIPTION. The default is {}.
-        useLocal : TYPE, optional
-            DESCRIPTION. The default is False.
+        tStep : float
+            The timestep in the algorithm. Suggested value is < 1
+        maxIters : int
+            The maximum number of iterations
+        fireParams : dict, optional
+            The FIRE params. The default is {}, in which case the parameters
+            are taken from defaultFireParams
+        useLocal : bool, optional
+            Whether to use a different timestep for every point on the path. 
+            The default is True
+        earlyStop : bool, optional
+            Whether to stop early if convergence is reached in less than maxIters
+            steps. The default is True
+        earlyStopParams : dict, optional
+            Parameters controlling early stopping. The default is {}, in which
+            case the parameters are taken from defaultStopParams
+        earlyAbort : bool, optional
+            Whether to stop early if the path starts varying wildly away from
+            convergence. The default is False
+        earlyAbortParams : dict, optional
+            Parameters controlling early aborting (i.e. stopping due to presumed error).
+            The default is {}, in which case the parameters are taken from
+            defaultAbortParams
 
         Raises
         ------
         ValueError
-            DESCRIPTION.
+            If a parameter supplied to fireParams, earlyStopParams, or earlyAbortParams
+            is not an expected parameter. Expected parameters are given in
+            the dict of default parameters
 
         Returns
         -------
-        None.
+        tStepArr : np.ndarray
+            The time step, as a function of iteration number. Contains the time
+            step for each point separately, if useLocal is True
+        alphaArr : np.ndarray
+            The FIRE parameter alpha, as a function of iteration number. Contains 
+            alpha for each point separately, if useLocal is True
+        stepsSinceReset : int or np.ndarray
+            How long the path has been travelling in the right direction. Is
+            an array if useLocal is True, in which case each point is tracked
+            separately
+        endsWithoutError : bool
+            If the algorithm completes without error. For cases such as LeastActionPath,
+            data is logged to the output file regardless of this status
         """
         
         defaultFireParams = \
@@ -690,7 +772,6 @@ class VerletMinimization:
         t0 = time.time()
         try:
             for step in range(1,maxIters+1):
-                #TODO: check potential off-by-one indexing on tStep
                 if useLocal:
                     tStepArr,alphaArr,stepsSinceReset = \
                         self._local_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
@@ -744,6 +825,9 @@ class VerletMinimization:
             return tStepArr, alphaArr, stepsSinceReset, endsWithoutError
     
     def _local_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
+        """
+        A single iteration for fire, using a different timestep for each point
+        """
         tStepPrev = tStepArr[step-1].reshape((-1,1)) #For multiplication below
         
         shift = tStepPrev*self.allVelocities[step-1] + \
@@ -790,35 +874,7 @@ class VerletMinimization:
 
     def _global_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
         """
-        Implements the FIRE algorithm from doi.org/10.1016/j.commatsci.2020.109584
-        (algorithm 1) using a mixed semi-implicit Euler update (algorithm 4). Note
-        that there is a typo in the mixing: line 2 should involve v(t + \Delta t) on
-        the right-hand side, rather than v(t). Line 10 of algorithm 1 is ignored;
-        performance appears to be way better (or even correct at all) when mixing
-        occurs in the integration step
-
-        Parameters
-        ----------
-        step : TYPE
-            DESCRIPTION.
-        tStepArr : TYPE
-            DESCRIPTION.
-        alphaArr : TYPE
-            DESCRIPTION.
-        stepsSinceReset : TYPE
-            DESCRIPTION.
-        fireParams : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        tStepArr : TYPE
-            DESCRIPTION.
-        alphaArr : TYPE
-            DESCRIPTION.
-        stepsSinceReset : TYPE
-            DESCRIPTION.
-
+        A single iteration for fire, using the same timestep for each point
         """
         vdotf = 0.
         for ptIter in range(self.nPts):
@@ -872,33 +928,53 @@ class VerletMinimization:
     def fire2(self,tStep,maxIters,fireParams={},useLocal=False,earlyStop=False,
               earlyStopParams={}):
         """
-        Wrapper for fast inertial relaxation engine 2.
-        FIRE step taken from http://dx.doi.org/10.1103/PhysRevLett.97.170201
-        
-        Velocity update taken from 
-        https://en.wikipedia.org/wiki/Verlet_integration#Velocity_Verlet
+        Wrapper for fast inertial relaxation engine 2. FIRE step taken from 
+        http://dx.doi.org/10.1103/PhysRevLett.97.170201 Velocity update taken 
+        from https://en.wikipedia.org/wiki/Verlet_integration#Velocity_Verlet
+        FIRE 2 is an adaptive algorithm, like FIRE, but when the path goes
+        too far in one direction, only half of a step back is taken, and the
+        velocity is zeroed out
 
         Parameters
         ----------
-        tStep : TYPE
-            DESCRIPTION.
-        maxIters : TYPE
-            DESCRIPTION.
-        fireParams : TYPE, optional
-            DESCRIPTION. The default is {}.
-        useLocal : TYPE, optional
-            DESCRIPTION. The default is False.
+        tStep : float
+            The timestep in the algorithm. Suggested value is < 1
+        maxIters : int
+            The maximum number of iterations
+        fireParams : dict, optional
+            The FIRE params. The default is {}, in which case the parameters
+            are taken from defaultFireParams
+        useLocal : bool, optional
+            Whether to use a different timestep for every point on the path. 
+            The default is False
+        earlyStop : bool, optional
+            Whether to stop early if convergence is reached in less than maxIters
+            steps. The default is False
+        earlyStopParams : dict, optional
+            Parameters controlling early stopping. The default is {}, in which
+            case the parameters are taken from defaultStopParams
 
         Raises
         ------
         ValueError
-            DESCRIPTION.
+            If a parameter supplied to fireParams or earlyStopParams is not an 
+            expected parameter. Expected parameters are given in the dict of 
+            default parameters
 
         Returns
         -------
-        None.
+        tStepArr : np.ndarray
+            The time step, as a function of iteration number. Contains the time
+            step for each point separately, if useLocal is True
+        alphaArr : np.ndarray
+            The FIRE parameter alpha, as a function of iteration number. Contains 
+            alpha for each point separately, if useLocal is True
+        stepsSinceReset : int or np.ndarray
+            How long the path has been travelling in the right direction. Is
+            an array if useLocal is True, in which case each point is tracked
+            separately
         """
-        
+                
         defaultFireParams = \
             {"dtMax":10.,"dtMin":0.02,"nAccel":10,"fInc":1.1,"fAlpha":0.99,\
              "fDecel":0.5,"aStart":0.1,"maxmove":np.full(self.nDims,1.0),\
@@ -991,38 +1067,16 @@ class VerletMinimization:
             return tStepArr, alphaArr, stepsSinceReset
     
     def _local_fire2_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
+        """
+        A holding cell for a single fire2 iteration with a different timestep for each
+        point on the path. Currently calls the local fire update
+        """
         warnings.warn("Local FIRE2 currently calls local FIRE update")
         return self._local_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,fireParams)
     
     def _global_fire2_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
         """
-        Implements the FIRE 2 algorithm from doi.org/10.1016/j.commatsci.2020.109584
-        (algorithm 2) using a mixed semi-implicit Euler update (algorithm 4). Note
-        that there is a typo in the mixing: line 2 should involve v(t + \Delta t) on
-        the right-hand side, rather than v(t)
-
-        Parameters
-        ----------
-        step : TYPE
-            DESCRIPTION.
-        tStepArr : TYPE
-            DESCRIPTION.
-        alphaArr : TYPE
-            DESCRIPTION.
-        stepsSinceReset : TYPE
-            DESCRIPTION.
-        fireParams : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        tStepArr : TYPE
-            DESCRIPTION.
-        alphaArr : TYPE
-            DESCRIPTION.
-        stepsSinceReset : TYPE
-            DESCRIPTION.
-
+        A single iteration for fire2, using the same timestep for each point
         """
         vdotf = 0.0
         for ptIter in range(self.nPts):
@@ -1083,20 +1137,8 @@ class VerletMinimization:
         """
         Computes standard deviation in location of every image over the previous
         stopParams["nStabIters"] iterations. Returns True if std is less than
-        stopParams["stabPerc"] for every image.
-
-        Parameters
-        ----------
-        currentIter : TYPE
-            DESCRIPTION.
-        stopParams : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        ret : TYPE
-            DESCRIPTION.
-
+        stopParams["stabPerc"] for every image, in which case the algorithm
+        is said to have converged, and can stop
         """
         ret = False
         
@@ -1113,6 +1155,13 @@ class VerletMinimization:
         return ret
     
     def _check_early_abort(self,currentIter,breakParams):
+        """
+        Computes standard deviation in location of every image over the previous
+        breakParams["nStabIters"] iterations. Returns True if std is greater than
+        breakParams["variance"] for any image, in which case the algorithm
+        is said to be diverging, and should stop rather than proceed in a wrong
+        direction
+        """
         
         ret = False
         
@@ -1126,207 +1175,93 @@ class VerletMinimization:
             if np.any(std >= allowedVariance):
                 ret = True
         return ret
-    
-class EulerLagrangeSolver:
-    """
-    :Maintainer: Daniel
-    """
-    def __init__(self,initialPath,eneg_func,mass_func=None,grad_approx=midpoint_grad):
-        self.initialPath = initialPath
-        self.eneg_func = eneg_func
-        self.mass_func = mass_func
-        self.grad_approx = grad_approx
-        
-        self.nPts, self.nDims = initialPath.shape
-        
-    def _solve_id_inertia(self):
-        def el(t,z):
-            #z is the dependent variable. It is (x1,..., xD, x1',... xD').
-            #For Nt images, t.shape == (Nt,), and z.shape == (2D,Nt).
-            zOut = np.zeros(z.shape)
-            zOut[:self.nDims] = z[self.nDims:]
-            
-            enegs = self.eneg_func(z[:self.nDims].T)
-            enegGrad = self.grad_approx(self.eneg_func,z[:self.nDims].T)
-            
-            nPtsLoc = z.shape[1]
-            for ptIter in range(nPtsLoc):
-                v = z[self.nDims:,ptIter]
-                term1 = 1/(2*enegs[ptIter])*enegGrad[ptIter] * np.dot(v,v)
-                
-                term2 = -1/(2*enegs[ptIter])*v*np.dot(enegGrad[ptIter],v)
-                
-                zOut[self.nDims:,ptIter] = term1 + term2
-            
-            return zOut
-        
-        def bc(z0,z1):
-            leftPtCond = np.array([z0[i] - self.initialPath[0,i] for \
-                                   i in range(self.nDims)])
-            rightPtCond = np.array([z1[i] - self.initialPath[-1,i] for \
-                                    i in range(self.nDims)])
-            return np.concatenate((leftPtCond,rightPtCond))
-        
-        initialGuess = np.vstack((self.initialPath.T,np.zeros(self.initialPath.T.shape)))
-        
-        t = np.linspace(0.,1,self.nPts)
-        sol = solve_bvp(el,bc,t,initialGuess)
-        
-        return sol
-        
-    def solve(self):
-        if self.mass_func is None:
-            sol = self._solve_id_inertia()
-            
-        return sol
-    
-class EulerLagrangeVerifier:
-    """
-    :Maintainer: Daniel
-    """
-    def __init__(self,path,eneg_func,mass_func=None,grad_approx=midpoint_grad):
-        """
-        
 
-        Parameters
-        ----------
-        path : TYPE
-            DESCRIPTION.
-        eneg_func : TYPE
-            DESCRIPTION.
-        mass_func : TYPE, optional
-            DESCRIPTION. The default is None.
-        grad_approx : Function, optional
-            For computing gradients of the potential and inertia tensor. 
-            The default is midpoint_grad.
-
-        Raises
-        ------
-        TypeError
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
-
-        """
-        if isinstance(path,np.ndarray):
-            self.interpPath = InterpolatedPath(path)
-        elif callable(interpPath):
-            self.interpPath = path
-        else:
-            raise TypeError("path is neither an ndarray, nor callable")
-        
-        self.nPts, self.nDims = self.interpPath.path.shape
-        
-        self.eneg_func = eneg_func
-        self.mass_func = mass_func
-        self.grad_approx = grad_approx
-    
-    def _compare_lagrangian_id_inertia(self,x,dx,ddx):
-        lhs = np.zeros((self.nPts,self.nDims))
-        rhs = np.zeros((self.nPts,self.nDims))
-        
-        for ptIter in range(1,self.nPts-1):
-            lhs[ptIter] = 2*self.eneg_func(x[ptIter])*ddx[ptIter]
-            enegGrad = self.grad_approx(self.eneg_func,x[ptIter])
-            
-            term1 = enegGrad * np.dot(dx[ptIter],dx[ptIter])
-            term2 = -dx[ptIter] * np.dot(enegGrad,dx[ptIter])
-            
-            rhs[ptIter] = term1 + term2
-            
-        diff = rhs - lhs
-        return diff[1:-1] #Removing padding
-    
-    def _compare_lagrangian_var_inertia(self):
-        enegGrad = self.grad_approx(self.eneg_func,self.path)
-        
-        lhs = np.zeros((self.nPts,self.nDims))
-        rhs = np.zeros((self.nPts,self.nDims))
-        
-        #TODO: fill in eqns here
-            
-        diff = rhs - lhs
-        
-        return diff[1:-1] #Removing excess padding
-    
-    def compare_lagrangian(self,nPts):
-        t = np.linspace(0,1,nPts)
-        x = self.interpPath(t)
-        
-        dx = np.zeros((self.nPts,self.nDims))
-        for ptIter in range(1,self.nPts-1):
-            tPlus = t[ptIter] + fdTol/2
-            tMinus = t[ptIter] - fdTol/2
-            dx[ptIter] = (self.interpPath(tPlus) - self.interpPath(tMinus))/(2*fdTol)
-            
-        ddx = np.zeros((self.nPts,self.nDims))
-        for ptIter in range(1,self.nPts-1):
-            tPlus = t[ptIter] + fdTol
-            tMinus = t[ptIter] - fdTol
-            ddx[ptIter] = (self.interpPath(tPlus) - 2*x[ptIter] + self.interpPath(tMinus))/fdTol
-        
-        if self.mass_func is None:
-            elDiff = self._compare_lagrangian_id_inertia(x,dx,ddx)
-        else:
-            elDiff = self._compare_lagrangian_var_inertia()
-            
-        
-        return None
-    
-    def compare_lagrangian_squared(self):
-        
-        return None
-    
 class Dijkstra:
     """
+    Implements Dijkstra's algorithm for finding the shortest path on a rectangular
+    grid. Paths can connect gridpoints that are 0, +/- 1 away from each other in
+    any direction
+    
+    Attributes
+    ----------
+    nDims : int
+        The number of dimensions of the grid
+    uniqueCoords : list of np.ndarray
+        The unique coordinates of the grid
+    coordMeshTuple : tuple of np.ndarray
+        All of the coordinates, arranged as the output of np.meshgrid(*uniqueCoords)
+    potArr : np.ndarray
+        The energy at every point on the grid
+    inertArr : np.ndarray
+        The inertia at every point on the grid
+    initialPoint : np.ndarray
+        The starting coordinates
+    initialInds : np.ndarray
+        The indices of the starting coordinates
+    allowedEndpoints : np.ndarray
+        The possible ending coordinates
+    endpointIndices : np.ndarray
+        The indices of the possible ending coordinates
+    target_func : function
+        The functional to minimize
+    djkLogger : instance of fileio.DijkstraLogger
+        Handles storing data collected during run
+    
+    Methods
+    -------
+    __call__(returnAll=False)
+        Runs main algorithm
+    minimum_endpoint(distanceDict)
+        Once Dijkstra's algorithm is complete, selects the endpoint with minimum
+        target_func out of all possible endpoints
+    
     :Maintainer: Daniel
     """
     def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,\
                  target_func=TargetFunctions.action,allowedEndpoints=None,\
                  trimVals=[10**(-4),None],logLevel=1,fName=None):
         """
-        Some indexing is done to deal with the default shape of np.meshgrid.
-        For D dimensions, the output is of shape (N2,N1,N3,...,ND), while the
-        way indices are generated expects a shape of (N1,...,ND). So, I swap
-        the first two indices by hand. See https://numpy.org/doc/stable/reference/generated/numpy.meshgrid.html
-        #TODO: error handling (try getting an index)(?)
-        
-        Note that indexing for Dijkstra *internal* functions are done in the
-        order (N2,N1,N3,...), for simplicity. The indexing that is returned
-        by self.__call__ is kept in this order by default.
-        
-        Note that the *value* of the array at a certain index is the same
-        regardless of the sort order of the indices, provided that the index
-        order matches that used when creating np.meshgrid
-
         Parameters
         ----------
-        initialPoint : TYPE
-            DESCRIPTION.
-        coordMeshTuple : TYPE
-            DESCRIPTION.
-        potArr : TYPE
-            DESCRIPTION.
-        inertArr : TYPE, optional
-            DESCRIPTION. The default is None.
-        target_func : TYPE, optional
-            DESCRIPTION. The default is action.
-        allowedEndpoints : TYPE, optional
-            DESCRIPTION. The default is None.
-        trimVals : TYPE, optional
-            DESCRIPTION. The default is [10**(-4),None].
+        initialPoint : np.ndarray
+            The starting coordinates
+        coordMeshTuple : tuple of np.ndarray
+            All of the coordinates, arranged as the output of np.meshgrid
+        potArr : np.ndarray
+            The energy at every point on the grid
+        inertArr : np.ndarray, optional
+            The inertia at every point on the grid. The default is None, in
+            which case the inertia is taken as the identity at every point
+            on the grid
+        target_func : function, optional
+            The functional to minimize. The default is utilities.TargetFunctions.action
+        allowedEndpoints : np.ndarray, optional
+            Possible endpoints for the path. The default is None, in which case
+            the endpoints are found using utilities.SurfaceUtils.find_endpoints_on_grid
+        trimVals : list, optional
+            The energy values to trim potArr by. The default is [10**(-4),None],
+            so the maximum value is left unchanged
 
         Raises
         ------
         ValueError
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
-
+            Throws if potArr, inertArr, or allowedEndpoints are an incorrect shape
+        
+        Notes
+        -----
+        Some indexing is done to deal with the default shape of np.meshgrid.
+        For D dimensions, the output is of shape (N2,N1,N3,...,ND), while the
+        way indices are generated expects a shape of (N1,...,ND). So, we swap
+        the first two indices by hand. See 
+        https://numpy.org/doc/stable/reference/generated/numpy.meshgrid.html
+        
+        Note that indexing for Dijkstra internal functions are done in the
+        order (N2,N1,N3,...), for simplicity. The indexing that is returned
+        by self.__call__ is kept in this order by default.
+        
+        Note that the value of the array at a certain index is the same
+        regardless of the sort order of the indices, provided that the index
+        order matches that used when creating np.meshgrid
         """
         self.initialPoint = initialPoint
         self.coordMeshTuple = coordMeshTuple
@@ -1343,7 +1278,7 @@ class Dijkstra:
                 if cNew.shape == expectedShape:
                     tempCMesh.append(cNew)
                 else:
-                    raise ValueError("coordMeshTuple has wrong dimensions somehow")
+                    raise ValueError("coordMeshTuple has wrong dimensions")
         if tempCMesh:
             self.coordMeshTuple = tuple(tempCMesh)
         
@@ -1396,9 +1331,8 @@ class Dijkstra:
         self.endpointIndices = [tuple(row) for row in self.endpointIndices]
         
         #Clip the potential to the min/max. Done after finding possible endpoints.
-        self.trimVals = trimVals
-        if self.trimVals != [None,None]:
-            self.potArr = self.potArr.clip(self.trimVals[0],self.trimVals[1])
+        if trimVals != [None,None]:
+            self.potArr = self.potArr.clip(trimVals[0],trimVals[1])
         
         #Getting indices for self.initialPoint
         self.initialInds = np.zeros(self.nDims,dtype=int)
@@ -1421,16 +1355,9 @@ class Dijkstra:
         for every node in the PES. See e.g. 
         https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm
 
-        TODO: allow for non-grid PES, like if we trimmed off high-energy regions
-        Maybe fill to a grid, and set those guys to infinite energy so they're
-        never selected? Simplest to have a list of indices that are not allowed,
+        TODO: allow for non-grid PES. Simplest to have a list of indices that are not allowed,
         and set the mask to "visited" for those points, so that they are never
         even considered.
-        
-        Returns
-        -------
-        None.
-
         """
         t0 = time.time()
         
@@ -1539,6 +1466,10 @@ class Dijkstra:
         return tentativeDistance, neighborsVisitDict, endpointIndsList
     
     def _get_paths(self,neighborsVisitDict):
+        """
+        Given the dictionary describing where each node comes from, constructs
+        the paths from the starting point to each possible endpoint
+        """
         allPathsIndsDict = {}
         for endptInds in self.endpointIndices:
             path = []
@@ -1560,20 +1491,25 @@ class Dijkstra:
     
     def __call__(self,returnAll=False):
         """
-        
+        Runs Dijkstra's algorithm
 
         Parameters
         ----------
-        
-
-        Raises
-        ------
-        ValueError
-            DESCRIPTION.
+        returnAll : bool, optional
+            Whether to return the paths for every endpoint. Default is False,
+            in which case only the shortest path is returned
 
         Returns
         -------
-        None.
+        pathIndsDictRet (pathInds) : dict (np.ndarray)
+            If returnAll, is dict of the form {endpoint:indices of path to endpoint}.
+            If not returnAll, is indices of path to endpoint for shortest path
+        pathArrDict (pathArr) : dict (np.ndarray)
+            Same as pathIndsDictRet, but with the path itself, rather than the
+            indices through the array
+        distanceDict (dist) : dict (float)
+            If returnAll, is dict of the form {endpoint:distance to endpoint}.
+            If not returnAll, is the distance along the shortest path
 
         """
         tentativeDistance, neighborsVisitDict, endpointIndsList = \
@@ -1613,6 +1549,20 @@ class Dijkstra:
             return pathIndsDictRet[endptOut], pathArrDict[endptOut], distanceDict[endptOut]
     
     def minimum_endpoint(self,distanceDict):
+        """
+        Selects the endpoint with the minimal distance
+
+        Parameters
+        ----------
+        distanceDict : dict
+            For each visited node, contains the source for that node
+
+        Returns
+        -------
+        endptOut : tuple
+            The endpoint with the minimal distance
+
+        """
         minDist = np.inf
         for (endpt, dist) in distanceDict.items():
             if dist < minDist:
@@ -1622,9 +1572,105 @@ class Dijkstra:
         return endptOut
 
 class DynamicProgramming:
-    def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,allowedMask=None,\
+    """
+    Implements the dynamic programming algorithm for finding the shortest path 
+    on a rectangular grid. Paths can only move from left to right in the first
+    coordinate
+    
+    Attributes
+    ----------
+    nDims : int
+        The number of dimensions of the grid
+    uniqueCoords : list of np.ndarray
+        The unique coordinates of the grid
+    coordMeshTuple : tuple of np.ndarray
+        All of the coordinates, arranged as the output of np.meshgrid(*uniqueCoords)
+    potArr : np.ndarray
+        The energy at every point on the grid
+    inertArr : np.ndarray
+        The inertia at every point on the grid
+    initialPoint : np.ndarray
+        The starting coordinates
+    initialInds : np.ndarray
+        The indices of the starting coordinates
+    allowedEndpoints : np.ndarray
+        The possible ending coordinates
+    endpointIndices : np.ndarray
+        The indices of the possible ending coordinates
+    target_func : function
+        The functional to minimize
+    uniqueSliceInds : list
+        Contains indices labelling the previous slice when moving from left to
+        right, with an empty list for the second coordinate
+    logger : instance of fileio.DPMLogger
+        Handles storing data collected during run
+    logFreq : int
+        How frequently logger writes to file
+    
+    Methods
+    -------
+    __call__(pathAsText=False)
+        Runs main algorithm
+    
+    :Maintainer: Daniel
+    """
+    def __init__(self,initialPoint,coordMeshTuple,potArr,inertArr=None,\
                  target_func=TargetFunctions.action,allowedEndpoints=None,\
                  trimVals=[10**(-4),None],logLevel=1,fName=None,logFreq=50):
+        """
+        Parameters
+        ----------
+        initialPoint : np.ndarray
+            The starting coordinates
+        coordMeshTuple : tuple of np.ndarray
+            All of the coordinates, arranged as the output of np.meshgrid
+        potArr : np.ndarray
+            The energy at every point on the grid
+        inertArr : np.ndarray, optional
+            The inertia at every point on the grid. The default is None, in
+            which case the inertia is taken as the identity at every point
+            on the grid
+        target_func : function, optional
+            The functional to minimize. The default is utilities.TargetFunctions.action
+        allowedEndpoints : np.ndarray, optional
+            Possible endpoints for the path. The default is None, in which case
+            the endpoints are found using utilities.SurfaceUtils.find_endpoints_on_grid
+        trimVals : list, optional
+            The energy values to trim potArr by. The default is [10**(-4),None],
+            so the maximum value is left unchanged
+        logLevel : int, optional
+            Controls how much information is tracked. Level 0 turns off logging.
+            See fileio.DPMLogger for documentation on other tracked information
+        fName : str, optional
+            The log file name. The default is None, in which case the name is
+            chosen to be the start time of the run
+        logFreq : int, optional
+            When moving from left to right on a grid, is how many slices
+            are passed before writing to log file. The default is 50
+
+        Raises
+        ------
+        ValueError
+            Throws if potArr, inertArr, or allowedEndpoints are an incorrect shape
+        ValueError
+            Throws if the start point is to the right of any of allowedEndpoints
+        
+        Notes
+        -----
+        Some indexing is done to deal with the default shape of np.meshgrid.
+        For D dimensions, the output is of shape (N2,N1,N3,...,ND), while the
+        way indices are generated expects a shape of (N1,...,ND). So, we swap
+        the first two indices by hand. See 
+        https://numpy.org/doc/stable/reference/generated/numpy.meshgrid.html
+        
+        Note that indexing for DynamicProgramming internal functions are done in the
+        order (N2,N1,N3,...), for simplicity. The indexing that is returned
+        by self.__call__ is kept in this order by default.
+        
+        Note that the value of the array at a certain index is the same
+        regardless of the sort order of the indices, provided that the index
+        order matches that used when creating np.meshgrid
+        """
         self.initialPoint = initialPoint
         self.coordMeshTuple = coordMeshTuple
         self.uniqueCoords = [np.unique(c) for c in self.coordMeshTuple]
@@ -1658,19 +1704,6 @@ class DynamicProgramming:
                 raise ValueError("potArr.shape is "+str(potArr.shape)+\
                                  "; required shape is "+str(expectedShape)+\
                                  " (or with swapped first two indices)")
-        if allowedMask is None:
-            self.allowedMask = np.ones(expectedShape,dtype=bool)
-        else:
-            if allowedMask.shape == expectedShape:
-                self.allowedMask = allowedMask
-            else:
-                dummyArr = np.swapaxes(allowedMask,0,1)
-                if dummyArr.shape == expectedShape:
-                    self.allowedMask = dummyArr
-                else:
-                    raise ValueError("allowedMask.shape is "+str(allowedMask.shape)+\
-                                     "; required shape is "+str(expectedShape)+\
-                                     " (or with swapped first two indices)")
                     
         #TODO: apply error checking above to inertArr
         if inertArr is not None:
@@ -1710,9 +1743,8 @@ class DynamicProgramming:
         self.endpointIndices = [tuple(row) for row in self.endpointIndices]
         
         #Clip the potential to the min/max. Done after finding possible endpoints.
-        self.trimVals = trimVals
-        if self.trimVals != [None,None]:
-            self.potArr = self.potArr.clip(self.trimVals[0],self.trimVals[1])
+        if trimVals != [None,None]:
+            self.potArr = self.potArr.clip(trimVals[0],trimVals[1])
         else:
             warnings.warn("Not clipping self.potArr; may run into negative numbers in self.target_func")
         
@@ -1737,12 +1769,19 @@ class DynamicProgramming:
         self.logFreq = logFreq
     
     def _gen_slice_inds(self,constInd):
+        """
+        Returns all indices on a slice whose second index is constInd
+        """
         sliceCopy = self.uniqueSliceInds.copy()
         sliceCopy[1] = [constInd]
         
         return list(itertools.product(*sliceCopy))
     
     def _select_prior_points(self,currentIdx,previousIndsArr,distArr):
+        """
+        For all points in a given slice, selects the point in the previous slice
+        that connects to the point in the current slice
+        """
         previousInds = self._gen_slice_inds(currentIdx-1)
         #Use scipy.ndimage.label to only select previous indices that are connected
         #to the current one. Imperfect - on vertical OTL, will choose from far
@@ -1781,13 +1820,26 @@ class DynamicProgramming:
         
         return previousIndsArr, distArr
     
-    def __call__(self,searchRange=None,pathAsText=True):
-        # if searchRange is None:
-        #     uniqueSliceInds = [np.arange(self.potArr.shape[0]),[]]
-        #     for s in self.potArr.shape[2:]:
-        #         uniqueSliceInds.append([np.arange(s)])
-        # elif 
-        
+    def __call__(self,pathAsText=False):
+        """
+        Runs the dynamic programming algorithm
+
+        Parameters
+        ----------
+        pathAsText : bool, optional
+            Whether to save the final path to a .txt file. The default is False
+
+        Returns
+        -------
+        minIndsDict : dict
+            Is dict of the form {endpoint:indices of path to endpoint}
+        minPathDict : dict 
+            Same as minIndsDict, but with the path itself, rather than the
+            indices through the array
+        distsDict : dict
+            Is dict of the form {endpoint:distance to endpoint}
+
+        """
         t0 = time.time()
         
         previousIndsArr = -1*np.ones(self.potArr.shape+(self.nDims,),dtype=int)
