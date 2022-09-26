@@ -54,7 +54,6 @@ class ForceLogger:
                 
         self.initTime = datetime.datetime.now().isoformat()
         self.classInst = classInst
-        os.makedirs("logs",exist_ok=True)
         
         self.loggedVariables = \
             {0:[],1:["points","tangents","springForce","netForce"]}
@@ -70,9 +69,9 @@ class ForceLogger:
                 self.logDict[dsetNm] = np.zeros(dsetShape)
             
             if self.loggerSettings["logName"] is None:
-                self.fileName = "logs/"+self.initTime+fileExt
+                self.fileName = self.initTime+fileExt
             else:
-                self.fileName = "logs/"+self.loggerSettings["logName"]+fileExt
+                self.fileName = self.loggerSettings["logName"]+fileExt
                         
             #Creating attributes and initializing datasets
             h5File = h5py.File(self.fileName,"w")
