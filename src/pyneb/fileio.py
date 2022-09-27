@@ -197,15 +197,26 @@ class ForceLogger:
         h5File.close()
         return None
     
-    def write_early_stop_params(self,earlyStopParams):
+    def write_run_params(self,category,paramsDict):
         if self.logLevel != 0:
             h5File = h5py.File(self.fileName,"a")
-            h5File.create_group("early_stop_params")
-            for (key, val) in earlyStopParams.items():
-                h5File["early_stop_params"].attrs.create(key,val)
+            h5File.create_group(category)
+            for (key, val) in paramsDict.items():
+                h5File[category].attrs.create(key,val)
+                
             h5File.close()
             
         return None
+    
+    # def write_early_stop_params(self,earlyStopParams):
+    #     if self.logLevel != 0:
+    #         h5File = h5py.File(self.fileName,"a")
+    #         h5File.create_group("early_stop_params")
+    #         for (key, val) in earlyStopParams.items():
+    #             h5File["early_stop_params"].attrs.create(key,val)
+    #         h5File.close()
+            
+    #     return None
         
 class LoadForceLogger:
     def __init__(self,file):

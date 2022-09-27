@@ -582,6 +582,7 @@ class VerletMinimization:
         self.allVelocities = None
         self.allForces = None
         
+    @np.errstate(all="raise")
     def velocity_verlet(self,tStep,maxIters,dampingParameter=0):
         """
         The velocity Verlet algorithm, taken from Algorithm 6 of 
@@ -649,9 +650,13 @@ class VerletMinimization:
             t1 = time.time()
             self.nebObj.logger.flush()
             self.nebObj.logger.write_runtime(t1-t0)
+            self.nebObj.logger.write_run_params("verlet_params",
+                                                {"tStep":tStep,"maxIters":maxIters,
+                                                 "dampingParameter":dampingParameter})
             
             return endsWithoutError
     
+    @np.errstate(all="raise")
     def fire(self,tStep,maxIters,fireParams={},useLocal=True,earlyStop=True,
              earlyStopParams={},earlyAbort=False,earlyAbortParams={}):
         """
@@ -819,8 +824,12 @@ class VerletMinimization:
             self.nebObj.logger.flush()
             self.nebObj.logger.write_fire_params(tStepArr,alphaArr,stepsSinceReset,fireParams)
             self.nebObj.logger.write_runtime(t1-t0)
+            
+            self.nebObj.logger.write_run_params("fire_params",fireParams.update("useLocal",useLocal))
             if earlyStop:
-                self.nebObj.logger.write_early_stop_params(earlyStopParams)
+                self.nebObj.logger.write_run_params("early_stop_params",earlyStopParams)
+            if earlyAbort:
+                self.nebObj.logger.write_run_params("early_abort_params",earlyAbortParams)
         
             return tStepArr, alphaArr, stepsSinceReset, endsWithoutError
     
@@ -925,6 +934,7 @@ class VerletMinimization:
         
         return tStepArr, alphaArr, stepsSinceReset
     
+    @np.errstate(all="raise")
     def fire2(self,tStep,maxIters,fireParams={},useLocal=False,earlyStop=False,
               earlyStopParams={}):
         """
@@ -1061,8 +1071,12 @@ class VerletMinimization:
             self.nebObj.logger.flush()
             self.nebObj.logger.write_fire_params(tStepArr,alphaArr,stepsSinceReset,fireParams)
             self.nebObj.logger.write_runtime(t1-t0)
+            
+            self.nebObj.logger.write_run_params("fire_params",fireParams.update("useLocal",useLocal))
             if earlyStop:
-                self.nebObj.logger.write_early_stop_params(earlyStopParams)
+                self.nebObj.logger.write_run_params("early_stop_params",earlyStopParams)
+            # if earlyAbort:
+            #     self.nebObj.logger.write_run_params("early_abort_params",earlyAbortParams)
             
             return tStepArr, alphaArr, stepsSinceReset
     
