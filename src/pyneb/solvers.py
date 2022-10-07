@@ -825,7 +825,6 @@ class VerletMinimization:
             self.nebObj.logger.write_fire_params(tStepArr,alphaArr,stepsSinceReset,fireParams)
             self.nebObj.logger.write_runtime(t1-t0)
             
-            self.nebObj.logger.write_run_params("fire_params",fireParams.update("useLocal",useLocal))
             if earlyStop:
                 self.nebObj.logger.write_run_params("early_stop_params",earlyStopParams)
             if earlyAbort:
@@ -1072,7 +1071,6 @@ class VerletMinimization:
             self.nebObj.logger.write_fire_params(tStepArr,alphaArr,stepsSinceReset,fireParams)
             self.nebObj.logger.write_runtime(t1-t0)
             
-            self.nebObj.logger.write_run_params("fire_params",fireParams.update("useLocal",useLocal))
             if earlyStop:
                 self.nebObj.logger.write_run_params("early_stop_params",earlyStopParams)
             # if earlyAbort:
