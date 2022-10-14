@@ -1220,7 +1220,8 @@ class NDInterpWithBoundary:
     :Maintainer: Daniel
     """
     def __init__(self,gridPoints,gridVals,boundaryHandler="exponential",symmExtend=None,\
-                 transformFuncName="identity",splKWargs={}):
+                 transformFuncName="identity",splKWargs={},
+                 _test_linear=False,custom_func=None):
         """
         Parameters
         ----------
@@ -1300,13 +1301,16 @@ class NDInterpWithBoundary:
                 raise ValueError("The points in dimension %d must be strictly "
                                  "ascending" % i)
         
-        if self.nDims == 2:
-            self.gridVals = _get_correct_shape(gridPoints,gridVals)
-            self.rbv = RectBivariateSpline(*gridPoints,self.gridVals.T,**splKWargs)
-            self._call = self._call_2d
+        if custom_func is None:
+            if self.nDims == 2 and not _test_linear:
+                self.gridVals = _get_correct_shape(gridPoints,gridVals)
+                self.rbv = RectBivariateSpline(*gridPoints,self.gridVals.T,**splKWargs)
+                self._call = self._call_2d
+            else:
+                self.gridVals = _get_correct_shape(gridPoints,gridVals,normalOrder=False)
+                self._call = self._call_nd
         else:
-            self.gridVals = _get_correct_shape(gridPoints,gridVals,normalOrder=False)
-            self._call = self._call_nd
+            self._call = custom_func
             
         postEvalDict = {"identity":self._identity_transform_function,
                         "smooth_abs":self._smooth_abs_transform_function}
@@ -1461,7 +1465,8 @@ class NDInterpWithBoundary:
 
         """
         nearestAllowed = np.zeros(point.shape)
-        
+        # print(point)
+        # print(isInBounds)
         for dimIter in range(point.size):
             if np.all(isInBounds[:,dimIter]):
                 nearestAllowed[dimIter] = point[dimIter]
@@ -1471,9 +1476,9 @@ class NDInterpWithBoundary:
                 if failedInd == 1:
                     failedInd = -1
                 nearestAllowed[dimIter] = self.gridPoints[dimIter][failedInd]
-        
+        # print(point)
         #Evaluating the nearest allowed point on the boundary of the allowed region
-        valAtNearest = self._call(point)
+        valAtNearest = self._call(nearestAllowed)
         
         dist = np.linalg.norm(nearestAllowed-point)
         
