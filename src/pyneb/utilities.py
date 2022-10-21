@@ -16,15 +16,15 @@ fdTol = 10**(-8)
 
 class TargetFunctions:
     """
-    Class containing integral-type functionals that are commonly minimized. 
+    Class containing integral-type functionals that are commonly minimized.
     Generically of the form
-    
+
     $$ S = \int_{s_0}^{s_1} f(s) ds. $$
 
     Functionals are discretized as
 
     $$ S \approx \sum_{i=1}^{nPoints} f(s_i) (s_i-s_{i-1}). $$
-    
+
     Methods
     -------
     action(points,potential,masses)
@@ -34,7 +34,7 @@ class TargetFunctions:
     mep_default(points,potential,masses)
         Wrapper to be used when finding the minimum energy path. See solvers.MinimumEnergyPath for
         documentation on this unique case
-    
+
     :Maintainer: Daniel
     """
     @staticmethod
@@ -77,34 +77,34 @@ class TargetFunctions:
 
         :Maintainer: Daniel
         """
-        
+
         nPoints, nDims = path.shape
-        
+
         if masses is None:
             massArr = np.full((nPoints,nDims,nDims),np.identity(nDims))
         elif not isinstance(masses,np.ndarray):
             massArr = masses(path)
         else:
             massArr = masses
-            
+
         massDim = (nPoints, nDims, nDims)
         if massArr.shape != massDim:
             raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
                              "; required shape is "+str(massDim)+". See action function.")
-        
+
         if not isinstance(potential,np.ndarray):
             potArr = potential(path)
         else:
             potArr = potential
-        
+
         potShape = (nPoints,)
         if potArr.shape != potShape:
             raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
                              "; required shape is "+str(potShape)+". See action function.")
-        
+
         #TODO: check if we actually want this. Maybe with a warning?
         potArr = potArr.clip(0)
-            
+
         #Actual calculation
         actOut = 0
         for ptIter in range(1,nPoints):
@@ -113,9 +113,9 @@ class TargetFunctions:
             if dist<0:
                 dist = 0
             actOut += np.sqrt(2*potArr[ptIter]*dist)
-        
+
         return actOut, potArr, massArr
-    
+
     @staticmethod
     def _term_in_action_sum(points,potential,masses=None):
         """
@@ -124,19 +124,19 @@ class TargetFunctions:
         nDims = points.shape[1]
         if points.shape[0] != 2:
             raise ValueError("Expected exactly 2 points; received "+str(points.shape[0]))
-        
+
         if masses is None:
             massArr = np.identity(nDims)
         elif not isinstance(masses,np.ndarray):
             massArr = masses(points[1]).reshape((nDims,nDims))
         else:
             massArr = masses
-        
+
         massDim = (nDims,nDims)
         if massArr.shape != massDim:
             raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
                              "; required shape is "+str(massDim))
-        
+
         #There's lots of things that can be fed in, including odd things like
         #np.int objects. These aren't caught with a simple filter like "isinstance(potential,int)",
         #so I'm trying it this way for a bit
@@ -147,15 +147,15 @@ class TargetFunctions:
                 potArr = np.array([potential])
             else:
                 potArr = potential
-        
+
         potShape = (1,)
         if potArr.shape != potShape:
             raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
                              "; required shape is "+str(potShape))
-        
+
         #TODO: check if we want this
         potArr = potArr.clip(0)
-        
+
         #Actual calculation
         coordDiff = points[1] - points[0]
         #The M_{ab} dx^a dx^b bit
@@ -163,16 +163,16 @@ class TargetFunctions:
         if dist<0:
                 dist = 0
         actOut = np.sqrt(2*potArr[0]*dist)
-        
+
         return actOut, potArr, massArr
-    
+
     @staticmethod
     def action_squared(path,potential,masses=None):
         '''
         The functional
 
         $$ S = \int_{s_0}^{s_1} 2 M_{ij}\dot{x}_i\dot{x}_j E(x(s)) ds $$
-        
+
         Parameters
         ----------
         See :py:func:`action`
@@ -196,29 +196,29 @@ class TargetFunctions:
         '''
 
         nPoints, nDims = path.shape
-        
+
         if masses is None:
             massArr = np.full((nPoints,nDims,nDims),np.identity(nDims))
         elif not isinstance(masses,np.ndarray):
             massArr = masses(path)
         else:
             massArr = masses
-            
+
         massDim = (nPoints, nDims, nDims)
         if massArr.shape != massDim:
             raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
                              "; required shape is "+str(massDim)+". See action function.")
-        
+
         if not isinstance(potential,np.ndarray):
             potArr = potential(path)
         else:
             potArr = potential
-        
+
         potShape = (nPoints,)
         if potArr.shape != potShape:
             raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
                              "; required shape is "+str(potShape)+". See action function.")
-            
+
         #Actual calculation
         actOut = 0
         for ptIter in range(1,nPoints):
@@ -226,7 +226,7 @@ class TargetFunctions:
             dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
             actOut += potArr[ptIter]*dist
         return actOut, potArr, massArr
-    
+
     @staticmethod
     def _term_in_action_squared_sum(points,potential,masses=None):
         """
@@ -235,19 +235,19 @@ class TargetFunctions:
         nDims = points.shape[1]
         if points.shape[0] != 2:
             raise ValueError("Expected exactly 2 points; received "+str(points.shape[0]))
-        
+
         if masses is None:
             massArr = np.identity(nDims)
         elif not isinstance(masses,np.ndarray):
             massArr = masses(points[1]).reshape((nDims,nDims))
         else:
             massArr = masses
-        
+
         massDim = (nDims,nDims)
         if massArr.shape != massDim:
             raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
                              "; required shape is "+str(massDim))
-        
+
         #There's lots of things that can be fed in, including odd things like
         #np.int objects. These aren't caught with a simple filter like "isinstance(potential,int)",
         #so I'm trying it this way for a bit
@@ -258,23 +258,23 @@ class TargetFunctions:
                 potArr = np.array([potential])
             else:
                 potArr = potential
-        
+
         potShape = (1,)
         if potArr.shape != potShape:
             raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
                              "; required shape is "+str(potShape))
-        
+
         #TODO: check if we want this
         potArr = potArr.clip(0)
-        
+
         #Actual calculation
         coordDiff = points[1] - points[0]
         #The M_{ab} dx^a dx^b bit
         dist = np.dot(coordDiff,np.dot(massArr,coordDiff))
         actOut = 2*potArr[0]*dist
-        
+
         return actOut, potArr, massArr
-    
+
     @staticmethod
     def mep_default(points,potential,auxFunc=None):
         '''
@@ -297,7 +297,7 @@ class TargetFunctions:
             The action along points
         auxEnergies : np.ndarray (None)
             If auxFunc is a function, is auxFunc evaluated at points. Else, is None
-            
+
         :Maintainer: Eric
         '''
         nPoints, nDim = points.shape
@@ -308,20 +308,20 @@ class TargetFunctions:
         potShape = (nPoints,)
         if potArr.shape != potShape:
             raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
-                             "; required shape is "+str(potShape)+". See potential function.")    
+                             "; required shape is "+str(potShape)+". See potential function.")
         if auxFunc is None:
             auxEnergies = None
         else:
             auxEnergies = auxFunc(points)
-        
-        energies  = potential(points)    
-        
+
+        energies  = potential(points)
+
         return energies, auxEnergies
 
 class GradientApproximations:
     """
     Class containing different gradient approximations for TargetFunctions
-    
+
     Methods
     -------
     forward_action_grad(path,potential,potentialOnPath,mass,massOnPath,
@@ -337,7 +337,7 @@ class GradientApproximations:
     -----
     When calling a method of GradientApproximations, we always supply a member of
     TargetFunctions, such as TargetFunctions.action. However, sometimes we
-    only want the gradient with respect to one term in the sum that makes up 
+    only want the gradient with respect to one term in the sum that makes up
     target_func. So, we map target_func to a function that evaluates exactly one component
     in the sum. This mapping is defined in GradientApproximations.__init__
 
@@ -350,7 +350,7 @@ class GradientApproximations:
         self.targetFuncToComponentMap = \
             {"action":TargetFunctions._term_in_action_sum,
              "action_squared":TargetFunctions._term_in_action_squared_sum}
-    
+
     def discrete_element(self,mass,path,gradOfPes,dr,drp1,beff,beffp1,beffm1,pot,potp1,potm1):
         """
         #TODO: what is this calculating?
@@ -384,7 +384,7 @@ class GradientApproximations:
         -------
         gradOfAction : float array
             Gradient of action at point i
-            
+
         :Maintainer: Kyle
         """
         eps = fdTol
@@ -405,26 +405,26 @@ class GradientApproximations:
         #TODO: what is this calculating?
 
         Performs discretized action gradient, needs numerical PES still
-        
-        
+
+
         :Maintainer: Kyle
         """
         eps = fdTol
-        
+
         gradOfPes = np.zeros(path.shape)
         gradOfBeff = np.zeros(path.shape)
         gradOfAction = np.zeros(path.shape)
         dr = np.zeros(path.shape)
         beff = np.zeros(potentialOnPath.shape)
-        
+
         nPts, nDims = path.shape
-        
+
         #Build grad of potential
         gradOfPes = self._midpoint_grad(potential,path,eps=eps)
 
         dr[1:,:] = np.array([path[ptIter] - path[ptIter-1] \
                                for ptIter in range(1,nPts)])
-        
+
         beff[1:] = np.array([np.dot(np.dot(massOnPath[ptIter],dr[ptIter]),dr[ptIter])/np.sum(dr[ptIter,:]**2) \
                                for ptIter in range(1,nPts)])
         pool = Pool(6)
@@ -438,41 +438,41 @@ class GradientApproximations:
 
         gradOfAction[1:nPts-1,:] = mapped[:,0,:]
         return gradOfAction, gradOfPes
-    
+
     def discrete_sqr_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
                                  target_func):
         """
         #TODO: what is this calculating?
 
         Performs discretized action gradient, needs numerical PES still
-        
+
         :Maintainer: Kyle
         """
         eps = fdTol
-        
+
         gradOfPes = np.zeros(path.shape)
         gradOfBeff = np.zeros(path.shape)
         gradOfAction = np.zeros(path.shape)
         dr = np.zeros(path.shape)
         beff = np.zeros(potentialOnPath.shape)
-        
+
         nPts, nDims = path.shape
-        
+
         #Build grad of potential
         gradOfPes = self._midpoint_grad(potential,path,eps=eps)
-        
+
         dr[1:,:] = np.array([path[ptIter] - path[ptIter-1] \
                                for ptIter in range(1,nPts)])
 
         beff[1] = np.dot(np.dot(massOnPath[1],dr[1]),dr[1])/np.sum(dr[1,:]**2)
-        
+
         if mass is not None:
             for ptIter in range(1,nPts-1):
                 gradOfBeff[ptIter] = self._beff_grad(mass,path[ptIter],dr[ptIter],eps=eps)
-        
+
         for ptIter in range(1,nPts-1):
             beff[ptIter+1] = np.dot(np.dot(massOnPath[ptIter+1],dr[ptIter+1]),dr[ptIter+1])/np.sum(dr[ptIter+1,:]**2)
-            
+
             dnorm=np.linalg.norm(dr[ptIter])
             dnormP1=np.linalg.norm(dr[ptIter+1])
             dhat = dr[ptIter]/dnorm
@@ -482,9 +482,9 @@ class GradientApproximations:
                 (beff[ptIter]*potentialOnPath[ptIter] + beff[ptIter-1]*potentialOnPath[ptIter-1])*dhat-\
                 (beff[ptIter]*potentialOnPath[ptIter] + beff[ptIter+1]*potentialOnPath[ptIter+1])*dhatP1+\
                 (beff[ptIter]*gradOfPes[ptIter] + potentialOnPath[ptIter]*gradOfBeff[ptIter])*(dnorm+dnormP1))
-        
+
         return gradOfAction, gradOfPes
-    
+
     def discrete_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
                                  target_func):
         """
@@ -538,18 +538,18 @@ class GradientApproximations:
                             target_func):
         """
         #TODO: what is this calculating?
-        
+
         Performs discretized action gradient, needs numerical PES still
-        
+
         :Maintainer: Kyle
         """
         eps = fdTol
-        
+
         gradOfPes = np.zeros(path.shape)
         gradOfAction = np.zeros(path.shape)
-        
+
         nPts, nDims = path.shape
-        
+
         actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
 
         # build gradOfAction and gradOfPes (constant mass)
@@ -566,14 +566,14 @@ class GradientApproximations:
                 (np.sqrt(2*mu*potentialOnPath[ptIter]) + np.sqrt(2*mu*potentialOnPath[ptIter-1]))*dhat-\
                 (np.sqrt(2*mu*potentialOnPath[ptIter]) + np.sqrt(2*mu*potentialOnPath[ptIter+1]))*dhatP1+\
                 mu*gradOfPes[ptIter]*(dnorm+dnormP1) / np.sqrt(2*mu*potentialOnPath[ptIter]))
-        
+
         return gradOfAction, gradOfPes
-    
+
     def forward_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
                             target_func):
         """
         Takes forwards finite difference gradient of any action-like functional
-        
+
         Parameters
         ----------
         path : np.ndarray
@@ -596,38 +596,38 @@ class GradientApproximations:
 
         Notes
         -----
-        The full action is computed at every finite difference step. Does not return the gradient 
+        The full action is computed at every finite difference step. Does not return the gradient
         of the mass function, as that's not used elsewhere
-        
+
         :Maintainer: Daniel
         """
         eps = fdTol
-        
+
         gradOfPes = np.zeros(path.shape)
         gradOfAction = np.zeros(path.shape)
-        
+
         nPts, nDims = path.shape
-        
+
         actionOnPath, _, _ = target_func(path,potentialOnPath,massOnPath)
-        
+
         for ptIter in range(nPts):
             for dimIter in range(nDims):
                 steps = path.copy()
                 steps[ptIter,dimIter] += eps
                 actionAtStep, potAtStep, massAtStep = target_func(steps,potential,mass)
-                
+
                 gradOfPes[ptIter,dimIter] = (potAtStep[ptIter] - potentialOnPath[ptIter])/eps
                 gradOfAction[ptIter,dimIter] = (actionAtStep - actionOnPath)/eps
-        
+
         return gradOfAction, gradOfPes
-    
+
     def forward_action_component_grad(self,path,potential,potentialOnPath,mass,\
                                       massOnPath,target_func):
         """
         Requires an approximation of the action that sums up values along
         the path, such as TargetFunctions.action. Then, this computes the
         forwards finite difference approximation of every term in the sum.
-        
+
         Note the difference with GradientApproximations().forward_action_grad:
         there, the full action is computed for every step. Here, only the component
         at that step is computed.
@@ -637,65 +637,65 @@ class GradientApproximations:
         target_func : function
             Any term in TargetFunctions that is the sum of some constituent
             terms (e.g. TargetFunctions.action). Uses target_func.__name__
-            to select the gradient of a term in the sum, such as 
+            to select the gradient of a term in the sum, such as
             TargetFunctions._term_in_action_sum
         others : See :py:func:`forward_action_grad`
 
         Returns
         -------
         See :py:func:`forward_action_grad`
-        
+
         :Maintainer: Daniel
         """
         targetFuncName = target_func.__name__
         tf_component = self.targetFuncToComponentMap[targetFuncName]
-        
+
         eps = fdTol
-        
+
         gradOfPes = np.zeros(path.shape)
         gradOut = np.zeros(path.shape)
-        
+
         nPts, nDims = path.shape
-        
+
         if massOnPath is None:
             massOnPath = np.full((nPts,nDims,nDims),np.identity(nDims))
-        
+
         #Treat the endpoints separately
         for ptIter in range(1,nPts-1):
             for dimIter in range(nDims):
                 points = path[ptIter-1:ptIter+1].copy()
                 actTermAtPt, _, _ = \
                     tf_component(points,potentialOnPath[ptIter],massOnPath[ptIter])
-                
+
                 points[1,dimIter] += eps
                 actTermAtStep, potAtStep, massAtStep = \
                     tf_component(points,potential,mass)
-                
+
                 gradOfPes[ptIter,dimIter] = \
                     (potAtStep - potentialOnPath[ptIter])/eps
                 gradOut[ptIter,dimIter] = (actTermAtStep - actTermAtPt)/eps
-        
+
         #Handling endpoints
         for dimIter in range(nDims):
             pt = path[0].copy()
             pt[dimIter] += eps
             potAtStep = potential(pt)
             gradOfPes[0,dimIter] = (potAtStep - potentialOnPath[0])/eps
-            
+
             pt = path[-1].copy()
             pt[dimIter] += eps
             potAtStep = potential(pt)
             gradOfPes[-1,dimIter] = (potAtStep - potentialOnPath[-1])/eps
-            
+
         return gradOut, gradOfPes
-    
+
     def _midpoint_grad(self,func,points,eps=fdTol):
         """
         Midpoint finite difference. Probably best if not used with actual DFT calculations,
             vs a forwards/reverse finite difference
         Assumes func only depends on a single point (vs the action, which depends on
               all of the points)
-        
+
         :Maintainer: Eric
         """
         if len(points.shape) == 1:
@@ -705,21 +705,21 @@ class GradientApproximations:
         for dimIter in range(nDims):
             step = np.zeros(nDims)
             step[dimIter] = 1
-            
+
             forwardStep = points + eps/2*step
             backwardStep = points - eps/2*step
-            
+
             forwardEval = func(forwardStep)
             backwardEval = func(backwardStep)
 
             gradOut[:,dimIter] = (forwardEval-backwardEval)/eps
-        
+
         return gradOut
-    
+
     def _beff_grad(self,func,points,dr,eps=fdTol):
         """
         Midpoint finite difference of B_eff mass.
-        
+
         :Maintainer: Kyle
         """
         if len(points.shape) == 1:
@@ -744,9 +744,9 @@ class GradientApproximations:
             forwardEval = np.dot(np.dot(massP1,dr),dr)/ds
             backwardEval = np.dot(np.dot(massM1,dr),dr)/ds
 
-            gradOut[:,dimIter] = (forwardEval-backwardEval)/eps 
+            gradOut[:,dimIter] = (forwardEval-backwardEval)/eps
         return gradOut
-    
+
     def mep_default(self,points,potential,auxFunc=None):
         '''
         Used in MEP for force updates. There, one only needs the gradient of the
@@ -767,13 +767,13 @@ class GradientApproximations:
             DESCRIPTION.
         gradAux : TYPE
             DESCRIPTION.
-        
+
         :Maintainer: Eric
         '''
         gradPES = self._midpoint_grad(potential,points,eps=fdTol)
         if auxFunc is None:
             gradAux = None
-        else: 
+        else:
             gradAux = self._midpoint_grad(auxFunc,points,eps=fdTol)
         return gradPES, gradAux
 
@@ -802,12 +802,12 @@ class SurfaceUtils:
         """
         Returns the indices corresponding to the local minimum values. Taken
         originally from https://stackoverflow.com/a/3986876
-        
+
         Parameters
         ----------
         arr : np.ndarray
             The array to find minima of. Is D dimensional
-    
+
         Returns
         -------
         minIndsOut : Tuple of numpy arrays
@@ -829,12 +829,12 @@ class SurfaceUtils:
         #the array
         local_min = np.isclose(filters.minimum_filter(arr, footprint=neighborhood,\
                                                       mode="nearest"),arr,atol=10**(-15))
-        
+
         background = (arr==0)
         eroded_background = morphology.binary_erosion(background,\
                                                       structure=neighborhood,\
                                                       border_value=1)
-            
+
         detected_minima = local_min ^ eroded_background
         allMinInds = np.vstack(local_min.nonzero())
         minIndsOut = tuple([allMinInds[coordIter,:] for \
@@ -846,7 +846,7 @@ class SurfaceUtils:
         """
         Returns the indices corresponding to the local minimum values within a
         desired part of the PES
-        
+
         Parameters
         ----------
         arr : np.ndarray
@@ -870,7 +870,7 @@ class SurfaceUtils:
         minIndsOut : Tuple of np.ndarrays
             D arrays of length k, for k minima found in the region. If returnOnlySmallest,
             returns a tuple, not a tuple of arrays
-            
+
         Notes
         -----
         Note that, if we write searchPerc=[s1,s2], then s1 is the range for
@@ -878,17 +878,17 @@ class SurfaceUtils:
         np.meshgrid's default indexing, then s1 will actually restrict the
         range of the second (physical) coordinate: np.meshgrid(X,Y,Z,...)
         returns arrays of shape (Y.len,X.len,Z.len,...)
-    
+
         """
         if len(searchPerc) != len(arr.shape):
             raise TypeError("searchPerc and arr have unequal lengths ("+\
                             str(len(searchPerc))+") and ("+str(len(arr.shape))+")")
-                
+
         if np.any(np.array(searchPerc)<=0) or np.any(np.array(searchPerc)>1):
             raise ValueError("All entries in searchPerc must be in the interval (0,1].")
-        
+
         allMinInds = np.vstack(SurfaceUtils.find_all_local_minimum(arr))
-        
+
         #Selecting minima within the desired range
         minIndsMask = np.ones(allMinInds.shape[1],dtype=bool)
         for minIter in range(allMinInds.shape[1]):
@@ -896,18 +896,18 @@ class SurfaceUtils:
                 if allMinInds[coordIter,minIter] > \
                     int(searchPerc[coordIter] * arr.shape[coordIter]):
                         minIndsMask[minIter] = False
-        
+
         allMinInds = allMinInds[:,minIndsMask]
-        
+
         minIndsOut = tuple([allMinInds[coordIter,:] for \
                             coordIter in range(allMinInds.shape[0])])
-        
+
         if returnOnlySmallest:
             actualMinInd = np.argmin(arr[minIndsOut])
             minIndsOut = tuple([m[actualMinInd] for m in minIndsOut])
-            
+
         return minIndsOut
-    
+
     @staticmethod
     def find_approximate_contours(coordMeshTuple,zz,eneg=0,show=False,
                                   returnAsArr=True):
@@ -949,9 +949,9 @@ class SurfaceUtils:
         nDims = len(coordMeshTuple)
         uniqueCoords = [np.unique(c) for c in coordMeshTuple]
         coordMeshTuple = np.meshgrid(*uniqueCoords)
-        
+
         fig, ax = plt.subplots()
-        
+
         if nDims == 1:
             raise NotImplementedError
         elif nDims == 2:
@@ -970,35 +970,35 @@ class SurfaceUtils:
                 localMesh = (coordMeshTuple[0][meshInds],coordMeshTuple[1][meshInds])
                 zzCorrectShape = _get_correct_shape(tuple(np.unique(c) for c in localMesh),
                                                     zz[meshInds])
-                
+
                 contoursOnLevel = ax.contour(*localMesh,zzCorrectShape,levels=[eneg]).allsegs[0]
-                
+
                 levelValues = np.array([np.unique(c[meshInds]) for c in coordMeshTuple[2:]]).flatten()
                 contoursWithLevel = []
                 for c in contoursOnLevel:
                     cOut = np.zeros((c.shape[0],nDims))
                     cOut[:,:2] = c
-                    
+
                     for (lIter,l) in enumerate(levelValues):
                         cOut[:,lIter+2] = l
                     contoursWithLevel.append(cOut)
                 allContours[tuple(ind)] = contoursWithLevel
-                
+
             if show:
                 plt.show(fig)
-                
+
         if not show:
             plt.close(fig)
-        
+
         if returnAsArr:
             listOfConts = []
             for c in allContours:
                 for subC in c:
                     listOfConts.append(subC)
             allContours = np.vstack(listOfConts)
-        
+
         return allContours
-    
+
     @staticmethod
     def round_points_to_grid(coordMeshTuple,ptsArr):
         """
@@ -1025,34 +1025,34 @@ class SurfaceUtils:
             The indices of the points. Of shape (nPoints,nDims). See notes
         gridValsOut : np.ndarray
             The nearest grid values. Of shape (nPoints,nDims)
-        
+
         Notes
         -----
         Has standard complication from np.meshgrid - indexing is (N2,N1,N3,...),
         when the coordinates have lengths (N1,N2,N3,...). This returns the default
-        indexing of np.meshgrid for coordMeshTuple. See e.g. 
+        indexing of np.meshgrid for coordMeshTuple. See e.g.
         https://numpy.org/doc/stable/reference/generated/numpy.meshgrid.html
 
-        """        
+        """
         nDims = len(coordMeshTuple)
-        
+
         if nDims < 2:
             raise NotImplementedError("Expected nDims >= 2; recieved "+str(nDims))
-            
+
         uniqueCoords = [np.unique(c) for c in coordMeshTuple]
         coordMeshTuple = np.meshgrid(*uniqueCoords)
-        
+
         if ptsArr.shape == (nDims,):
             ptsArr = ptsArr.reshape((1,nDims))
 
         if ptsArr.shape[1] != nDims:
             raise ValueError("ptsArr.shape = "+str(ptsArr.shape)+\
                              "; second dimension should be nDims, "+str(nDims))
-            
+
         nPts = ptsArr.shape[0]
-        
+
         indsOut = np.zeros((nPts,nDims),dtype=int)
-        
+
         #In case some points are on the grid, which np.searchsorted doesn't seem to
         #handle the way I'd like
         for dimIter in range(nDims):
@@ -1065,19 +1065,19 @@ class SurfaceUtils:
                         np.searchsorted(uniqueCoords[dimIter],pt) - 1
                 else: #Is on grid
                     indsOut[ptIter,dimIter] = tentativeInd
-        
+
         #I subtract 1 in some cases
         indsOut[indsOut<0] = 0
-        
+
         gridValsOut = np.zeros((nPts,nDims))
         for ptIter in range(nPts):
             inds = indsOut[ptIter]
             inds[[0,1]] = inds[[1,0]]
             inds = tuple(inds)
             gridValsOut[ptIter] = np.array([c[inds] for c in coordMeshTuple])
-        
+
         return indsOut, gridValsOut
-    
+
     @staticmethod
     def find_endpoints_on_grid(coordMeshTuple,potArr,returnAllPoints=False,eneg=0,
                                returnIndices=False):
@@ -1109,29 +1109,29 @@ class SurfaceUtils:
         if returnAllPoints:
             warnings.warn("find_endpoints_on_grid is finding all "\
                           +"contours; this may include starting point")
-        
+
         nDims = len(coordMeshTuple)
         uniqueCoords = [np.unique(c) for c in coordMeshTuple]
         coordMeshTuple = np.meshgrid(*uniqueCoords)
-        
+
         potArr = _get_correct_shape(uniqueCoords,potArr)
-        
+
         allContours = SurfaceUtils.find_approximate_contours(coordMeshTuple,potArr,
                                                              eneg=eneg,returnAsArr=False)
-        
+
         allowedEndpoints = np.zeros((0,nDims))
         allowedIndices = np.zeros((0,nDims),dtype=int)
-        
+
         for contOnLevel in allContours:
             gridContOnLevel = []
             gridIndsOnLevel = []
             for cont in contOnLevel:
                 locGridInds, locGridVals = \
                     SurfaceUtils.round_points_to_grid(coordMeshTuple,cont)
-                
+
                 gridIndsOnLevel.append(locGridInds)
                 gridContOnLevel.append(locGridVals)
-            
+
             if returnAllPoints:
                 for (cIter,c) in enumerate(gridContOnLevel):
                     allowedEndpoints = np.concatenate((allowedEndpoints,c),axis=0)
@@ -1143,10 +1143,10 @@ class SurfaceUtils:
                     np.concatenate((allowedEndpoints,gridContOnLevel[outerIndex]),axis=0)
                 allowedIndices = \
                     np.concatenate((allowedIndices,gridIndsOnLevel[outerIndex]),axis=0)
-        
+
         allowedEndpoints = np.unique(allowedEndpoints,axis=0)
         allowedIndices = np.unique(allowedIndices,axis=0)
-        
+
         if returnIndices:
             return allowedEndpoints, allowedIndices
         else:
@@ -1154,7 +1154,7 @@ class SurfaceUtils:
 
 def shift_func(func_in,shift=10**(-4)):
     """
-    Shifts func_in output down by shift. Especially for use with interpolators 
+    Shifts func_in output down by shift. Especially for use with interpolators
     where the minimum of the interpolator may be a bit lower than the minimum of
     the array
 
@@ -1168,7 +1168,7 @@ def shift_func(func_in,shift=10**(-4)):
     -------
     func_out : function
         The shifted function
-    
+
     :Maintainer: Daniel
     """
     def func_out(coords):
@@ -1180,21 +1180,21 @@ def _get_correct_shape(gridPoints,arrToCheck,normalOrder=True):
     Utility for automatically correcting the shape of an array, to deal with
     nonsense regarding np.meshgrid's default setup
     """
-    
+
     defaultMeshgridShape = np.array([len(g) for g in gridPoints])
     possibleOtherShape = tuple(defaultMeshgridShape)
     defaultMeshgridShape[[1,0]] = defaultMeshgridShape[[0,1]]
     defaultMeshgridShape = tuple(defaultMeshgridShape)
-    
+
     if not normalOrder: #Not compliant with np.meshgrid, as in NDInterpWithBoundary for D = 3
         defaultMeshgridShape, possibleOtherShape = possibleOtherShape, defaultMeshgridShape
-    
+
     isSquare = False
     if defaultMeshgridShape[0] == defaultMeshgridShape[1]:
         isSquare = True
         warnings.warn("Grid is square; cannot check if data is transposed."+\
                       " Note that gridVals should be of shape (x.size,y.size).")
-    
+
     if arrToCheck.shape == defaultMeshgridShape:
         pass
     elif arrToCheck.shape == possibleOtherShape and not isSquare:
@@ -1204,7 +1204,7 @@ def _get_correct_shape(gridPoints,arrToCheck,normalOrder=True):
                          " does not match expected shape "+\
                          str(defaultMeshgridShape)+" or possible shape "+\
                          str(possibleOtherShape))
-    
+
     return arrToCheck
 
 class NDInterpWithBoundary:
@@ -1216,7 +1216,7 @@ class NDInterpWithBoundary:
     -------
     __call__(points)
         Evaluates the interpolator
-    
+
     :Maintainer: Daniel
     """
     def __init__(self,gridPoints,gridVals,boundaryHandler="exponential",symmExtend=None,\
@@ -1231,7 +1231,7 @@ class NDInterpWithBoundary:
             The grid values to be interpolated. Expected to be of shape (N2,N1,N3,...),
             as in the output of np.meshgrid
         boundaryHandler : str, optional
-            How points outside of the interpolation region are handled. The 
+            How points outside of the interpolation region are handled. The
             default is 'exponential'
         symmExtend : None or np.ndarray of bools, optional
             Whether to symmetrically extend gridVals when evaluating. The default is
@@ -1250,14 +1250,14 @@ class NDInterpWithBoundary:
         ValueError
             Any unallowed boundaryHandler or transformFuncName; a wrong-shaped
             array; or an unsorted gridVals
-        
+
         Notes
         -----
         The boundary handler is assumed to be the same for all dimensions, because
         I can't think of a reasonable way to allow for different handling for
-        different dimensions. I also see no reason why one would want to treat 
+        different dimensions. I also see no reason why one would want to treat
         the dimensions differently.
-        
+
         Our use case is density functional theory, and our grid points are the
         multipole moments Qi in a constrained DFT calculation. It does not
         always make sense to symmetrically extend a potential energy surface:
@@ -1266,41 +1266,41 @@ class NDInterpWithBoundary:
         default assumes Q30 is the second coordinate, and should only be extended
         symmetrically near Q30 = 0; otherwise, everything else is not extended at
         all.
-        
+
         Also assumes for symmetric extension that the lowest value is 0.
 
         """
         self.nDims = len(gridPoints)
         if self.nDims < 2:
             raise NotImplementedError("Expected nDims >= 2")
-        
+
         bdyHandlerFuncs = {"exponential":self._exp_boundary_handler,
                            None:self._identity_boundary_handler}
         if boundaryHandler not in bdyHandlerFuncs.keys():
             raise ValueError("boundaryHandler '%s' is not defined" % boundaryHandler)
-        
+
         self.boundaryHandler = bdyHandlerFuncs[boundaryHandler]
-        
+
         if symmExtend is None:
             symmExtend = np.array([False,True]+(self.nDims-2)*[False],dtype=bool)
         elif not isinstance(symmExtend,np.ndarray):
             warnings.warn("Using symmetric extension "+str(symmExtend)+\
                           " for all dimensions. Make sure this is intended.")
             symmExtend = symmExtend * np.ones(len(gridPoints),dtype=bool)
-            
+
         if symmExtend.shape != (self.nDims,):
             raise ValueError("symmExtend.shape '"+str(symmExtend.shape)+\
                              "' does not match nDims, "+str(self.nDims))
-        
+
         self.symmExtend = symmExtend
-        
+
         self.gridPoints = tuple([np.asarray(p) for p in gridPoints])
-        
+
         for i, p in enumerate(gridPoints):
             if not np.all(np.diff(p) > 0.):
                 raise ValueError("The points in dimension %d must be strictly "
                                  "ascending" % i)
-        
+
         if custom_func is None:
             if self.nDims == 2 and not _test_linear:
                 self.gridVals = _get_correct_shape(gridPoints,gridVals)
@@ -1311,7 +1311,7 @@ class NDInterpWithBoundary:
                 self._call = self._call_nd
         else:
             self._call = custom_func
-            
+
         postEvalDict = {"identity":self._identity_transform_function,
                         "smooth_abs":self._smooth_abs_transform_function}
         self.post_eval = postEvalDict[transformFuncName]
@@ -1319,53 +1319,53 @@ class NDInterpWithBoundary:
     def __call__(self,points):
         """
         Interpolation at points
-        
+
         Parameters
         ----------
         points : np.ndarray
             The coordinates to sample the gridded data at. Can be more than 2D,
             as in points.shape == complexShape + (self.nDims,)
-            
+
         Returns
         -------
         result : np.ndarray
             The interpolated function evaluated at points. Is of shape complexShape
-        
+
         """
         originalShape = points.shape[:-1]
         if originalShape == ():
             originalShape = (1,)
-        
+
         if points.shape[-1] != self.nDims:
             raise ValueError("The requested sample points have dimension "
                              "%d, but this NDInterpWithBoundary expects "
                              "dimension %d" % (points.shape[-1], self.nDims))
-        
+
         points = points.reshape((-1,self.nDims))
-        
+
         #Dealing with symmetric extension
         for dimIter in range(self.nDims):
             if self.symmExtend[dimIter]:
                 points[:,dimIter] = np.abs(points[:,dimIter])
-        
+
         #Checking if each point is acceptable, and interpolating individual points.
         result = np.zeros(points.shape[0])
-        
+
         for (ptIter, point) in enumerate(points):
             isInBounds = np.zeros((2,self.nDims),dtype=bool)
             isInBounds[0] = (np.array([g[0] for g in self.gridPoints]) <= point)
             isInBounds[1] = (point <= np.array([g[-1] for g in self.gridPoints]))
-            
+
             if np.count_nonzero(~isInBounds) == 0:
                 result[ptIter] = self._call(point)
             else:
                 result[ptIter] = self.boundaryHandler(point,isInBounds)
-        
+
         result = self.post_eval(result)
         result = result.reshape(originalShape)
-        
+
         return result
-    
+
     def _call_2d(self,point):
         """
         Evaluates the RectBivariateSpline instance at a single point. Defined
@@ -1373,7 +1373,7 @@ class NDInterpWithBoundary:
         regardless of dimension
         """
         return self.rbv(point[0],point[1],grid=False)
-    
+
     def _call_nd(self,point):
         """
         Repeated linear interpolation. For the 2D case, see e.g.
@@ -1388,7 +1388,7 @@ class NDInterpWithBoundary:
 
         """
         indices, normDistances = self._find_indices(np.expand_dims(point,1))
-                
+
         # find relevant values
         # each i and i+1 represents a edge
         edges = itertools.product(*[[i, i + 1] for i in indices])
@@ -1398,56 +1398,56 @@ class NDInterpWithBoundary:
             for ei, i, yi in zip(edge_indices, indices, normDistances):
                 weight *= np.where(ei == i, 1 - yi, yi).item()
             value += weight * self.gridVals[edge_indices].item()
-        
+
         return value
-    
+
     def _find_indices(self,points):
         """
         Finds indices of nearest gridpoint, utilizing the regularity of the grid.
         Also computes how far in each coordinate dimension every point is from
-        the previous gridpoint (not the nearest), normalized such that the next 
+        the previous gridpoint (not the nearest), normalized such that the next
         gridpoint (in a particular dimension) is distance 1 from the nearest gridpoint
-        (called unity units). The distance is normed to make the interpolation 
+        (called unity units). The distance is normed to make the interpolation
         simpler
-        
+
         Taken from scipy.interpolate.RegularGridInterpolator.
 
         Example
         -------
-        Returned indices of ([2,3],[1,7],[3,2]) indicates that the first point 
-        has nearest grid index (2,1,3), and the second has nearest grid index 
+        Returned indices of ([2,3],[1,7],[3,2]) indicates that the first point
+        has nearest grid index (2,1,3), and the second has nearest grid index
         (3,7,2).
-        
+
         Notes
         -----
-        If the nearest edge is the outermost edge in a given coordinate, the inner 
+        If the nearest edge is the outermost edge in a given coordinate, the inner
         edge is return instead.
-        
+
         Requires points to have first dimension equal to self.nDims so that
         this can zip points and self.gridPoints
-        
+
         """
         indices = []
         normDistances = np.zeros(points.shape)
-        
+
         for (coordIter,x,grid) in zip(np.arange(self.nDims),points,self.gridPoints):
             #This is why the grid must be sorted - this search is now quick. All
             #this does is find the index in which to place x such that the list
             #self.grid[coordIter] remains sorted.
             i = np.searchsorted(grid, x) - 1
-            
+
             #If x would be the new first element, index it as zero
             i[i < 0] = 0
             #If x would be the last element, make it not so. However, the way
             #the interpolation scheme is set up, we need the nearest gridpoint
             #that is not the outermost gridpoint. See below with grid[i+1]
             i[i > grid.size - 2] = grid.size - 2
-            
+
             indices.append(i)
             normDistances[coordIter] = (x - grid[i]) / (grid[i + 1] - grid[i])
-            
+
         return tuple(indices), normDistances
-    
+
     def _exp_boundary_handler(self,point,isInBounds):
         """
         Given a point that's out of the grid region, computes the nearest point
@@ -1458,7 +1458,7 @@ class NDInterpWithBoundary:
         Notes
         -----
         Does not allow for evaluation of multiple points at a time.
-        
+
         For the i'th coordinate, both isInBounds[0,i] and isInBounds[1,i] should
         not be False - a point cannot be less than a minimum value and greater
         than a maximum value.
@@ -1479,16 +1479,16 @@ class NDInterpWithBoundary:
         # print(point)
         #Evaluating the nearest allowed point on the boundary of the allowed region
         valAtNearest = self._call(nearestAllowed)
-        
+
         dist = np.linalg.norm(nearestAllowed-point)
-        
+
         #Yes, I mean to take an additional square root here
         result = valAtNearest*np.exp(np.sqrt(dist))
         return result
-    
+
     def _identity_boundary_handler(self,point,isInBounds):
         return self._call(point)
-    
+
     def _identity_transform_function(self,normalEvaluation):
         """
         Returns normal evaluation. Not sure if it's faster to have this dummy
@@ -1496,13 +1496,13 @@ class NDInterpWithBoundary:
         if we should call a transform function
         """
         return normalEvaluation
-    
+
     def _smooth_abs_transform_function(self,normalEvaluation):
         """
         A smooth approximation of the absolute value of the energy
         """
         return np.sqrt(normalEvaluation**2 + 10**(-8))
-    
+
 class PositiveSemidefInterpolator:
     """
     Interpolates a positive semidefinite function in D dimensions. Takes
@@ -1519,7 +1519,7 @@ class PositiveSemidefInterpolator:
     Interpolator for D > 2 is not positive semidefinite, although it is
     symmetric. Is intended to be PSD, sometime in the future
     """
-    def __init__(self,gridPoints,listOfVals,ndInterpKWargs={}):
+    def __init__(self,gridPoints,listOfVals,ndInterpKWargs={},_test_nd=False):
         """
         Parameters
         ----------
@@ -1546,22 +1546,22 @@ class PositiveSemidefInterpolator:
         self.nDims = len(gridPoints)
         self.gridPoints = gridPoints
         self.ndInterpKWargs = ndInterpKWargs
-        
+
         #Standard error checking
         assert len(listOfVals) == int(self.nDims*(self.nDims+1)/2)
-        
-        if self.nDims == 2:
+
+        if self.nDims == 2 and _test_nd == False:
             self.gridValsList = [_get_correct_shape(gridPoints,l) for l in listOfVals]
             self._construct_interps_2d()
             self._call = self._call_2d
-        elif self.nDims > 2:
+        elif self.nDims > 2 or _test_nd:
             warnings.warn("Interpolation for D > 2 not positive semidefinite")
             self.gridValsList = [_get_correct_shape(gridPoints,l,normalOrder=False) for l in listOfVals]
             self._construct_interps_nd()
             self._call = self._call_nd
         else:
             raise NotImplementedError
-        
+
     def _construct_interps_2d(self):
         """
         Takes eigen decomposition of matrix, and interpolates the eigenvalues
@@ -1571,26 +1571,27 @@ class PositiveSemidefInterpolator:
         self.gridVals = np.stack((np.stack((self.gridValsList[0],self.gridValsList[1])),\
                                   np.stack((self.gridValsList[1],self.gridValsList[2]))))
         self.gridVals = np.moveaxis(self.gridVals,[0,1],[2,3])
-        
-        eigenVals, eigenVecs = np.linalg.eig(self.gridVals)
-        thetaVals = np.arccos(eigenVecs[:,:,0,0])
-        
+
+        eigenVals, eigenVecs = np.linalg.eigh(self.gridVals)
+
+        # thetaVals = np.arccos(eigenVecs[:,:,0,0])
+
         #Constructing interpolators
         self._eigenValInterps = [NDInterpWithBoundary(self.gridPoints,e,**self.ndInterpKWargs)\
                                  for e in eigenVals.T]
-        self._eigenVecInterp = NDInterpWithBoundary(self.gridPoints,thetaVals,**self.ndInterpKWargs)
-        
+        self._eigenVecInterp = NDInterpWithBoundary(self.gridPoints,eigenVecs[:,:,0,0],**self.ndInterpKWargs)
+
         return None
-        
+
     def _construct_interps_nd(self):
         """
         Interpolates unique components of the inertia using NDInterpWithBoundary
         """
         self._componentInterps = [NDInterpWithBoundary(self.gridPoints,m,**self.ndInterpKWargs)\
                                   for m in self.gridValsList]
-        
+
         return None
-    
+
     def _call_2d(self,points):
         """
         Evaluates the interpolator in 2 dimensions
@@ -1598,54 +1599,55 @@ class PositiveSemidefInterpolator:
         originalShape = points.shape[:-1]
         if originalShape == ():
             originalShape = (1,)
-        
+
         if points.shape[-1] != self.nDims:
             raise ValueError("The requested sample points have dimension "
                              "%d, but this NDInterpWithBoundary expects "
                              "dimension %d" % (points.shape[-1], self.nDims))
-            
+
         points = points.reshape((-1,self.nDims))
-        
+
         eigenVals = [e(points) for e in self._eigenValInterps]
-        theta = self._eigenVecInterp(points)
-        
-        ct = np.cos(theta)
-        st = np.sin(theta)
-        
+        ct = self._eigenVecInterp(points).clip(0)
+        st = np.sqrt(1-ct**2)
+
+        # ct = np.cos(theta)
+        # st = np.sin(theta)
+        #print(np.any(np.array(eigenVals)>1))
         eigenVals = [e.clip(0) for e in eigenVals]
-        
+
         ret = np.zeros((len(points),2,2))
         for (ptIter,point) in enumerate(points):
             ret[ptIter,0,0] = eigenVals[0][ptIter]*ct[ptIter]**2 + \
                 eigenVals[1][ptIter]*st[ptIter]**2
-            ret[ptIter,1,0] = (eigenVals[1][ptIter]-eigenVals[0][ptIter])*st[ptIter]*ct[ptIter]
+            ret[ptIter,1,0] = (eigenVals[0][ptIter]-eigenVals[1][ptIter])*st[ptIter]*ct[ptIter]
             ret[ptIter,0,1] = ret[ptIter,1,0]
             ret[ptIter,1,1] = eigenVals[0][ptIter]*st[ptIter]**2 + \
                 eigenVals[1][ptIter]*ct[ptIter]**2
-                
+
         return ret.reshape(originalShape+(2,2))
-    
+
     def _call_nd(self,points):
         """
         Evaluates the interpolator in D>2 dimensions
         """
         evaluatedComponents = [f(points) for f in self._componentInterps]
-        
+
         ret = np.zeros(points.shape[:-1]+(self.nDims,self.nDims))
-        
+
         upperTriInds = np.triu_indices(self.nDims)
-        
+
         sliceTuple = (ret.ndim-2)*(slice(None),)
         for (evalIter,evalArr) in enumerate(evaluatedComponents):
             rowIter = upperTriInds[0][evalIter]
             colIter = upperTriInds[1][evalIter]
-            
+
             ret[sliceTuple+(rowIter,colIter)] = evalArr
             #Symmetrizing
             ret[sliceTuple+(colIter,rowIter)] = evalArr
-            
+
         return ret
-    
+
     def __call__(self,points):
         """
         Evaluates the matrix at points
@@ -1689,30 +1691,30 @@ class InterpolatedPath:
 
         Notes
         -----
-        Note that when one considers a 1D curve embedded in 2D, e.g. in a plot 
+        Note that when one considers a 1D curve embedded in 2D, e.g. in a plot
         of a function, one should specify 'u' in kwargs. Otherwise, 'u' will
         be computed based on the distance between points on the path, which
         will generally lead to a different plot than what is desired
         """
         self.path = discretePath
-        
+
         defaultKWargs = {"full_output":True,"s":0,"k":1}
         for arg in defaultKWargs:
             if arg not in kwargs:
                 kwargs[arg] = defaultKWargs[arg]
-        
+
         if self.path.ndim == 1:
             listOfCoords = [self.path]
         else:
             listOfCoords = [d for d in self.path.T]
-        
+
         if kwargs["full_output"]:
             (self.tck, self.u), self.fp, self.ier, self.msg = \
                 splprep(listOfCoords,**kwargs)
             # print(self.msg)
         else:
             self.tck, self.u = splprep(listOfCoords,**kwargs)
-        
+
     def __call__(self,t):
         """
         Evaluates the path at a point t in [0,1]
@@ -1721,7 +1723,7 @@ class InterpolatedPath:
         ----------
         t : float
             The point on the arc length
-        
+
         Raises
         ------
         ValueError
@@ -1734,9 +1736,9 @@ class InterpolatedPath:
         """
         if np.any(t>1) or np.any(t<0):
             raise ValueError("t must be between 0 and 1 for interpolation")
-        
+
         return splev(t,self.tck)
-    
+
     def compute_along_path(self,target_func,nImages,tfArgs,tfKWargs):
         """
         Computes a functional, from TargetFunctions, along the path
@@ -1757,19 +1759,19 @@ class InterpolatedPath:
         t = np.linspace(0,1,nImages)
         path = np.array(self.__call__(t)).T
         tfOut = target_func(path,*tfArgs,**tfKWargs)
-        
+
         return path, tfOut
-    
+
 def get_crit_pnts(V_func,path,method='central'):
     '''
     WARNING: This function depends on a package called autograd for hessian calculation
     When using this function, you need to import numpy using: import autograd.numpy as np
-    
-    This function finds the critical the MEP path must pass through by first finding the 
-    critical points of the potential function evaluated along the curve and then classifies 
+
+    This function finds the critical the MEP path must pass through by first finding the
+    critical points of the potential function evaluated along the curve and then classifies
     using the eigenvalues of the Hessian. Returns minima, maxima, and saddle points indices
     along the path.
-    
+
     Parameters
     ----------
     V_func : object
@@ -1777,8 +1779,8 @@ def get_crit_pnts(V_func,path,method='central'):
     path : ndarray
         coordinates of the path on the surface with shape (nImgs,nDims).
     method : string
-        differentiation method option for numdifftools. Options are 
-        ‘central’, ‘complex’, ‘multicomplex’, ‘forward’, ‘backward’. See 
+        differentiation method option for numdifftools. Options are
+        ‘central’, ‘complex’, ‘multicomplex’, ‘forward’, ‘backward’. See
         https://numdifftools.readthedocs.io/en/latest/reference
 
     Returns
@@ -1805,7 +1807,7 @@ def get_crit_pnts(V_func,path,method='central'):
             if abs(val) < 10**(-6):
                 evals[j] = 0
         ## see which components are less than 0.
-        
+
         neg_bool = evals < 0
         ## count how many false vals there are (ie how many postives evals there are)
         eval_num = np.count_nonzero(neg_bool)
@@ -1818,7 +1820,7 @@ def get_crit_pnts(V_func,path,method='central'):
             # concave down at this point. This means we are at a local maxima
             maxima.append(indx)
         else:
-            # if evals are positive and negative, 
+            # if evals are positive and negative,
             # this means we are at a local saddle
             saddle.append(indx)
         ## stupid way of removing duplicate indicies
