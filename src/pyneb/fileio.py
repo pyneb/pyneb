@@ -59,22 +59,32 @@ class ForceLogger:
             {0:[],1:["points","tangents","springForce","netForce"]}
         varShapes = \
             {0:[],1:4*[(self.loggerSettings["writeFreq"],self.classInst.nPts,self.classInst.nDims)]}
+            
+        if self.loggerSettings["logName"] is None:
+            self.fileName = self.initTime+fileExt
+        else:
+            self.fileName = self.loggerSettings["logName"]+fileExt
+            
+        h5File = h5py.File(self.fileName,"w")
         
+        h5File.create_group("nebParams")
+        for (key, val) in self.classInst.nebParams.items():
+            h5File["nebParams"].attrs.create(key,val)
+        h5File["nebParams"].attrs.create("endpointSpringForce",self.classInst.endpointSpringForce)
+        h5File["nebParams"].attrs.create("endpointHarmonicForce",self.classInst.endpointHarmonicForce)
+        
+        h5File.close()
+        
+        self.logDict = {}
         if self.logLevel != 0:
             self.iterCounter = 0
             #Setting the variables that are to be logged at this level
-            self.logDict = {}
             for (dsetNm,dsetShape) in zip(self.loggedVariables[self.logLevel],\
                                           varShapes[self.logLevel]):
                 self.logDict[dsetNm] = np.zeros(dsetShape)
-            
-            if self.loggerSettings["logName"] is None:
-                self.fileName = self.initTime+fileExt
-            else:
-                self.fileName = self.loggerSettings["logName"]+fileExt
                         
             #Creating attributes and initializing datasets
-            h5File = h5py.File(self.fileName,"w")
+            h5File = h5py.File(self.fileName,"a")
             
             #For any nonzero logging level, we'll want these attributes. It's just
             #a question of which datasets we want to store
@@ -120,17 +130,15 @@ class ForceLogger:
             h5File.attrs.create("endpointSpringForce",np.array(self.classInst.endpointSpringForce))
             h5File.attrs.create("endpointHarmonicForce",np.array(self.classInst.endpointHarmonicForce))
             
-            h5File.create_group("nebParams")
-            for (key, val) in self.classInst.nebParams.items():
-                h5File["nebParams"].attrs.create(key,val)
-            
             for (nm, arr) in self.logDict.items():
                 h5File.create_dataset(nm,arr.shape,maxshape=(None,)+tuple(arr.shape[1:]))
             
             h5File.close()
             
     def log(self,variablesDict):
-        if self.logLevel != 0:
+        if self.logLevel == 0:
+            self.logDict["points"] = variablesDict["points"]
+        else:
             idx = self.iterCounter % self.loggerSettings["writeFreq"]
             for varNm in self.loggedVariables[self.logLevel]:
                 self.logDict[varNm][idx] = variablesDict[varNm]
@@ -165,7 +173,10 @@ class ForceLogger:
         None.
 
         """
-        if self.logLevel != 0:
+        if self.logLevel == 0:
+            h5File = h5py.File(self.fileName,"a")
+            h5File.create_dataset("points",data=self.logDict["points"])
+        else:
             idx = self.iterCounter % self.loggerSettings["writeFreq"]
             #Only flushes if necessary
             if idx != (self.loggerSettings["writeFreq"] - 1):
@@ -178,17 +189,18 @@ class ForceLogger:
         return None
     
     def write_fire_params(self,tStep,alpha,stepsSinceReset,fireParams):
+        h5File = h5py.File(self.fileName,"a")
+        
         if self.logLevel != 0:
-            h5File = h5py.File(self.fileName,"a")
             h5File.create_dataset("tStep",data=tStep)
             h5File.create_dataset("alpha",data=alpha)
             h5File.create_dataset("stepsSinceReset",data=stepsSinceReset)
-            
-            h5File.create_group("fire_params")
-            for (key,val) in fireParams.items():
-                h5File["fire_params"].attrs.create(key,val)
-            
-            h5File.close()
+        
+        h5File.create_group("fire_params")
+        for (key,val) in fireParams.items():
+            h5File["fire_params"].attrs.create(key,val)
+        
+        h5File.close()
         return None
     
     def write_runtime(self,runTime):
@@ -198,13 +210,12 @@ class ForceLogger:
         return None
     
     def write_run_params(self,category,paramsDict):
-        if self.logLevel != 0:
-            h5File = h5py.File(self.fileName,"a")
-            h5File.create_group(category)
-            for (key, val) in paramsDict.items():
-                h5File[category].attrs.create(key,val)
-                
-            h5File.close()
+        h5File = h5py.File(self.fileName,"a")
+        h5File.create_group(category)
+        for (key, val) in paramsDict.items():
+            h5File[category].attrs.create(key,val)
+            
+        h5File.close()
             
         return None
     
@@ -227,7 +238,7 @@ class LoadForceLogger:
             
         scalarAttrs = ["potential","target_func","target_func_grad","mass","runTime"]
         arrayAttrs = ["endpointSpringForce","endpointHarmonicForce"]
-                    
+        
         self.fileName = file
         h5File = h5py.File(self.fileName,"r")
         for attr in h5File.attrs:
@@ -242,9 +253,17 @@ class LoadForceLogger:
         for attr in h5File["nebParams"].attrs:
             self.nebParams[attr] = h5File["nebParams"].attrs[attr]
             
+        for paramGroup in ["verlet_params",]: #Add FIRE params here if needed later
+            if paramGroup in h5File.keys():
+                paramDict = {}
+                for attr in h5File[paramGroup].attrs:
+                    paramDict[attr] = h5File[paramGroup].attrs[attr]
+                setattr(self,paramGroup,paramDict)
+            
         for dset in h5File.keys():
-            setattr(self,dset,np.array(h5File[dset]))
-        
+            if isinstance(h5File[dset],h5py.Dataset):
+                setattr(self,dset,np.array(h5File[dset]))
+                
         h5File.close()
 
 class DijkstraLogger:
