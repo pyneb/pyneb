@@ -4,9 +4,9 @@ dirName = os.path.dirname(os.path.realpath(__file__))
 if dirName not in sys.path:
     sys.path.append(dirName)
 
-from solvers import *
-from utilities import *
-from analysis import *
-from fileio import *
+from .solvers import *
+from .utilities import *
+from .analysis import *
+from .fileio import *
 
-import solvers, utilities, analysis, fileio
+
