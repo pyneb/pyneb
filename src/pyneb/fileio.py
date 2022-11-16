@@ -56,7 +56,8 @@ class ForceLogger:
         self.classInst = classInst
         
         self.loggedVariables = \
-            {0:[],1:["points","tangents","springForce","netForce"]}
+            {0:[],1:["points","tangents","springForce","netForce",
+                     "perpSpringForce"]}
         varShapes = \
             {0:[],1:4*[(self.loggerSettings["writeFreq"],self.classInst.nPts,self.classInst.nDims)]}
             
@@ -253,7 +254,7 @@ class LoadForceLogger:
         for attr in h5File["nebParams"].attrs:
             self.nebParams[attr] = h5File["nebParams"].attrs[attr]
             
-        for paramGroup in ["verlet_params",]: #Add FIRE params here if needed later
+        for paramGroup in ["verlet_params","fire_params"]: #Add FIRE params here if needed later
             if paramGroup in h5File.keys():
                 paramDict = {}
                 for attr in h5File[paramGroup].attrs:

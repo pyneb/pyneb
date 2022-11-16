@@ -211,6 +211,28 @@ class LeastActionPath:
         
         return springForce
     
+    def _perpendicular_spring_force(self,points,tangents,springForce):
+        """
+        Computes a spring force acting perpendicular to the path, to prevent
+        images from bunching up. Taken from https://doi.org/10.1142/3816
+        pg 385, eqns 9-10
+        """
+        cosphi = np.zeros(self.nPts-2)
+        diff = np.diff(points,axis=0)
+        diffMag = np.linalg.norm(diff,axis=1)
+        for i in range(self.nPts-2):
+            cosphi[i] = np.dot(diff[i],diff[i+1])/(diffMag[i] * diffMag[i+1])
+        
+        fPhi = 1/2*(1+np.cos(np.pi*cosphi))
+        
+        sfDotTangents = np.array([np.dot(springForce[i],tangents[i]) for i in range(self.nPts)])
+        projectedForce = springForce - np.array([sfDotTangents[i]*tangents[i] for i in range(self.nPts)])
+        
+        #Exclude the endpoints here
+        force = np.array([fPhi[i]*projectedForce[i+1] for i in range(self.nPts-2)])
+        
+        return force
+    
     def compute_force(self,points):
         """
         Computes the net force along the path
@@ -251,16 +273,16 @@ class LeastActionPath:
                                for i in range(self.nPts)])
 
         parallelForce = np.array([projection[i]*tangents[i] for i in range(self.nPts)])
-
         
         perpForce = negIntegGrad - parallelForce
         springForce = self._spring_force(points,tangents)
         
+        perpSpringForce = self._perpendicular_spring_force(points,tangents,springForce)
+        
         #Computing optimal tunneling path force
         netForce = np.zeros(points.shape)
         for i in range(1,self.nPts-1):
-            netForce[i] = perpForce[i] + springForce[i]
-        #TODO: add check if force is very small
+            netForce[i] = perpForce[i] + springForce[i] + perpSpringForce[i-1]
         
         #Avoids throwing divide-by-zero errors, but also deals with points with
             #gradient within the finite-difference error from 0. Simplest example
@@ -289,7 +311,7 @@ class LeastActionPath:
             netForce[-1] = springForce[-1]
         
         variablesDict = {"points":points,"tangents":tangents,"springForce":springForce,\
-                         "netForce":netForce}
+                         "netForce":netForce,"perpSpringForce":perpSpringForce}
         self.logger.log(variablesDict)
         
         return netForce
@@ -583,7 +605,8 @@ class VerletMinimization:
         self.allForces = None
         
     @np.errstate(all="raise")
-    def velocity_verlet(self,tStep,maxIters,dampingParameter=0):
+    def velocity_verlet(self,tStep,maxIters,dampingParameter=0,
+                        maxMove=None):
         """
         The velocity Verlet algorithm, taken from Algorithm 6 of 
         https://doi.org/10.1021/acs.jctc.7b00360
@@ -606,6 +629,9 @@ class VerletMinimization:
             If the algorithm completes without error. For cases such as LeastActionPath,
             data is logged to the output file regardless of this status
         """
+        if maxMove is None:
+            maxMove = np.ones(self.nDims)
+        
         self.allPts = np.zeros((maxIters+2,self.nPts,self.nDims))
         self.allVelocities = np.zeros((maxIters+1,self.nPts,self.nDims))
         self.allForces = np.zeros((maxIters+1,self.nPts,self.nDims))
@@ -637,8 +663,10 @@ class VerletMinimization:
                 accel = self.allForces[step] - dampingParameter*self.allVelocities[step-1]                
                 self.allVelocities[step] = vProj + tStep * accel
                 
-                self.allPts[step+1] = self.allPts[step] + self.allVelocities[step]*tStep + \
-                    0.5*accel*tStep**2
+                shift = self.allVelocities[step]*tStep + 0.5*accel*tStep**2
+                #TODO: max step
+                
+                self.allPts[step+1] = self.allPts[step] + shift
         finally:
             t1 = time.time()
             
@@ -829,7 +857,7 @@ class VerletMinimization:
                 self.nebObj.logger.write_run_params("early_stop_params",earlyStopParams)
             if earlyAbort:
                 self.nebObj.logger.write_run_params("early_abort_params",earlyAbortParams)
-        
+                
             return tStepArr, alphaArr, stepsSinceReset, endsWithoutError
     
     def _local_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
