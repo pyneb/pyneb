@@ -59,7 +59,7 @@ class ForceLogger:
             {0:[],1:["points","tangents","springForce","netForce",
                      "perpSpringForce"]}
         varShapes = \
-            {0:[],1:4*[(self.loggerSettings["writeFreq"],self.classInst.nPts,self.classInst.nDims)]}
+            {0:[],1:len(self.loggedVariables[1])*[(self.loggerSettings["writeFreq"],self.classInst.nPts,self.classInst.nDims)]}
             
         if self.loggerSettings["logName"] is None:
             self.fileName = self.initTime+fileExt

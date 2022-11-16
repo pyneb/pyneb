@@ -217,19 +217,18 @@ class LeastActionPath:
         images from bunching up. Taken from https://doi.org/10.1142/3816
         pg 385, eqns 9-10
         """
-        cosphi = np.zeros(self.nPts-2)
+        cosphi = np.zeros(self.nPts)
         diff = np.diff(points,axis=0)
         diffMag = np.linalg.norm(diff,axis=1)
         for i in range(self.nPts-2):
-            cosphi[i] = np.dot(diff[i],diff[i+1])/(diffMag[i] * diffMag[i+1])
+            cosphi[i+1] = np.dot(diff[i],diff[i+1])/(diffMag[i] * diffMag[i+1])
         
         fPhi = 1/2*(1+np.cos(np.pi*cosphi))
         
         sfDotTangents = np.array([np.dot(springForce[i],tangents[i]) for i in range(self.nPts)])
         projectedForce = springForce - np.array([sfDotTangents[i]*tangents[i] for i in range(self.nPts)])
         
-        #Exclude the endpoints here
-        force = np.array([fPhi[i]*projectedForce[i+1] for i in range(self.nPts-2)])
+        force = np.array([fPhi[i]*projectedForce[i] for i in range(self.nPts)])
         
         return force
     
@@ -282,7 +281,7 @@ class LeastActionPath:
         #Computing optimal tunneling path force
         netForce = np.zeros(points.shape)
         for i in range(1,self.nPts-1):
-            netForce[i] = perpForce[i] + springForce[i] + perpSpringForce[i-1]
+            netForce[i] = perpForce[i] + springForce[i] + perpSpringForce[i]
         
         #Avoids throwing divide-by-zero errors, but also deals with points with
             #gradient within the finite-difference error from 0. Simplest example
