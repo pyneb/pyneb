@@ -1608,7 +1608,7 @@ class PositiveSemidefInterpolator:
         points = points.reshape((-1,self.nDims))
 
         eigenVals = [e(points) for e in self._eigenValInterps]
-        ct = self._eigenVecInterp(points).clip(0)
+        ct = self._eigenVecInterp(points).clip(0,1)
         st = np.sqrt(1-ct**2)
 
         # ct = np.cos(theta)
