@@ -314,7 +314,7 @@ class TargetFunctions:
                 coordDiff = path[ptIter] - path[ptIter - 1]
                 dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
                 actOut += potArr[ptIter]*dist
-                actOut -= deltaE*dist
+                actOut += deltaE*dist
             return actOut, potArr, massArr
         return func
     @staticmethod
@@ -624,7 +624,7 @@ class GradientApproximations:
                     (beff[ptIter]*potentialOnPath[ptIter] + beff[ptIter-1]*potentialOnPath[ptIter-1])*dhat-\
                     (beff[ptIter]*potentialOnPath[ptIter] + beff[ptIter+1]*potentialOnPath[ptIter+1])*dhatP1+\
                     (beff[ptIter]*gradOfPes[ptIter] + potentialOnPath[ptIter]*gradOfBeff[ptIter])*(dnorm+dnormP1)) \
-                    -0.5*deltaE*(\
+                    +0.5*deltaE*(\
                          (beff[ptIter]+ beff[ptIter-1])*dhat-(beff[ptIter] + beff[ptIter+1])*dhatP1 +\
                                  gradOfBeff[ptIter]*(dnorm+dnormP1) )
                 
