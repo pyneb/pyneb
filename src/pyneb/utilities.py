@@ -226,97 +226,7 @@ class TargetFunctions:
             dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
             actOut += potArr[ptIter]*dist
         return actOut, potArr, massArr
-    def action_squared_shift(deltaE):
-        '''
-        Wrapper for the shifted action squared function. This functional takes advantage of 
-        the equivalence 
-        
-        $$ S = \int_{s_0}^{s_1} M_{ij}\dot{x}_i\dot{x}_j E(x(s)) ds  =  
-        
-        \int_{s_0}^{s_1} M_{ij}\dot{x}_i\dot{x}_j E_{2}(x(s)) ds - int_{s_0}^{s_1} M_{ij}\dot{x}_i\dot{x}_j \Delta E ds $$
-        
-        where $$ \Delta E = E_{2}(x(s)) - E_{1} $$ and $E_{1}$ is a constant shift
-        This functional allows one to calculate LAPs in classical and forbidden regions 
-        without changing the surface metric M_{ij} E(x). Changing the surface metric results in different 
-        LAP solutions.
-
-        Parameters
-        ----------
-        deltaE : float
-            Energy shift.
-
-        Raises
-        ------
-        ValueError
-            DESCRIPTION.
-
-        Returns
-        -------
-        function
-            returns the squared action function with shift correction.
-
-        '''
-        def func(path,potential,masses=None):
-            '''
-            The functional
-        
-            $$ S = \int_{s_0}^{s_1} M_{ij}\dot{x}_i\dot{x}_j E(x(s)) ds - int_{s_0}^{s_1} M_{ij}\dot{x}_i\dot{x}_j \Delta E ds$$
-        
-            Parameters
-            ----------
-            See :py:func:`action`
-        
-            Raises
-            ------
-            ValueError
-                See :py:func:`action`
-        
-            Returns
-            -------
-            actOut : float
-                The functional value along the path
-            potArr : np.ndarray
-                The energy values for each point in path
-            massArr : np.ndarray
-                The collective inertia tensor for each point in path
-        
-        
-            :Maintainer: Eric
-            '''
-        
-            nPoints, nDims = path.shape
-        
-            if masses is None:
-                massArr = np.full((nPoints,nDims,nDims),np.identity(nDims))
-            elif not isinstance(masses,np.ndarray):
-                massArr = masses(path)
-            else:
-                massArr = masses
-        
-            massDim = (nPoints, nDims, nDims)
-            if massArr.shape != massDim:
-                raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
-                                 "; required shape is "+str(massDim)+". See action function.")
-        
-            if not isinstance(potential,np.ndarray):
-                potArr = potential(path)
-            else:
-                potArr = potential
-        
-            potShape = (nPoints,)
-            if potArr.shape != potShape:
-                raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
-                                 "; required shape is "+str(potShape)+". See action function.")
-        
-            #Actual calculation
-            actOut = 0
-            for ptIter in range(1,nPoints):
-                coordDiff = path[ptIter] - path[ptIter - 1]
-                dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
-                actOut += potArr[ptIter]*dist
-                actOut += deltaE*dist
-            return actOut, potArr, massArr
-        return func
+    
     @staticmethod
     def _term_in_action_squared_sum(points,potential,masses=None):
         """
@@ -579,58 +489,7 @@ class GradientApproximations:
 
         return gradOfAction, gradOfPes
     
-    def discrete_sqr_action_grad_shift(self,deltaE):
-        def func(path,potential,potentialOnPath,mass,massOnPath,\
-                                     target_func):
-            """
-            Calculates the analytic form of the discretized gradient of the shifted squared action functional
-            named action_squared_shift in Target Functions
-        
-            Performs discretized action gradient, needs numerical PES still
-        
-            :Maintainer: Eric
-            """
-            eps = fdTol
-        
-            gradOfPes = np.zeros(path.shape)
-            gradOfBeff = np.zeros(path.shape)
-            gradOfAction = np.zeros(path.shape)
-            dr = np.zeros(path.shape)
-            beff = np.zeros(potentialOnPath.shape)
-        
-            nPts, nDims = path.shape
-        
-            #Build grad of potential
-            gradOfPes = self._midpoint_grad(potential,path,eps=eps)
-        
-            dr[1:,:] = np.array([path[ptIter] - path[ptIter-1] \
-                                   for ptIter in range(1,nPts)])
-        
-            beff[1] = np.dot(np.dot(massOnPath[1],dr[1]),dr[1])/np.sum(dr[1,:]**2)
-        
-            if mass is not None:
-                for ptIter in range(1,nPts-1):
-                    gradOfBeff[ptIter] = self._beff_grad(mass,path[ptIter],dr[ptIter],eps=eps)
-        
-            for ptIter in range(1,nPts-1):
-                beff[ptIter+1] = np.dot(np.dot(massOnPath[ptIter+1],dr[ptIter+1]),dr[ptIter+1])/np.sum(dr[ptIter+1,:]**2)
-        
-                dnorm=np.linalg.norm(dr[ptIter])
-                dnormP1=np.linalg.norm(dr[ptIter+1])
-                dhat = dr[ptIter]/dnorm
-                dhatP1 = dr[ptIter+1]/dnormP1
-        
-                gradOfAction[ptIter] = 0.5*(\
-                    (beff[ptIter]*potentialOnPath[ptIter] + beff[ptIter-1]*potentialOnPath[ptIter-1])*dhat-\
-                    (beff[ptIter]*potentialOnPath[ptIter] + beff[ptIter+1]*potentialOnPath[ptIter+1])*dhatP1+\
-                    (beff[ptIter]*gradOfPes[ptIter] + potentialOnPath[ptIter]*gradOfBeff[ptIter])*(dnorm+dnormP1)) \
-                    +0.5*deltaE*(\
-                         (beff[ptIter]+ beff[ptIter-1])*dhat-(beff[ptIter] + beff[ptIter+1])*dhatP1 +\
-                                 gradOfBeff[ptIter]*(dnorm+dnormP1) )
-                
-        
-            return gradOfAction, gradOfPes
-        return func
+    
     
     def discrete_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
                                  target_func):
