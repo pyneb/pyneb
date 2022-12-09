@@ -663,18 +663,20 @@ class VerletMinimization:
                 self.allVelocities[step] = vProj + tStep * accel
                 
                 shift = self.allVelocities[step]*tStep + 0.5*accel*tStep**2
-                #TODO: max step
+                for ptIter in range(self.nPts):
+                    for dimIter in range(self.nDims):
+                        if(abs(shift[ptIter,dimIter])>maxmove[dimIter]):
+                            shift[ptIter] = shift[ptIter] * \
+                                maxmove[dimIter]/abs(shift[ptIter,dimIter])
                 
                 self.allPts[step+1] = self.allPts[step] + shift
-        finally:
+                
+        except Exception as e:
+            print(e)
             t1 = time.time()
             
-            if sys.exc_info()[0] is None:
-                endsWithoutError = True
-            else:
-                endsWithoutError = False
+            endsWithoutError = False
             
-            t1 = time.time()
             self.nebObj.logger.flush()
             self.nebObj.logger.write_runtime(t1-t0)
             self.nebObj.logger.write_run_params("verlet_params",
@@ -682,6 +684,17 @@ class VerletMinimization:
                                                  "dampingParameter":dampingParameter})
             
             return endsWithoutError
+        
+        t1 = time.time()
+        
+        endsWithoutError = True
+        self.nebObj.logger.flush()
+        self.nebObj.logger.write_runtime(t1-t0)
+        self.nebObj.logger.write_run_params("verlet_params",
+                                            {"tStep":tStep,"maxIters":maxIters,
+                                             "dampingParameter":dampingParameter})
+        
+        return endsWithoutError
     
     @np.errstate(all="raise")
     def fire(self,tStep,maxIters,fireParams={},useLocal=True,earlyStop=True,
@@ -799,8 +812,6 @@ class VerletMinimization:
         tStepArr[0] = tStep
         alphaArr[0] = fireParams["aStart"]
         
-        endsWithoutError = True
-        
         t0 = time.time()
         try:
             for step in range(1,maxIters+1):
@@ -844,13 +855,23 @@ class VerletMinimization:
     
                 self.allPts[-1] = self.allPts[-2] + shift
             else:
-                self.allPts[-1] = self.allPts[-2] + tStepArr[-1]*self.allVelocities[-1] + \
-                    0.5*self.allForces[-1]*tStepArr[-1]**2
-        finally:
+                shift = tStepArr[-1]*self.allVelocities[-1] + 0.5*self.allForces[-1]*tStepArr[-1]**2
+                    
+                for ptIter in range(self.nPts):
+                    for dimIter in range(self.nDims):
+                        if(abs(shift[ptIter,dimIter])>fireParams["maxmove"][dimIter]):
+                            shift[ptIter] = shift[ptIter] * \
+                                fireParams["maxmove"][dimIter]/abs(shift[ptIter,dimIter])
+                    
+                self.allPts[-1] = self.allPts[-2] + shift
+        except Exception as e:
+            print(e)
             t1 = time.time()
             self.nebObj.logger.flush()
             self.nebObj.logger.write_fire_params(tStepArr,alphaArr,stepsSinceReset,fireParams)
             self.nebObj.logger.write_runtime(t1-t0)
+            
+            endsWithoutError = False
             
             if earlyStop:
                 self.nebObj.logger.write_run_params("early_stop_params",earlyStopParams)
@@ -858,6 +879,20 @@ class VerletMinimization:
                 self.nebObj.logger.write_run_params("early_abort_params",earlyAbortParams)
                 
             return tStepArr, alphaArr, stepsSinceReset, endsWithoutError
+        
+        t1 = time.time()
+        self.nebObj.logger.flush()
+        self.nebObj.logger.write_fire_params(tStepArr,alphaArr,stepsSinceReset,fireParams)
+        self.nebObj.logger.write_runtime(t1-t0)
+            
+        endsWithoutError = True
+        
+        if earlyStop:
+            self.nebObj.logger.write_run_params("early_stop_params",earlyStopParams)
+        if earlyAbort:
+            self.nebObj.logger.write_run_params("early_abort_params",earlyAbortParams)
+            
+        return tStepArr, alphaArr, stepsSinceReset, endsWithoutError
     
     def _local_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
         """
@@ -1009,6 +1044,9 @@ class VerletMinimization:
             How long the path has been travelling in the right direction. Is
             an array if useLocal is True, in which case each point is tracked
             separately
+        endsWithoutError : bool
+            If the algorithm completes without error. For cases such as LeastActionPath,
+            data is logged to the output file regardless of this status
         """
                 
         defaultFireParams = \
@@ -1090,20 +1128,40 @@ class VerletMinimization:
     
                 self.allPts[-1] = self.allPts[-2] + shift
             else:
-                self.allPts[-1] = self.allPts[-2] + tStepArr[-1]*self.allVelocities[-1] + \
+                shift = tStepArr[-1]*self.allVelocities[-1] + \
                     0.5*self.allForces[-1]*tStepArr[-1]**2
-        finally:
+                    
+                for ptIter in range(self.nPts):
+                    for dimIter in range(self.nDims):
+                        if(abs(shift[ptIter,dimIter])>fireParams["maxmove"][dimIter]):
+                            shift[ptIter] = shift[ptIter] * \
+                                fireParams["maxmove"][dimIter]/abs(shift[ptIter,dimIter])
+                    
+                self.allPts[-1] = self.allPts[-2] + shift
+        except Exception as e:
             t1 = time.time()
             self.nebObj.logger.flush()
             self.nebObj.logger.write_fire_params(tStepArr,alphaArr,stepsSinceReset,fireParams)
             self.nebObj.logger.write_runtime(t1-t0)
             
+            endsWithoutError = False
+            
             if earlyStop:
                 self.nebObj.logger.write_run_params("early_stop_params",earlyStopParams)
-            # if earlyAbort:
-            #     self.nebObj.logger.write_run_params("early_abort_params",earlyAbortParams)
             
-            return tStepArr, alphaArr, stepsSinceReset
+            return tStepArr, alphaArr, stepsSinceReset, endsWithoutError
+        
+        t1 = time.time()
+        self.nebObj.logger.flush()
+        self.nebObj.logger.write_fire_params(tStepArr,alphaArr,stepsSinceReset,fireParams)
+        self.nebObj.logger.write_runtime(t1-t0)
+        
+        endsWithoutError = True
+        
+        if earlyStop:
+            self.nebObj.logger.write_run_params("early_stop_params",earlyStopParams)
+        
+        return tStepArr, alphaArr, stepsSinceReset, endsWithoutError
     
     def _local_fire2_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
         """
