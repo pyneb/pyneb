@@ -1212,7 +1212,7 @@ def _get_correct_shape(gridPoints,arrToCheck,normalOrder=True):
                          str(possibleOtherShape))
 
     return arrToCheck
-
+    
 class NDInterpWithBoundary:
     """
     Interpolates a grid in D dimensions, with extra handling for points outside
@@ -1281,10 +1281,10 @@ class NDInterpWithBoundary:
             raise NotImplementedError("Expected nDims >= 2")
 
         bdyHandlerFuncs = {"exponential":self._exp_boundary_handler,
-                           None:self._identity_boundary_handler}
+                           None:None}
         if boundaryHandler not in bdyHandlerFuncs.keys():
             raise ValueError("boundaryHandler '%s' is not defined" % boundaryHandler)
-
+            
         self.boundaryHandler = bdyHandlerFuncs[boundaryHandler]
 
         if symmExtend is None:
@@ -1355,30 +1355,31 @@ class NDInterpWithBoundary:
                 points[:,dimIter] = np.abs(points[:,dimIter])
 
         #Checking if each point is acceptable, and interpolating individual points.
-        result = np.zeros(points.shape[0])
+        isBoundedBelow = [g[0]<=points[:,dimIter] for (dimIter,g) in enumerate(self.gridPoints)]
+        isBoundedAbove = [points[:,dimIter]<=g[-1] for (dimIter,g) in enumerate(self.gridPoints)]
+        evalLoc = points.copy()
+        for dimIter in range(self.nDims):
+            evalLoc[~isBoundedBelow[dimIter],dimIter] = self.gridPoints[dimIter][0]
+            evalLoc[~isBoundedAbove[dimIter],dimIter] = self.gridPoints[dimIter][-1]
+            
+        res = self._call(evalLoc)
+        
+        if self.boundaryHandler is None:
+            pass
+        else:
+            res *= self.boundaryHandler(evalLoc,points)
+        
+        res = self.post_eval(res)
 
-        for (ptIter, point) in enumerate(points):
-            isInBounds = np.zeros((2,self.nDims),dtype=bool)
-            isInBounds[0] = (np.array([g[0] for g in self.gridPoints]) <= point)
-            isInBounds[1] = (point <= np.array([g[-1] for g in self.gridPoints]))
+        return res.reshape(originalShape)
 
-            if np.count_nonzero(~isInBounds) == 0:
-                result[ptIter] = self._call(point)
-            else:
-                result[ptIter] = self.boundaryHandler(point,isInBounds)
-
-        result = self.post_eval(result)
-        result = result.reshape(originalShape)
-
-        return result
-
-    def _call_2d(self,point):
+    def _call_2d(self,points):
         """
-        Evaluates the RectBivariateSpline instance at a single point. Defined
+        Evaluates the RectBivariateSpline instance at many points. Defined
         as a wrapper here so that self._call has the same calling signature
         regardless of dimension
         """
-        return self.rbv(point[0],point[1],grid=False)
+        return self.rbv(points[:,0],points[:,1],grid=False)
 
     def _call_nd(self,point):
         """
@@ -1453,47 +1454,15 @@ class NDInterpWithBoundary:
             normDistances[coordIter] = (x - grid[i]) / (grid[i + 1] - grid[i])
 
         return tuple(indices), normDistances
-
-    def _exp_boundary_handler(self,point,isInBounds):
+    
+    def _exp_boundary_handler(self,evalLoc,points):
         """
-        Given a point that's out of the grid region, computes the nearest point
-        in the region, evaluates there, and multiplies the result by an exponential
-        scaling factor. This should smoothly continue the surface, in an effort
-        to push force-based solvers back into the interpolated region.
-
-        Notes
-        -----
-        Does not allow for evaluation of multiple points at a time.
-
-        For the i'th coordinate, both isInBounds[0,i] and isInBounds[1,i] should
-        not be False - a point cannot be less than a minimum value and greater
-        than a maximum value.
-
+        Computes exp(sqrt(dist)) between the desired evaluation location, points,
+        and the nearest points inside of the grid, evalLoc
         """
-        nearestAllowed = np.zeros(point.shape)
-        # print(point)
-        # print(isInBounds)
-        for dimIter in range(point.size):
-            if np.all(isInBounds[:,dimIter]):
-                nearestAllowed[dimIter] = point[dimIter]
-            else:
-                #To convert from tuple -> numpy array -> int
-                failedInd = np.nonzero(isInBounds[:,dimIter]==False)[0].item()
-                if failedInd == 1:
-                    failedInd = -1
-                nearestAllowed[dimIter] = self.gridPoints[dimIter][failedInd]
-        # print(point)
-        #Evaluating the nearest allowed point on the boundary of the allowed region
-        valAtNearest = self._call(nearestAllowed)
-
-        dist = np.linalg.norm(nearestAllowed-point)
-
-        #Yes, I mean to take an additional square root here
-        result = valAtNearest*np.exp(np.sqrt(dist))
-        return result
-
-    def _identity_boundary_handler(self,point,isInBounds):
-        return self._call(point)
+        diff = evalLoc - points
+        dist = np.linalg.norm(diff,axis=1)
+        return np.exp(np.sqrt(dist))
 
     def _identity_transform_function(self,normalEvaluation):
         """

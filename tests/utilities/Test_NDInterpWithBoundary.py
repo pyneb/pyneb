@@ -144,17 +144,16 @@ class _exp_boundary_handler_(unittest.TestCase):
         
         g = NDInterpWithBoundary((x,y),zz)
         
-        point = np.array([5.2,0.1])
-        isInBounds = np.ones((2,2),dtype=bool)
-        isInBounds[1,0] = False
+        evalLoc = np.array([[5.,0.1]])
+        point = np.array([[5.2,0.1]])
         
-        scaledVal = g._exp_boundary_handler(point,isInBounds)
+        multiplier = g._exp_boundary_handler(evalLoc,point)
         
         #Polynomials are guaranteed to be evaluated correctly with this interpolator
         #(test is in 2D). Tested in Mathematica
         correctVal = 39.114347381543666
         
-        self.assertEqual(scaledVal,correctVal)
+        self.assertEqual(multiplier[0]*g(evalLoc),correctVal)
         
         return None
         
