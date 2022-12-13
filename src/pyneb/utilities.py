@@ -11,6 +11,9 @@ from scipy.ndimage import filters, morphology #For minimum finding
 from pathos.multiprocessing import ProcessingPool as Pool
 import warnings
 
+import numba
+import line_profiler
+
 global fdTol
 fdTol = 10**(-8)
 
@@ -165,7 +168,68 @@ class TargetFunctions:
         actOut = np.sqrt(2*potArr[0]*dist)
 
         return actOut, potArr, massArr
+    
+    @staticmethod
+    # @profile
+    def action_squared_new(path,potential,masses=None):
+        '''
+        The functional
 
+        $$ S = \int_{s_0}^{s_1} M_{ij}\dot{x}_i\dot{x}_j E(x(s)) ds $$
+
+        Parameters
+        ----------
+        See :py:func:`action`
+
+        Raises
+        ------
+        ValueError
+            See :py:func:`action`
+
+        Returns
+        -------
+        actOut : float
+            The functional value along the path
+        potArr : np.ndarray
+            The energy values for each point in path
+        massArr : np.ndarray
+            The collective inertia tensor for each point in path
+
+
+        :Maintainer: Eric
+        '''
+
+        nPoints, nDims = path.shape
+
+        if masses is None:
+            massArr = np.full((nPoints,nDims,nDims),np.identity(nDims))
+        elif not isinstance(masses,np.ndarray):
+            massArr = masses(path)
+        else:
+            massArr = masses
+
+        massDim = (nPoints, nDims, nDims)
+        if massArr.shape != massDim:
+            raise ValueError("Dimension of massArr is "+str(massArr.shape)+\
+                             "; required shape is "+str(massDim)+". See action function.")
+
+        if not isinstance(potential,np.ndarray):
+            potArr = potential(path)
+        else:
+            potArr = potential
+
+        potShape = (nPoints,)
+        if potArr.shape != potShape:
+            raise ValueError("Dimension of potArr is "+str(potArr.shape)+\
+                             "; required shape is "+str(potShape)+". See action function.")
+
+        #Actual calculation
+        coordDiff = np.diff(path,axis=0)
+        actArr = np.einsum("ij,ijk,ik->i",coordDiff,massArr[1:],coordDiff) #The M_{ab} dx^a dx^b bit
+        actOut = np.dot(actArr,potArr[1:])
+                
+        return actOut, potArr, massArr
+    
     @staticmethod
     def action_squared(path,potential,masses=None):
         '''
@@ -442,8 +506,10 @@ class GradientApproximations:
         gradOfAction[1:nPts-1,:] = mapped[:,0,:]
         return gradOfAction, gradOfPes
 
+    # @numba.jit(forceobj=True)
+    # @profile
     def discrete_sqr_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
-                                 target_func):
+                                     target_func):
         """
         Calculates the analytic form of the discretized gradient of the squared action functional
         named action_squared in Target Functions
@@ -464,10 +530,9 @@ class GradientApproximations:
 
         #Build grad of potential
         gradOfPes = self._midpoint_grad(potential,path,eps=eps)
-
+        
         dr[1:,:] = np.array([path[ptIter] - path[ptIter-1] \
-                               for ptIter in range(1,nPts)])
-
+                                for ptIter in range(1,nPts)])
         beff[1] = np.dot(np.dot(massOnPath[1],dr[1]),dr[1])/np.sum(dr[1,:]**2)
 
         if mass is not None:
@@ -481,15 +546,70 @@ class GradientApproximations:
             dnormP1=np.linalg.norm(dr[ptIter+1])
             dhat = dr[ptIter]/dnorm
             dhatP1 = dr[ptIter+1]/dnormP1
-
+            
             gradOfAction[ptIter] = 0.5*(\
                 (beff[ptIter]*potentialOnPath[ptIter] + beff[ptIter-1]*potentialOnPath[ptIter-1])*dhat-\
                 (beff[ptIter]*potentialOnPath[ptIter] + beff[ptIter+1]*potentialOnPath[ptIter+1])*dhatP1+\
                 (beff[ptIter]*gradOfPes[ptIter] + potentialOnPath[ptIter]*gradOfBeff[ptIter])*(dnorm+dnormP1))
-
+        # print(gradOfAction[:3])
+        # sys.exit()
         return gradOfAction, gradOfPes
     
-    
+    # @profile
+    def discrete_sqr_action_grad_new(self,path,potential,potentialOnPath,mass,massOnPath,\
+                                 target_func):
+        """
+        Calculates the analytic form of the discretized gradient of the squared action functional
+        named action_squared in Target Functions
+
+        Performs discretized action gradient using a single thread, needs numerical PES still
+
+        :Maintainer: Kyle
+        """
+        eps = fdTol
+        # print(potentialOnPath.shape)
+        # print(potentialOnPath[:,None].shape)
+        potentialOnPath = potentialOnPath[:,None]
+        gradOfPes = np.zeros(path.shape)
+        gradOfBeff = np.zeros(path.shape)
+        gradOfAction = np.zeros(path.shape)
+        dr = np.zeros(path.shape)
+        beff = np.zeros(potentialOnPath.shape)
+
+        nPts, nDims = path.shape
+
+        #Build grad of potential
+        gradOfPes = self._midpoint_grad(potential,path,eps=eps)
+        
+        dr[1:] = np.diff(path,axis=0)
+        dnorm = np.linalg.norm(dr,axis=1)
+        dhat = dr[1:]/dnorm[1:,None]
+        beff[1:,0] = np.einsum("ij,ijk,ik->i",dr[1:],massOnPath[1:],dr[1:])/dnorm[1:]**2
+        
+        if mass is not None:
+            for ptIter in range(1,nPts-1):
+                gradOfBeff[ptIter] = self._beff_grad(mass,path[ptIter],dr[ptIter],eps=eps)
+        
+        gradOfAction[1:-1] = 0.5*(\
+            (beff[1:-1]*potentialOnPath[1:-1] + beff[:-2]*potentialOnPath[:-2])*dhat[:-1]-\
+            (beff[1:-1]*potentialOnPath[1:-1] + beff[2:]*potentialOnPath[2:])*dhat[1:]+\
+            (beff[1:-1]*gradOfPes[1:-1] + potentialOnPath[1:-1]*gradOfBeff[1:-1])*(dnorm[1:-1,None]+dnorm[2:,None]))
+        # print(0.5*gradOfAction[:3])
+        
+        # for ptIter in range(1,nPts-1):
+        #     # beff[ptIter+1] = np.dot(np.dot(massOnPath[ptIter+1],dr[ptIter+1]),dr[ptIter+1])/np.sum(dr[ptIter+1,:]**2)
+
+        #     # dnorm=np.linalg.norm(dr[ptIter])
+        #     # dnormP1=np.linalg.norm(dr[ptIter+1])
+        #     # dhat = dr[ptIter]/dnorm
+        #     # dhatP1 = dr[ptIter+1]/dnormP1
+
+        #     gradOfAction[ptIter] = 0.5*(\
+        #         (beff[ptIter]*potentialOnPath[ptIter] + beff[ptIter-1]*potentialOnPath[ptIter-1])*dhat-\
+        #         (beff[ptIter]*potentialOnPath[ptIter] + beff[ptIter+1]*potentialOnPath[ptIter+1])*dhatP1+\
+        #         (beff[ptIter]*gradOfPes[ptIter] + potentialOnPath[ptIter]*gradOfBeff[ptIter])*(dnorm+dnormP1))
+        # sys.exit()
+        return gradOfAction, gradOfPes
     
     def discrete_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
                                  target_func):
@@ -695,6 +815,7 @@ class GradientApproximations:
 
         return gradOut, gradOfPes
 
+    # @numba.jit(forceobj=True)
     def _midpoint_grad(self,func,points,eps=fdTol):
         """
         Midpoint finite difference. Probably best if not used with actual DFT calculations,
