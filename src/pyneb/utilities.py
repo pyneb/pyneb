@@ -1687,7 +1687,7 @@ class PositiveSemidefInterpolator:
                                   for m in self.gridValsList]
 
         return None
-
+    # @profile
     def _call_2d(self,points):
         """
         Evaluates the interpolator in 2 dimensions
@@ -1704,13 +1704,13 @@ class PositiveSemidefInterpolator:
         points = points.reshape((-1,self.nDims))
 
         eigenVals = [e(points) for e in self._eigenValInterps]
-        ct = self._eigenVecInterp(points).clip(0,1)
+        #Noticeably faster than arr.clip(0,1)
+        ct = np.core.umath.clip(self._eigenVecInterp(points),0,1)
+        # ct = self._eigenVecInterp(points).clip(0,1)
         st = np.sqrt(1-ct**2)
-
-        # ct = np.cos(theta)
-        # st = np.sin(theta)
-        #print(np.any(np.array(eigenVals)>1))
-        eigenVals = [e.clip(0) for e in eigenVals]
+        
+        #Noticeably faster that e.clip(0), for some reason
+        eigenVals = [np.core.umath.clip(e,0,e.max()) for e in eigenVals]
 
         ret = np.zeros((len(points),2,2))
         for (ptIter,point) in enumerate(points):
