@@ -1443,7 +1443,7 @@ class NDInterpWithBoundary:
         postEvalDict = {"identity":self._identity_transform_function,
                         "smooth_abs":self._smooth_abs_transform_function}
         self.post_eval = postEvalDict[transformFuncName]
-
+    # @profile
     def __call__(self,points):
         """
         Interpolation at points
@@ -1475,20 +1475,19 @@ class NDInterpWithBoundary:
         for dimIter in range(self.nDims):
             if self.symmExtend[dimIter]:
                 points[:,dimIter] = np.abs(points[:,dimIter])
-
-        #Checking if each point is acceptable, and interpolating individual points.
-        isBoundedBelow = [g[0]<=points[:,dimIter] for (dimIter,g) in enumerate(self.gridPoints)]
-        isBoundedAbove = [points[:,dimIter]<=g[-1] for (dimIter,g) in enumerate(self.gridPoints)]
-        evalLoc = points.copy()
-        for dimIter in range(self.nDims):
-            evalLoc[~isBoundedBelow[dimIter],dimIter] = self.gridPoints[dimIter][0]
-            evalLoc[~isBoundedAbove[dimIter],dimIter] = self.gridPoints[dimIter][-1]
-            
-        res = self._call(evalLoc)
         
         if self.boundaryHandler is None:
-            pass
+            res = self._call(points)
         else:
+            #Checking if each point is acceptable, and interpolating individual points.
+            isBoundedBelow = [g[0]<=points[:,dimIter] for (dimIter,g) in enumerate(self.gridPoints)]
+            isBoundedAbove = [points[:,dimIter]<=g[-1] for (dimIter,g) in enumerate(self.gridPoints)]
+            
+            evalLoc = points.copy()
+            for dimIter in range(self.nDims):
+                evalLoc[~isBoundedBelow[dimIter],dimIter] = self.gridPoints[dimIter][0]
+                evalLoc[~isBoundedAbove[dimIter],dimIter] = self.gridPoints[dimIter][-1]
+            res = self._call(evalLoc)
             res *= self.boundaryHandler(evalLoc,points)
         
         res = self.post_eval(res)
