@@ -558,7 +558,7 @@ class GradientApproximations:
     
     # @profile
     def discrete_sqr_action_grad_new(self,path,potential,potentialOnPath,mass,massOnPath,\
-                                 target_func):
+                                     target_func):
         """
         Calculates the analytic form of the discretized gradient of the squared action functional
         named action_squared in Target Functions
@@ -568,8 +568,7 @@ class GradientApproximations:
         :Maintainer: Kyle
         """
         eps = fdTol
-        # print(potentialOnPath.shape)
-        # print(potentialOnPath[:,None].shape)
+        
         potentialOnPath = potentialOnPath[:,None]
         gradOfPes = np.zeros(path.shape)
         gradOfBeff = np.zeros(path.shape)
@@ -588,28 +587,17 @@ class GradientApproximations:
         beff[1:,0] = np.einsum("ij,ijk,ik->i",dr[1:],massOnPath[1:],dr[1:])/dnorm[1:]**2
         
         if mass is not None:
-            for ptIter in range(1,nPts-1):
-                gradOfBeff[ptIter] = self._beff_grad(mass,path[ptIter],dr[ptIter],eps=eps)
-        
+            gradOfBeff[1:-1] = self._beff_grad_new(mass,path[1:-1],dr[1:-1])
+            
+            # for ptIter in range(1,nPts-1):
+            #     gradOfBeff[ptIter] = self._beff_grad_old(mass,path[ptIter],dr[ptIter],eps=eps)
+            
+            
         gradOfAction[1:-1] = 0.5*(\
             (beff[1:-1]*potentialOnPath[1:-1] + beff[:-2]*potentialOnPath[:-2])*dhat[:-1]-\
             (beff[1:-1]*potentialOnPath[1:-1] + beff[2:]*potentialOnPath[2:])*dhat[1:]+\
             (beff[1:-1]*gradOfPes[1:-1] + potentialOnPath[1:-1]*gradOfBeff[1:-1])*(dnorm[1:-1,None]+dnorm[2:,None]))
-        # print(0.5*gradOfAction[:3])
         
-        # for ptIter in range(1,nPts-1):
-        #     # beff[ptIter+1] = np.dot(np.dot(massOnPath[ptIter+1],dr[ptIter+1]),dr[ptIter+1])/np.sum(dr[ptIter+1,:]**2)
-
-        #     # dnorm=np.linalg.norm(dr[ptIter])
-        #     # dnormP1=np.linalg.norm(dr[ptIter+1])
-        #     # dhat = dr[ptIter]/dnorm
-        #     # dhatP1 = dr[ptIter+1]/dnormP1
-
-        #     gradOfAction[ptIter] = 0.5*(\
-        #         (beff[ptIter]*potentialOnPath[ptIter] + beff[ptIter-1]*potentialOnPath[ptIter-1])*dhat-\
-        #         (beff[ptIter]*potentialOnPath[ptIter] + beff[ptIter+1]*potentialOnPath[ptIter+1])*dhatP1+\
-        #         (beff[ptIter]*gradOfPes[ptIter] + potentialOnPath[ptIter]*gradOfBeff[ptIter])*(dnorm+dnormP1))
-        # sys.exit()
         return gradOfAction, gradOfPes
     
     def discrete_action_grad(self,path,potential,potentialOnPath,mass,massOnPath,\
@@ -843,22 +831,59 @@ class GradientApproximations:
             gradOut[:,dimIter] = (forwardEval-backwardEval)/eps
 
         return gradOut
-
-    def _beff_grad(self,func,points,dr,eps=fdTol):
+    
+    def _beff_grad_new(self,func,points,dr,eps=fdTol):
         """
         Midpoint finite difference of B_eff mass.
 
         :Maintainer: Kyle
         """
+        
         if len(points.shape) == 1:
             points = points.reshape((1,-1))
             #dr = dr.reshape((1,-1))
         nPoints, nDims = points.shape
 
         gradOut = np.zeros((nPoints,nDims))
+        
+        ds = np.sum(dr[:]**2,axis=1)
+        # print(ds.shape)
+        for dimIter in range(nDims):
+            step = np.zeros(nDims)
+            step[dimIter] = 1
 
+            forwardStep = points + eps/2*step
+            backwardStep = points - eps/2*step
+
+            massP1 = func(forwardStep)
+            massM1 = func(backwardStep)
+            forwardEval = np.einsum("ij,ijk,ik->i",dr,massP1,dr)/ds
+            # print(np.einsum("ij,ijk,ik->i",dr,massP1,dr).shape)
+            # print(forwardEval.shape)
+            # forwardEval = np.dot(np.dot(massP1,dr),dr)/ds
+            # print("asdf")
+            backwardEval = np.einsum("ij,ijk,ik->i",dr,massM1,dr)/ds
+            # backwardEval = np.dot(np.dot(massM1,dr),dr)/ds
+
+            gradOut[:,dimIter] = (forwardEval-backwardEval)/eps
+        return gradOut
+    
+    def _beff_grad(self,func,points,dr,eps=fdTol):
+        """
+        Midpoint finite difference of B_eff mass.
+
+        :Maintainer: Kyle
+        """
+        
+        if len(points.shape) == 1:
+            points = points.reshape((1,-1))
+            #dr = dr.reshape((1,-1))
+        nPoints, nDims = points.shape
+
+        gradOut = np.zeros((nPoints,nDims))
+        
         ds = np.sum(dr[:]**2)
-
+        
         for dimIter in range(nDims):
             step = np.zeros(nDims)
             step[dimIter] = 1
