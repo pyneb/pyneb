@@ -8,6 +8,7 @@ import itertools
 
 from scipy.interpolate import interpnd, RectBivariateSpline, splprep, splev
 from scipy.ndimage import filters, morphology #For minimum finding
+from pathos import helpers
 from pathos.multiprocessing import ProcessingPool as Pool
 import warnings
 
@@ -494,7 +495,7 @@ class GradientApproximations:
 
         beff[1:] = np.array([np.dot(np.dot(massOnPath[ptIter],dr[ptIter]),dr[ptIter])/np.sum(dr[ptIter,:]**2) \
                                for ptIter in range(1,nPts)])
-        pool = Pool(6)
+        pool = Pool(helpers.cpu_count())
 
         mapOut = pool.map(self.discrete_element, \
                 itertools.repeat(mass,nPts-1),path[1:nPts-1,:], \
