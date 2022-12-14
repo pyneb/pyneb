@@ -108,16 +108,11 @@ class TargetFunctions:
 
         #TODO: check if we actually want this. Maybe with a warning?
         potArr = potArr.clip(0)
-
-        #Actual calculation
-        actOut = 0
-        for ptIter in range(1,nPoints):
-            coordDiff = path[ptIter] - path[ptIter - 1]
-            dist = np.dot(coordDiff,np.dot(massArr[ptIter],coordDiff)) #The M_{ab} dx^a dx^b bit
-            if dist<0:
-                dist = 0
-            actOut += np.sqrt(2*potArr[ptIter]*dist)
-
+        
+        coordDiff = np.diff(path,axis=0)
+        dist = np.einsum("ij,ijk,ik->i",coordDiff,massArr[1:],coordDiff) #The M_{ab} dx^a dx^b bit
+        actOut = np.sum(np.sqrt(2*dist*potArr[1:]))
+        
         return actOut, potArr, massArr
 
     @staticmethod
