@@ -2,9 +2,6 @@ import numpy as np
 
 import itertools
 
-from scipy.integrate import solve_bvp
-
-import h5py
 import sys
 import time
 import warnings
@@ -12,317 +9,7 @@ import warnings
 from utilities import *
 from fileio import *
 
-import line_profiler
-
 class LeastActionPath:
-    """
-    Computes the net force on a band, when minimizing an action-type functional,
-    of the form
-    
-    $$ S = \int_{s_0}^{s_1} \sqrt{2 M_{ij}\dot{x}_i\dot{x}_j E(x(s))} ds. $$
-    
-    Can be generalized to functionals of the form
-    
-    $$ S = \int_{s_0}^{s_1} f(s) ds $$
-    
-    by choosing target_func differently. A common example is minimizing
-    
-    $$ S = \int_{s_0}^{s_1} M_{ij}\dot{x}_i\dot{x}_j E(x(s)) ds, $$
-    
-    with no square root inside of the integral.
-    
-    Attributes
-    ----------
-    potential : function
-        Evaluates the energy along the path
-    nPts : int
-        The number of images in the path (path.shape[0])
-    nDims : int
-        The number of coordinates (path.shape[1])
-    mass : function
-        Evaluates the metric tensor M_{ij}
-    endpointSpringForce : bool or list of bools
-        Whether to turn on the endpoint spring force. Can be controlled for
-        both endpoints individually. The elements correspond to the first and 
-        the last endpoint
-    endpointHarmonicForce : bool or list of bools
-        The same as endpointSpringForce, except for the harmonic force term. Disabling
-        both forces keeps an endpoint fixed
-    target_func : function
-        The functional to be minimized
-    target_func_grad : function
-        The approximation of the gradient of target_func
-    logger : instance of fileio.ForceLogger
-        Handles storing data collected during run
-    nebParams : dict
-        Contains the spring and harmonic force strengths, and the energy
-        the endpoints are constrained to. Maintained for compatibility with
-        self.logger
-    k : float
-        The spring force parameter
-    kappa : float
-        The harmonic force parameter
-    constraintEneg : float
-        The energy the endpoints are constrained to
-    
-    Methods
-    -------
-    compute_force(points)
-        Computes the net force at every point in points
-    
-    :Maintainer: Daniel
-    """
-    def __init__(self,potential,nPts,nDims,mass=None,endpointSpringForce=True,\
-                 endpointHarmonicForce=True,target_func=TargetFunctions.action,\
-                 target_func_grad=GradientApproximations().forward_action_grad,\
-                 nebParams={},logLevel=1,loggerSettings={}):
-        """
-        Parameters
-        ----------
-        potential : function
-            Evaluates the energy along the path. To be called as potential(path). 
-            Is passed to "target_func".
-        nPts : int
-            The number of images in the path (path.shape[0])
-        nDims : int
-            The number of coordinates (path.shape[1])
-        mass : function, optional
-            Evaluates the metric tensor M_{ij} along the path. To be called as mass(path). 
-            Is passed to "target_func".The default is None, in which case $M_{ij}$ 
-            is treated as the identity matrix at all points
-        endpointSpringForce : bool or list of bools, optional
-            Whether to turn on the endpoint spring force. Can be controlled for
-            both endpoints individually. If a list of bools, the elements
-            correspond to the first and the last endpoint. If a single bool, is applied
-            to both endpoints. The default is True.
-        endpointHarmonicForce : bool or list of bools, optional
-            The same as endpointSpringForce, except for the harmonic force term. Disabling
-            both forces keeps an endpoint fixed. The default is True.
-        target_func : function, optional
-            The functional to be minimized. Should take as arguments
-            (path, potential, mass). Should return (action, potentialAtPath, massesAtPath).
-            The default is utilities.TargetFunctions.action
-        target_func_grad : function, optional
-            The approximation of the gradient of target_func. Should take as arguments 
-                (path, potentialFunc, potentialOnPath, massFunc, massOnPath, target_func),
-            where target_func is the action integral approximation. Should return 
-            (gradOfAction, gradOfPes). The default is
-            utilities.GradientApproximations().forward_action_grad
-        nebParams : dict, optional
-            Contains the spring force and the harmonic oscillator potential parameters,
-            as well as the energy the endpoints are constrained to. The default is {}, 
-            in which case the parameters are
-                {"k":10,"kappa":20,"constraintEneg":0}
-        logLevel : int, optional
-            Controls how much information is tracked. Level 0 turns off logging.
-            See fileio.ForceLogger, or a .lap file, for documentation on other
-            tracked information
-        loggerSettings : dict, optional
-            See fileio.ForceLogger for documentation
-            
-        Raises
-        ------
-        ValueError
-            If one of endpointSpringForce or endpointHarmonicForce is not
-            supplied as a bool, or a list or tuple of bools
-
-        """
-        #TODO: consider not having NEB parameters as a dictionary
-        defaultNebParams = {"k":10,"kappa":20,"constraintEneg":0}
-        for key in defaultNebParams.keys():
-            if key not in nebParams:
-                nebParams[key] = defaultNebParams[key]
-        
-        for key in nebParams.keys():
-            setattr(self,key,nebParams[key])
-        #For compatibility with the logger
-        self.nebParams = nebParams
-            
-        if isinstance(endpointSpringForce,bool):
-            endpointSpringForce = 2*(endpointSpringForce,)
-        if not isinstance(endpointSpringForce,(tuple,list)):
-            raise ValueError("Unknown value "+str(endpointSpringForce)+\
-                             " for endpointSpringForce")
-                
-        if isinstance(endpointHarmonicForce,bool):
-            endpointHarmonicForce = 2*(endpointHarmonicForce,)
-        if not isinstance(endpointHarmonicForce,(tuple,list)):
-            raise ValueError("Unknown value "+str(endpointHarmonicForce)+\
-                             " for endpointHarmonicForce")
-        
-        self.potential = potential
-        self.mass = mass
-        self.endpointSpringForce = endpointSpringForce
-        self.endpointHarmonicForce = endpointHarmonicForce
-        self.nPts = nPts
-        self.nDims = nDims
-        self.target_func = target_func
-        self.target_func_grad = target_func_grad
-        
-        self.logger = ForceLogger(self,logLevel,loggerSettings,".lap")
-    
-    def _compute_tangents(self,points,energies):
-        """
-        Computes tangent vectors along the path
-        """
-        tangents = np.zeros((self.nPts,self.nDims))
-        
-        #Range selected to exclude endpoints. Tangents on the endpoints do not
-        #appear in the formulas.
-        for ptIter in range(1,self.nPts-1):
-            tp = points[ptIter+1] - points[ptIter]
-            tm = points[ptIter] - points[ptIter-1]
-            dVMax = np.max(np.absolute([energies[ptIter+1]-energies[ptIter],\
-                                        energies[ptIter-1]-energies[ptIter]]))
-            dVMin = np.min(np.absolute([energies[ptIter+1]-energies[ptIter],\
-                                        energies[ptIter-1]-energies[ptIter]]))
-                
-            if (energies[ptIter+1] > energies[ptIter]) and \
-                (energies[ptIter] > energies[ptIter-1]):
-                tangents[ptIter] = tp
-            elif (energies[ptIter+1] < energies[ptIter]) and \
-                (energies[ptIter] < energies[ptIter-1]):
-                tangents[ptIter] = tm
-            elif energies[ptIter+1] > energies[ptIter-1]:
-                tangents[ptIter] = tp*dVMax + tm*dVMin
-            else:
-                tangents[ptIter] = tp*dVMin + tm*dVMax
-                
-            #Normalizing vectors, without throwing errors about zero tangent vector
-            if not np.array_equal(tangents[ptIter],np.zeros(self.nDims)):
-                tangents[ptIter] = tangents[ptIter]/np.linalg.norm(tangents[ptIter])
-        
-        return tangents
-    
-    def _spring_force(self,points,tangents):
-        """
-        Computes the spring force along the path. Equations taken from 
-        https://doi.org/10.1063/1.5007180 eqns 20-22
-        """
-        springForce = np.zeros((self.nPts,self.nDims))
-        for i in range(1,self.nPts-1):
-            forwardDist = np.linalg.norm(points[i+1] - points[i])
-            backwardsDist = np.linalg.norm(points[i] - points[i-1])
-            springForce[i] = self.k*(forwardDist - backwardsDist)*tangents[i]
-            
-        if self.endpointSpringForce[0]:
-            springForce[0] = self.k*(points[1] - points[0])
-        
-        if self.endpointSpringForce[1]:
-            springForce[-1] = self.k*(points[self.nPts-2] - points[self.nPts-1])
-        
-        return springForce
-    
-    def _perpendicular_spring_force(self,points,tangents,springForce):
-        """
-        Computes a spring force acting perpendicular to the path, to prevent
-        images from bunching up. Taken from https://doi.org/10.1142/3816
-        pg 385, eqns 9-10
-        """
-        cosphi = np.zeros(self.nPts)
-        diff = np.diff(points,axis=0)
-        diffMag = np.linalg.norm(diff,axis=1)
-        # print(50*"=")
-        # print(diff)
-        # print(np.dot(diff[:-1],diff[1:],))
-        for i in range(self.nPts-2):
-            cosphi[i+1] = np.dot(diff[i],diff[i+1])/(diffMag[i] * diffMag[i+1])
-        
-        fPhi = 1/2*(1+np.cos(np.pi*cosphi))
-        # print(springForce.shape)
-        # print(tangents.shape)
-        sfDotTangents = np.array([np.dot(springForce[i],tangents[i]) for i in range(self.nPts)])
-        projectedForce = springForce - np.array([sfDotTangents[i]*tangents[i] for i in range(self.nPts)])
-        
-        force = np.array([fPhi[i]*projectedForce[i] for i in range(self.nPts)])
-        # force = fPhi[:,None]*projectedForce
-        
-        return force
-    
-    def compute_force(self,points):
-        """
-        Computes the net force along the path
-
-        Parameters
-        ----------
-        points : np.ndarray
-            The path to evaluate the force along. Of shape (self.nPts,self.nDims)
-
-        Returns
-        -------
-        netForce : np.ndarray
-            The force at each image on the path. Of shape (self.nPts,self.nDims)
-
-        """
-        expectedShape = (self.nPts,self.nDims)
-        if points.shape != expectedShape:
-            if (points.T).shape == expectedShape:
-                warnings.warn("Transposing points; (points.T).shape == expectedShape")
-                points = points.T
-            else:
-                sys.exit("Err: points "+str(points)+\
-                         " does not match expected shape in LeastActionPath")
-        
-        integVal, energies, masses = self.target_func(points,self.potential,self.mass)
-        tangents = self._compute_tangents(points,energies)
-        
-        if self.logger.logLevel == 2:
-            print("Action: ",integVal)
-        gradOfAction, gradOfPes = \
-            self.target_func_grad(points,self.potential,energies,self.mass,masses,\
-                                  self.target_func)
-                
-        negIntegGrad = -gradOfAction.copy()
-        trueForce = -gradOfPes.copy()
-        
-        projection = np.array([np.dot(negIntegGrad[i],tangents[i]) \
-                               for i in range(self.nPts)])
-
-        parallelForce = np.array([projection[i]*tangents[i] for i in range(self.nPts)])
-        
-        perpForce = negIntegGrad - parallelForce
-        springForce = self._spring_force(points,tangents)
-        
-        perpSpringForce = self._perpendicular_spring_force(points,tangents,springForce)
-        
-        #Computing optimal tunneling path force
-        netForce = np.zeros(points.shape)
-        for i in range(1,self.nPts-1):
-            netForce[i] = perpForce[i] + springForce[i] + perpSpringForce[i]
-        
-        #Avoids throwing divide-by-zero errors, but also deals with points with
-            #gradient within the finite-difference error from 0. Simplest example
-            #is V(x,y) = x^2+y^2, at the origin. There, the gradient is the finite
-            #difference value fdTol, in both directions, and so normalizing the
-            #force artificially creates a force that should not be present
-        if not np.allclose(trueForce[0],np.zeros(self.nDims),atol=fdTol):
-            normForce = trueForce[0]/np.linalg.norm(trueForce[0])
-        else:
-            normForce = np.zeros(self.nDims)
-        
-        if self.endpointHarmonicForce[0]:
-            netForce[0] = springForce[0] - (np.dot(springForce[0],normForce)-\
-                                            self.kappa*(energies[0]-self.constraintEneg))*normForce
-        else:
-            netForce[0] = springForce[0]
-        
-        if not np.allclose(trueForce[-1],np.zeros(self.nDims),atol=fdTol):
-            normForce = trueForce[-1]/np.linalg.norm(trueForce[-1])
-        else:
-            normForce = np.zeros(self.nDims)
-        if self.endpointHarmonicForce[1]:
-            netForce[-1] = springForce[-1] - (np.dot(springForce[-1],normForce)-\
-                                              self.kappa*(energies[-1]-self.constraintEneg))*normForce
-        else:
-            netForce[-1] = springForce[-1]
-        
-        variablesDict = {"points":points,"tangents":tangents,"springForce":springForce,\
-                         "netForce":netForce,"perpSpringForce":perpSpringForce}
-        self.logger.log(variablesDict)
-        
-        return netForce
-
-class LeastActionPath_new:
     """
     Computes the net force on a band, when minimizing an action-type functional,
     of the form
@@ -1015,7 +702,7 @@ class VerletMinimization:
     
     @np.errstate(all="raise")
     def fire(self,tStep,maxIters,fireParams={},useLocal=True,earlyStop=True,
-             earlyStopParams={},earlyAbort=False,earlyAbortParams={},useOld=False):
+             earlyStopParams={},earlyAbort=False,earlyAbortParams={}):
         """
         Wrapper for fast inertial relaxation engine. FIRE step taken from 
         http://dx.doi.org/10.1103/PhysRevLett.97.170201 Velocity update taken 
@@ -1137,14 +824,9 @@ class VerletMinimization:
                         self._local_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
                                               fireParams)
                 else:
-                    if useOld:
-                        tStepArr,alphaArr,stepsSinceReset = \
-                            self._global_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
-                                                   fireParams)
-                    else:
-                        tStepArr,alphaArr,stepsSinceReset = \
-                            self._global_fire_iter_new(step,tStepArr,alphaArr,stepsSinceReset,\
-                                                       fireParams)
+                    tStepArr,alphaArr,stepsSinceReset = \
+                        self._global_fire_iter(step,tStepArr,alphaArr,stepsSinceReset,\
+                                               fireParams)
                             
                 if earlyStop:
                     stopBool = self._check_early_stop(step,earlyStopParams)
@@ -1264,7 +946,7 @@ class VerletMinimization:
         
         return tStepArr, alphaArr, stepsSinceReset
     
-    def _global_fire_iter_new(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
+    def _global_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
         """
         A single iteration for fire, using the same timestep for each point
         """    
@@ -1282,7 +964,6 @@ class VerletMinimization:
         else:
             stepsSinceReset = 0
             self.allVelocities[step-1] = 0 #Was a typo here
-            # self.allVelocities[step-1,ptIter] = np.zeros(self.nDims)
             tStepArr[step] = max(tStepArr[step-1]*fireParams["fDecel"],fireParams["dtMin"])
             alphaArr[step] = fireParams["aStart"]
             
@@ -1291,59 +972,6 @@ class VerletMinimization:
         
         vdotv = np.sum(np.sqrt(np.einsum("ij,ij->i",self.allVelocities[step],self.allVelocities[step])))
         fdotf = np.sum(np.sqrt(np.einsum("ij,ij->i",self.allForces[step-1],self.allForces[step-1])))
-        
-        if fdotf > 10**(-16):
-            scale = vdotv/fdotf
-        else:
-            scale = 0.
-        
-        self.allVelocities[step] = (1-alphaArr[step]) * self.allVelocities[step]\
-            + alphaArr[step] * scale * self.allForces[step-1]
-        
-        shift = tStepArr[step]*self.allVelocities[step]
-        
-        for ptIter in range(self.nPts):
-            for dimIter in range(self.nDims):
-                if(abs(shift[ptIter,dimIter])>fireParams["maxmove"][dimIter]):
-                    shift[ptIter] = shift[ptIter] * \
-                        fireParams["maxmove"][dimIter]/abs(shift[ptIter,dimIter])
-        
-        self.allPts[step] = self.allPts[step-1] + shift
-        self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
-        
-        return tStepArr, alphaArr, stepsSinceReset
-    
-    def _global_fire_iter(self,step,tStepArr,alphaArr,stepsSinceReset,fireParams):
-        """
-        A single iteration for fire, using the same timestep for each point
-        """
-        vdotf = 0.
-        for ptIter in range(self.nPts):
-            vdotf += np.dot(self.allVelocities[step-1,ptIter],self.allForces[step-1,ptIter])
-        
-        if vdotf > 0:
-            stepsSinceReset += 1
-            
-            if stepsSinceReset > fireParams["nAccel"]:
-                tStepArr[step] = min(tStepArr[step-1]*fireParams["fInc"],fireParams["dtMax"])
-                alphaArr[step] = alphaArr[step-1]**fireParams["fAlpha"]
-            else:
-                tStepArr[step] = tStepArr[step-1]
-                alphaArr[step] = alphaArr[step-1]            
-        else:
-            stepsSinceReset = 0
-            self.allVelocities[step-1,ptIter] = np.zeros(self.nDims)
-            tStepArr[step] = max(tStepArr[step-1]*fireParams["fDecel"],fireParams["dtMin"])
-            alphaArr[step] = fireParams["aStart"]
-            
-        #Semi-implicit Euler integration
-        self.allVelocities[step] = self.allVelocities[step-1] + tStepArr[step]*self.allForces[step-1]
-        
-        vdotv = 0.
-        fdotf = 0.
-        for ptIter in range(self.nPts):
-            vdotv += np.linalg.norm(self.allVelocities[step,ptIter])
-            fdotf += np.linalg.norm(self.allForces[step-1,ptIter])
         
         if fdotf > 10**(-16):
             scale = vdotv/fdotf
