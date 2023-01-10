@@ -669,9 +669,9 @@ class VerletMinimization:
                 shift = self.allVelocities[step]*tStep + 0.5*accel*tStep**2
                 for ptIter in range(self.nPts):
                     for dimIter in range(self.nDims):
-                        if(abs(shift[ptIter,dimIter])>maxmove[dimIter]):
+                        if(abs(shift[ptIter,dimIter])>maxMove[dimIter]):
                             shift[ptIter] = shift[ptIter] * \
-                                maxmove[dimIter]/abs(shift[ptIter,dimIter])
+                                maxMove[dimIter]/abs(shift[ptIter,dimIter])
                 
                 self.allPts[step+1] = self.allPts[step] + shift
                 
