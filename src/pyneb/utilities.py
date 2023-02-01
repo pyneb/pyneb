@@ -1306,7 +1306,7 @@ class NDInterpWithBoundary:
         postEvalDict = {"identity":self._identity_transform_function,
                         "smooth_abs":self._smooth_abs_transform_function}
         self.post_eval = postEvalDict[transformFuncName]
-    # @profile
+    
     def __call__(self,points):
         """
         Interpolation at points
@@ -1365,7 +1365,7 @@ class NDInterpWithBoundary:
         """
         return self.rbv(points[:,0],points[:,1],grid=False)
 
-    def _call_nd(self,point):
+    def _call_nd(self,points):
         """
         Repeated linear interpolation. For the 2D case, see e.g.
         https://en.wikipedia.org/wiki/Bilinear_interpolation#Weighted_mean
@@ -1378,19 +1378,22 @@ class NDInterpWithBoundary:
         has to check every point individually anyways.
 
         """
-        indices, normDistances = self._find_indices(np.expand_dims(point,1))
-
-        # find relevant values
-        # each i and i+1 represents a edge
-        edges = itertools.product(*[[i, i + 1] for i in indices])
-        value = 0.
-        for edge_indices in edges:
-            weight = 1.
-            for ei, i, yi in zip(edge_indices, indices, normDistances):
-                weight *= np.where(ei == i, 1 - yi, yi).item()
-            value += weight * self.gridVals[edge_indices].item()
-
-        return value
+        indices, normDistances = self._find_indices(points.T)
+        # print(indices)
+        # print(normDistances)
+        
+        vals = np.zeros(points.shape[0])
+        for ptIter in range(points.shape[0]):
+            # find relevant values
+            # each i and i+1 represents a edge
+            edges = itertools.product(*[[i, i + 1] for i in indices[:,ptIter]])
+            for edge_indices in edges:
+                weight = 1.
+                for ei, i, yi in zip(edge_indices, indices[:,ptIter], normDistances[:,ptIter]):
+                    weight *= np.where(ei == i, 1 - yi, yi).item()
+                vals[ptIter] += weight * self.gridVals[edge_indices].item()
+        
+        return vals
 
     def _find_indices(self,points):
         """
@@ -1426,7 +1429,7 @@ class NDInterpWithBoundary:
             #this does is find the index in which to place x such that the list
             #self.grid[coordIter] remains sorted.
             i = np.searchsorted(grid, x) - 1
-
+            
             #If x would be the new first element, index it as zero
             i[i < 0] = 0
             #If x would be the last element, make it not so. However, the way
@@ -1437,7 +1440,7 @@ class NDInterpWithBoundary:
             indices.append(i)
             normDistances[coordIter] = (x - grid[i]) / (grid[i + 1] - grid[i])
 
-        return tuple(indices), normDistances
+        return np.array(indices), normDistances
     
     def _exp_boundary_handler(self,evalLoc,points):
         """
