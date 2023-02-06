@@ -1571,7 +1571,7 @@ class PositiveSemidefInterpolator:
 
         eigenVals = [e(points) for e in self._eigenValInterps]
         #Noticeably faster than arr.clip(0,1)
-        ct = np.core.umath.clip(self._eigenVecInterp(points),0,1)
+        ct = np.core.umath.clip(self._eigenVecInterp(points),-1,1)
         # ct = self._eigenVecInterp(points).clip(0,1)
         st = np.sqrt(1-ct**2)
         
