@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.cluster import DBSCAN
+from sklearn.cluster import MeanShift, DBSCAN
 from sklearn.preprocessing import StandardScaler
 
 import utilities
@@ -8,8 +8,65 @@ import fileio
 
 import warnings
 
-def cluster_paths_by_endpoints(listOfPaths,dbscanParams={}):
-    # warnings.warn("Method still in development")
+def cluster_endpoints(allPaths,pathActions,meanshiftParams={},
+                      silenceWarnings=False):
+    """
+    Clusters paths by their endpoints, using sklearn.cluster.MeanShift,
+    and selects the path with the least action for each cluster
+
+    Parameters
+    ----------
+    allPaths : TYPE
+        DESCRIPTION.
+    pathActions : TYPE
+        DESCRIPTION.
+    silenceWarnings : TYPE, optional
+        DESCRIPTION. The default is False.
+
+    Yields
+    ------
+    nCats : TYPE
+        DESCRIPTION.
+    uniquePaths : TYPE
+        DESCRIPTION.
+    uniqueInds : TYPE
+        DESCRIPTION.
+    clustering : TYPE
+        DESCRIPTION.
+
+    """
+    if not silenceWarnings:
+        warnings.warn("Method 'cluster_endpoints' still in development")
+    
+    defaultMeanshiftParams = {'bandwidth':5}
+    for (key,val) in defaultMeanshiftParams.items():
+        if key not in meanshiftParams:
+            meanshiftParams[key] = val
+        
+    pathActions = np.array(pathActions)
+    
+    endpoints = np.array([p[-1] for p in allPaths])
+    clustering = MeanShift(**meanshiftParams).fit(endpoints)
+    
+    nCats = len(np.unique(clustering.labels_))
+    
+    uniquePaths = []
+    uniqueInds = []
+    for i in range(nCats):
+        matchInds = np.where(clustering.labels_==i)[0]
+        uniqueInds.append(matchInds)
+        #Some paths yield the same endpoint, but take longer to get there. Select
+        #the minimum here
+        actMinMatchInd = matchInds[np.argmin(pathActions[matchInds])]
+        uniquePaths.append(allPaths[actMinMatchInd])
+        
+    return nCats, uniquePaths, uniqueInds, clustering
+
+def cluster_paths_by_endpoints(listOfPaths,dbscanParams={},
+                               silenceWarnings=False):
+    if not silenceWarnings:
+        warnings.warn("Method 'cluster_paths_by_endpoints' still in development")
+    warnings.warn("Method 'cluster_path_by_endpoints' will be deprecated in favor of 'cluster_paths_by_endpoints'")
     
     defaultDbscanParams = {"eps":0.3,"min_samples":1}
     for (key,val) in defaultDbscanParams.items():
@@ -33,7 +90,8 @@ def cluster_paths_by_endpoints(listOfPaths,dbscanParams={}):
     
     return uniquePaths, uniqueInds
 
-def find_most_similar_paths(firstList,secondList,removeDuplicates=False):
+def find_most_similar_paths(firstList,secondList,removeDuplicates=False,
+                            silenceWarnings=False):
     """
     For every path in firstList, finds the path in secondList that is the closest.
     
@@ -56,7 +114,8 @@ def find_most_similar_paths(firstList,secondList,removeDuplicates=False):
     None.
 
     """
-    # warnings.warn("Method still in development")
+    if not silenceWarnings:
+        warnings.warn("Method 'find_most_similar_paths' still in development")
     
     nearestIndsArr = np.nan*np.ones(len(firstList),dtype=int)
     distancesArr = np.inf*np.ones(len(firstList))
@@ -91,3 +150,76 @@ def find_most_similar_paths(firstList,secondList,removeDuplicates=False):
         # for (p1Ind,p2Ind) in nearestIndsDict.items():
             
     return nearestIndsArr, distancesArr
+
+def filter_path(path,pes_func,diffFilter=True,enegLowerThresh=0.05,enegUpperThresh=0.1,
+                nSkip=100,enegFilter=True,silenceWarnings=False):
+    """
+    Filters a path according to a number of criteria. Currently checks if
+    path is monotonic in the first coordinate. It then interpolates the path
+    to 500 points, and looks for points on the interpolated path with energy
+    near zero (i.e. it intersects the outer turning line multiple times). If
+    multiple points, after nSkip of the 500 interpolation points, intersect, it
+    truncates the path at that point. If the endpoint is above enegUpperThresh,
+    it is deemed invalid.
+    
+
+    Parameters
+    ----------
+    path : TYPE
+        DESCRIPTION.
+    pes_func : TYPE
+        DESCRIPTION.
+    diffFilter : TYPE, optional
+        DESCRIPTION. The default is True.
+    enegLowerThresh : TYPE, optional
+        DESCRIPTION. The default is 0.05.
+    enegUpperThresh : TYPE, optional
+        DESCRIPTION. The default is 0.1.
+    nSkip : TYPE, optional
+        DESCRIPTION. The default is 100.
+    enegFilter : TYPE, optional
+        DESCRIPTION. The default is True.
+    silenceWarnings : TYPE, optional
+        DESCRIPTION. The default is False.
+
+    Returns
+    -------
+    TYPE
+        DESCRIPTION.
+    TYPE
+        DESCRIPTION.
+    TYPE
+        DESCRIPTION.
+    TYPE
+        DESCRIPTION.
+
+    """
+    diffArr = np.diff(path[:,0])
+    
+    if diffFilter:
+        if np.any(diffArr<0):
+            return [], [], 0, False
+     
+    interpPath = utilities.InterpolatedPath(path)
+    densePath = np.array(interpPath(np.linspace(0,1,500))).T
+    
+    enegOnPath = pes_func(densePath)
+    
+    if enegFilter:
+        enegInds = np.where(np.abs(enegOnPath)[nSkip:] < enegLowerThresh)[0]
+    
+        if len(enegInds) > 0:
+            indToTruncateAt = enegInds[0]+nSkip
+        else:
+            indToTruncateAt = -1
+        
+        #Some parameter sets fail for initial guesses, and pull the endpoint off of
+        #the OTL
+        if np.abs(enegOnPath[indToTruncateAt]) > enegUpperThresh:
+            valid = False
+        else:
+            valid = True
+        
+        return densePath, enegOnPath, indToTruncateAt, valid
+    else:
+        return densePath, enegOnPath, -1, True
