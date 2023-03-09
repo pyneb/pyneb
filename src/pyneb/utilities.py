@@ -457,7 +457,7 @@ class GradientApproximations:
         beff = np.zeros(potentialOnPath.shape)
 
         nPts, nDims = path.shape
-
+        
         #Build grad of potential
         gradOfPes = self._midpoint_grad(potential,path,eps=eps)
         
@@ -1723,6 +1723,14 @@ class InterpolatedPath:
         tfOut = target_func(path,*tfArgs,**tfKWargs)
 
         return path, tfOut
+    
+    def find_points_with_select_energy(self,pes,wantedEneg,enegThresh=0.05,nImages=500):
+        t = np.linspace(0,1,nImages)
+        path = np.array(self.__call__(t)).T
+        enegOnPath = pes(path)
+        
+        matchInds = np.where(np.abs(enegOnPath - wantedEneg) < enegThresh)[0]
+        return path[matchInds]
 
 def get_crit_pnts(V_func,path,method='central'):
     '''
