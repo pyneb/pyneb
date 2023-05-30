@@ -1343,13 +1343,14 @@ class NDInterpWithBoundary:
             res = self._call(points)
         else:
             #Checking if each point is acceptable, and interpolating individual points.
-            isBoundedBelow = [g[0]<=points[:,dimIter] for (dimIter,g) in enumerate(self.gridPoints)]
-            isBoundedAbove = [points[:,dimIter]<=g[-1] for (dimIter,g) in enumerate(self.gridPoints)]
-            
             evalLoc = points.copy()
+            
             for dimIter in range(self.nDims):
-                evalLoc[~isBoundedBelow[dimIter],dimIter] = self.gridPoints[dimIter][0]
-                evalLoc[~isBoundedAbove[dimIter],dimIter] = self.gridPoints[dimIter][-1]
+                #Changed from np.clip due to https://github.com/numpy/numpy/issues/14281
+                evalLoc[:,dimIter] = np.core.umath.clip(evalLoc[:,dimIter],
+                                                        self.gridPoints[dimIter][0],
+                                                        self.gridPoints[dimIter][-1])
+                
             res = self._call(evalLoc)
             res *= self.boundaryHandler(evalLoc,points)
         
