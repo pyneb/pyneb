@@ -1579,14 +1579,11 @@ class PositiveSemidefInterpolator:
         eigenVals = [np.core.umath.clip(e,0,e.max()) for e in eigenVals]
 
         ret = np.zeros((len(points),2,2))
-        for (ptIter,point) in enumerate(points):
-            ret[ptIter,0,0] = eigenVals[0][ptIter]*ct[ptIter]**2 + \
-                eigenVals[1][ptIter]*st[ptIter]**2
-            ret[ptIter,1,0] = (eigenVals[0][ptIter]-eigenVals[1][ptIter])*st[ptIter]*ct[ptIter]
-            ret[ptIter,0,1] = ret[ptIter,1,0]
-            ret[ptIter,1,1] = eigenVals[0][ptIter]*st[ptIter]**2 + \
-                eigenVals[1][ptIter]*ct[ptIter]**2
-
+        ret[:,0,0] = eigenVals[0]*ct**2 + eigenVals[1]*st**2
+        ret[:,1,0] = (eigenVals[0]-eigenVals[1])*st*ct
+        ret[:,0,1] = ret[:,1,0]
+        ret[:,1,1] = eigenVals[0]*st**2 + eigenVals[1]*ct**2
+        
         return ret.reshape(originalShape+(2,2))
 
     def _call_nd(self,points):
