@@ -983,11 +983,12 @@ class VerletMinimization:
         
         shift = tStepArr[step]*self.allVelocities[step]
         
-        for ptIter in range(self.nPts):
-            for dimIter in range(self.nDims):
-                if(abs(shift[ptIter,dimIter])>fireParams["maxmove"][dimIter]):
-                    shift[ptIter] = shift[ptIter] * \
-                        fireParams["maxmove"][dimIter]/abs(shift[ptIter,dimIter])
+        for dimIter in range(self.nDims):
+            tooLargeStepInds = np.where(np.abs(shift[:,dimIter]) > fireParams['maxmove'][dimIter])
+            #Weird tuple indexing point below
+            shift[tooLargeStepInds] = shift[tooLargeStepInds] * \
+                fireParams['maxmove'][dimIter]/np.abs(shift[tooLargeStepInds+(dimIter,)]).reshape((-1,1))
+            
         
         self.allPts[step] = self.allPts[step-1] + shift
         self.allForces[step] = self.nebObj.compute_force(self.allPts[step])
