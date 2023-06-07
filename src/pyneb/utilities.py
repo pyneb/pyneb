@@ -108,6 +108,7 @@ class TargetFunctions:
         
         coordDiff = np.diff(path,axis=0)
         dist = np.einsum("ij,ijk,ik->i",coordDiff,massArr[1:],coordDiff) #The M_{ab} dx^a dx^b bit
+        dist = dist.clip(0)
         actOut = np.sum(np.sqrt(2*dist*potArr[1:]))
         
         return actOut, potArr, massArr
@@ -1171,6 +1172,7 @@ def _get_correct_shape(gridPoints,arrToCheck,normalOrder=True):
     Utility for automatically correcting the shape of an array, to deal with
     nonsense regarding np.meshgrid's default setup
     """
+    warnings.warn('DeprecationWarning: Automatic array reshaping will be deprecated soon')
 
     defaultMeshgridShape = np.array([len(g) for g in gridPoints])
     possibleOtherShape = tuple(defaultMeshgridShape)
@@ -1291,7 +1293,8 @@ class NDInterpWithBoundary:
             if not np.all(np.diff(p) > 0.):
                 raise ValueError("The points in dimension %d must be strictly "
                                  "ascending" % i)
-
+                
+        # self.gridVals = gridVals
         if custom_func is None:
             if self.nDims == 2 and not _test_linear:
                 self.gridVals = _get_correct_shape(gridPoints,gridVals)
@@ -1482,7 +1485,8 @@ class PositiveSemidefInterpolator:
     Interpolator for D > 2 is not positive semidefinite, although it is
     symmetric. Is intended to be PSD, sometime in the future
     """
-    def __init__(self,gridPoints,listOfVals,ndInterpKWargs={},_test_nd=False):
+    def __init__(self,gridPoints,listOfVals,customInterp=None,ndInterpKWargs={},_test_nd=False,
+                 ):
         """
         Parameters
         ----------
@@ -1509,10 +1513,12 @@ class PositiveSemidefInterpolator:
         self.nDims = len(gridPoints)
         self.gridPoints = gridPoints
         self.ndInterpKWargs = ndInterpKWargs
+        self.customInterp = customInterp
 
         #Standard error checking
         assert len(listOfVals) == int(self.nDims*(self.nDims+1)/2)
-
+        
+        # self.gridValsList = listOfVals
         if self.nDims == 2 and _test_nd == False:
             self.gridValsList = [_get_correct_shape(gridPoints,l) for l in listOfVals]
             self._construct_interps_2d()
@@ -1529,6 +1535,8 @@ class PositiveSemidefInterpolator:
         """
         Takes eigen decomposition of matrix, and interpolates the eigenvalues
         and unique component of the eigenvectors using NDInterpWithBoundary
+        
+        TODO: set up multiple different interpolators for different components
         """
         #Taking shortcuts because I only care about D=2 right now
         self.gridVals = np.stack((np.stack((self.gridValsList[0],self.gridValsList[1])),\
@@ -1536,13 +1544,18 @@ class PositiveSemidefInterpolator:
         self.gridVals = np.moveaxis(self.gridVals,[0,1],[2,3])
 
         eigenVals, eigenVecs = np.linalg.eigh(self.gridVals)
-
-        # thetaVals = np.arccos(eigenVecs[:,:,0,0])
-
+        
         #Constructing interpolators
-        self._eigenValInterps = [NDInterpWithBoundary(self.gridPoints,e,**self.ndInterpKWargs)\
-                                 for e in eigenVals.T]
-        self._eigenVecInterp = NDInterpWithBoundary(self.gridPoints,eigenVecs[:,:,0,0],**self.ndInterpKWargs)
+        if self.customInterp is None:
+            self._eigenValInterps = [NDInterpWithBoundary(self.gridPoints,e.T,**self.ndInterpKWargs)\
+                                     for e in eigenVals.T]
+            self._eigenVecInterp = NDInterpWithBoundary(self.gridPoints,eigenVecs[:,:,0,0],**self.ndInterpKWargs)
+        else:
+            if self.ndInterpKWargs:
+                warnings.warn('ndInterpKWargs has arguments provided but not used')
+            self._eigenValInterps = [self.customInterp(self.gridPoints,e)\
+                                     for e in eigenVals.T]
+            self._eigenVecInterp = self.customInterp(self.gridPoints,eigenVecs[:,:,0,0])
 
         return None
 
@@ -1550,8 +1563,14 @@ class PositiveSemidefInterpolator:
         """
         Interpolates unique components of the inertia using NDInterpWithBoundary
         """
-        self._componentInterps = [NDInterpWithBoundary(self.gridPoints,m,**self.ndInterpKWargs)\
-                                  for m in self.gridValsList]
+        if self.customInterp is None:
+            self._componentInterps = [NDInterpWithBoundary(self.gridPoints,m,**self.ndInterpKWargs)\
+                                      for m in self.gridValsList]
+        else:
+            if self.ndInterpKWargs:
+                warnings.warn('ndInterpKWargs has arguments provided but not used')
+            self._componentInterps = [self.customInterp(self.gridPoints,m)\
+                                      for m in self.gridValsList]
 
         return None
     # @profile
@@ -1565,10 +1584,8 @@ class PositiveSemidefInterpolator:
 
         if points.shape[-1] != self.nDims:
             raise ValueError("The requested sample points have dimension "
-                             "%d, but this NDInterpWithBoundary expects "
+                             "%d, but this interpolator expects "
                              "dimension %d" % (points.shape[-1], self.nDims))
-
-        points = points.reshape((-1,self.nDims))
 
         eigenVals = [e(points) for e in self._eigenValInterps]
         #Noticeably faster than arr.clip(0,1)
@@ -1579,13 +1596,15 @@ class PositiveSemidefInterpolator:
         #Noticeably faster that e.clip(0), for some reason
         eigenVals = [np.core.umath.clip(e,0,e.max()) for e in eigenVals]
 
-        ret = np.zeros((len(points),2,2))
-        ret[:,0,0] = eigenVals[0]*ct**2 + eigenVals[1]*st**2
-        ret[:,1,0] = (eigenVals[0]-eigenVals[1])*st*ct
-        ret[:,0,1] = ret[:,1,0]
-        ret[:,1,1] = eigenVals[0]*st**2 + eigenVals[1]*ct**2
-        
-        return ret.reshape(originalShape+(2,2))
+        ret = np.zeros(originalShape+(2,2))
+        ndims = len(points.shape)
+
+        ret[(ndims-1)*(slice(None),)+(0,0)] = eigenVals[0]*ct**2 + eigenVals[1]*st**2
+        ret[(ndims-1)*(slice(None),)+(0,1)] = (eigenVals[0]-eigenVals[1])*st*ct
+        ret[(ndims-1)*(slice(None),)+(1,0)] = ret[(ndims-1)*(slice(None),)+(0,1)]
+        ret[(ndims-1)*(slice(None),)+(1,1)] = eigenVals[0]*st**2 + eigenVals[1]*ct**2
+                
+        return ret
 
     def _call_nd(self,points):
         """
