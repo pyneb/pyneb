@@ -492,11 +492,9 @@ class LoadDijkstraLogger:
     
 class DPMLogger:
     def __init__(self,classInst,logLevel=1,fName=None):
-        os.makedirs("logs",exist_ok=True)
-        
         if fName is None:
             fName = datetime.datetime.now().isoformat()
-        self.fName = "logs/"+fName+".dpm"
+        self.fName = fName+".dpm"
         self.fNameIn = fName #Could be cleaner -_-
         if logLevel not in [0,1]:
             raise ValueError("logLevel "+str(logLevel)+" not allowed")
@@ -555,7 +553,7 @@ class DPMLogger:
         return None
     
     def finalize(self,minPathDict,minIndsDict,distsDict,runTime,\
-                 pathAsText=True):
+                 pathAsText):
         distsDType = np.dtype({"names":["endpoint","dist","strLabel"],\
                                "formats":[(float,(self.classInst.nDims,)),float,\
                                           h5py.string_dtype("utf-8")]})

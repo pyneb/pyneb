@@ -104,11 +104,14 @@ class TargetFunctions:
                              "; required shape is "+str(potShape)+". See action function.")
 
         #TODO: check if we actually want this. Maybe with a warning?
-        potArr = potArr.clip(0)
+        #Changed from np.clip due to https://github.com/numpy/numpy/issues/14281
+        potArr = np.core.umath.clip(potArr,0,potArr.max())
+        # potArr = potArr.clip(0)
         
         coordDiff = np.diff(path,axis=0)
         dist = np.einsum("ij,ijk,ik->i",coordDiff,massArr[1:],coordDiff) #The M_{ab} dx^a dx^b bit
-        dist = dist.clip(0)
+        dist = np.core.umath.clip(dist,0,dist.max())
+        # dist = dist.clip(0)
         actOut = np.sum(np.sqrt(2*dist*potArr[1:]))
         
         return actOut, potArr, massArr

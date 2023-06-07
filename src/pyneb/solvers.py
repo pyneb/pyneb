@@ -1771,6 +1771,7 @@ class DynamicProgramming:
         self.initialPoint = initialPoint
         self.coordMeshTuple = coordMeshTuple
         self.uniqueCoords = [np.unique(c) for c in self.coordMeshTuple]
+        self.trimVals = trimVals
         
         expectedShape = np.array([len(c) for c in self.uniqueCoords])
         expectedShape[[1,0]] = expectedShape[[0,1]]
@@ -1840,8 +1841,8 @@ class DynamicProgramming:
         self.endpointIndices = [tuple(row) for row in self.endpointIndices]
         
         #Clip the potential to the min/max. Done after finding possible endpoints.
-        if trimVals != [None,None]:
-            self.potArr = self.potArr.clip(trimVals[0],trimVals[1])
+        if self.trimVals != [None,None]:
+            self.potArr = self.potArr.clip(self.trimVals[0],self.trimVals[1])
         else:
             warnings.warn("Not clipping self.potArr; may run into negative numbers in self.target_func")
         
@@ -1880,7 +1881,7 @@ class DynamicProgramming:
         that connects to the point in the current slice
         """
         previousInds = self._gen_slice_inds(currentIdx-1)
-        #Use scipy.ndimage.label to only select previous indices that are connected
+        #Maybe can use scipy.ndimage.label to only select previous indices that are connected
         #to the current one. Imperfect - on vertical OTL, will choose from far
         #away points - but unclear if/when that happens. More sophisticated
         #method could look at connected current/previous slice; when they disagree,
