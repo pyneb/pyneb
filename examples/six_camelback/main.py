@@ -48,6 +48,8 @@ if __name__ == "__main__":
     
     loggerSettings = {"logName":"logs/camelback"}
     lap = pyneb.LeastActionPath(camelback,nPts,nDims,endpointSpringForce=False,
+                                target_func=pyneb.TargetFunctions.action_squared,
+                                target_func_grad=pyneb.GradientApproximations().discrete_sqr_action_grad,
                                 endpointHarmonicForce=False,loggerSettings=loggerSettings)
     
     initialPath = np.array([np.linspace(-1.7,1.7,nPts),np.linspace(0.79,-0.79,nPts)]).T
