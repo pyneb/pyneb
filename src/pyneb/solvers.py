@@ -316,7 +316,7 @@ class LeastActionPath:
         variablesDict = {"points":points,"tangents":tangents,"springForce":springForce,\
                          "netForce":netForce,"perpSpringForce":perpSpringForce}
         self.logger.log(variablesDict)
-        # sys.exit()
+        
         return netForce
     
 class MinimumEnergyPath:
@@ -402,73 +402,52 @@ class MinimumEnergyPath:
     
     def _compute_tangents(self,points,energies):
         """
-        Here for testing sphinx autodoc
-        
-        Parameters
-        ----------
-        points : TYPE
-            DESCRIPTION.
-        energies : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        tangents : TYPE
-            DESCRIPTION.
-
+        Computes tangent vectors along the path
         """
         tangents = np.zeros((self.nPts,self.nDims))
         
-        #Range selected to exclude endpoints. Tangents on the endpoints do not
-        #appear in the formulas.
-        for ptIter in range(1,self.nPts-1):
-            tp = points[ptIter+1] - points[ptIter]
-            tm = points[ptIter] - points[ptIter-1]
-            dVMax = np.max(np.absolute([energies[ptIter+1]-energies[ptIter],\
-                                        energies[ptIter-1]-energies[ptIter]]))
-            dVMin = np.min(np.absolute([energies[ptIter+1]-energies[ptIter],\
-                                        energies[ptIter-1]-energies[ptIter]]))
-                
-            if (energies[ptIter+1] > energies[ptIter]) and \
-                (energies[ptIter] > energies[ptIter-1]):
-                tangents[ptIter] = tp
-            elif (energies[ptIter+1] < energies[ptIter]) and \
-                (energies[ptIter] < energies[ptIter-1]):
-                tangents[ptIter] = tm
-            elif energies[ptIter+1] > energies[ptIter-1]:
-                tangents[ptIter] = tp*dVMax + tm*dVMin
-            else:
-                tangents[ptIter] = tp*dVMin + tm*dVMax
-                
-            #Normalizing vectors, without throwing errors about zero tangent vector
-            if not np.array_equal(tangents[ptIter],np.zeros(self.nDims)):
-                tangents[ptIter] = tangents[ptIter]/np.linalg.norm(tangents[ptIter])
+        enegDiff = np.diff(energies)
+        absDiff = np.abs(enegDiff)
+        dVMax = np.maximum(absDiff[1:],absDiff[:-1])
+        dVMin = np.minimum(absDiff[1:],absDiff[:-1])
+        
+        pointDiff = np.diff(points,axis=0)
+        
+        #Excluding both endpoints
+        allInds = np.arange(self.nPts-2,dtype=int)
+        
+        enegDiff1Inds = np.where((enegDiff[1:]>0)&(enegDiff[:-1]>0))[0]
+        tangents[enegDiff1Inds+1] = pointDiff[enegDiff1Inds+1]
+        enegDiff2Inds = np.where((enegDiff[1:]<0)&(enegDiff[:-1]<0))[0]
+        tangents[enegDiff2Inds+1] = pointDiff[enegDiff2Inds]
+        
+        remainingInds = allInds[~np.in1d(allInds,enegDiff1Inds)&\
+                                ~np.in1d(allInds,enegDiff2Inds)]
+        enegDiff3Inds = remainingInds[energies[remainingInds+2]>energies[remainingInds]]
+        tangents[enegDiff3Inds+1] = pointDiff[enegDiff3Inds+1]*dVMax[enegDiff3Inds,None]+\
+            pointDiff[enegDiff3Inds]*dVMin[enegDiff3Inds,None]
+            
+        remainingInds = remainingInds[~np.in1d(remainingInds,enegDiff3Inds)]
+        tangents[remainingInds+1] = pointDiff[remainingInds+1]*dVMin[remainingInds,None]+\
+            pointDiff[remainingInds]*dVMax[remainingInds,None]
+            
+        tangentNorm = np.linalg.norm(tangents,axis=1,keepdims=True)
+        tangents = np.divide(tangents,tangentNorm,
+                              where=(tangentNorm!=0),
+                              out=np.zeros_like(tangents))
         
         return tangents
     
     def _spring_force(self,points,tangents):
         """
-        Spring force taken from https://doi.org/10.1063/1.5007180 eqns 20-22
-
-        Parameters
-        ----------
-        points : TYPE
-            DESCRIPTION.
-        tangents : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        springForce : TYPE
-            DESCRIPTION.
-
+        Computes the spring force along the path. Equations taken from 
+        https://doi.org/10.1063/1.5007180 eqns 20-22
         """
         springForce = np.zeros((self.nPts,self.nDims))
-        for i in range(1,self.nPts-1):
-            forwardDist = np.linalg.norm(points[i+1] - points[i])
-            backwardsDist = np.linalg.norm(points[i] - points[i-1])
-            springForce[i] = self.k*(forwardDist - backwardsDist)*tangents[i]
-            
+        
+        dist = np.linalg.norm(points[1:]-points[:-1],axis=1,keepdims=True)
+        springForce[1:-1] = self.k*(dist[1:]-dist[:-1])*tangents[1:-1]
+        
         if self.endpointSpringForce[0]:
             springForce[0] = self.k*(points[1] - points[0])
         
@@ -489,9 +468,6 @@ class MinimumEnergyPath:
         diff = np.diff(points,axis=0)
         diffMag = np.linalg.norm(diff,axis=1)
         
-        # for i in range(self.nPts-2):
-        #     cosphi[i+1] = np.dot(diff[i],diff[i+1])/(diffMag[i] * diffMag[i+1])
-        #Numpy-ified version of the above is about twice as fast
         cosphi[1:-1] = np.einsum("ij,ij->i",diff[:-1],diff[1:])/(diffMag[1:]*diffMag[:-1])
         
         fPhi = 1/2*(1+np.cos(np.pi*cosphi))
@@ -512,19 +488,24 @@ class MinimumEnergyPath:
             else:
                 sys.exit("Err: points "+str(points)+\
                          " does not match expected shape in MinimumEnergyPath")
+                    
         PESEnergies, auxEnergies = self.target_func(points,self.potential,self.auxFunc)
+        
         tangents = self._compute_tangents(points,PESEnergies)
         gradOfPES, gradOfAux = \
             self.target_func_grad(points,self.potential,self.auxFunc)
+        
         trueForce = -gradOfPES
         if gradOfAux is not None:
             negAuxGrad = -gradOfAux
             gradForce = trueForce + negAuxGrad
         else:
             gradForce = trueForce
-        projection = np.array([np.dot(gradForce[i],tangents[i]) \
-                               for i in range(self.nPts)])
-        parallelForce = np.array([projection[i]*tangents[i] for i in range(self.nPts)])
+        
+        projection = np.einsum("ij,ij->i",gradForce,tangents)
+        
+        parallelForce = projection[:,None]*tangents
+        
         perpForce =  gradForce - parallelForce
         springForce = self._spring_force(points,tangents)
         
@@ -532,9 +513,9 @@ class MinimumEnergyPath:
         
         #Computing optimal tunneling path force
         netForce = np.zeros(points.shape)
+        netForce[1:-1] = perpForce[1:-1] + springForce[1:-1] + perpSpringForce[1:-1]
         
-        for i in range(1,self.nPts-1):
-            netForce[i] = perpForce[i] + springForce[i] + perpSpringForce[i]
+        
         #Avoids throwing divide-by-zero errors, but also deals with points with
             #gradient within the finite-difference error from 0. Simplest example
             #is V(x,y) = x^2+y^2, at the origin. There, the gradient is the finite
@@ -563,8 +544,7 @@ class MinimumEnergyPath:
             
         variablesDict = {"points":points,"tangents":tangents,"springForce":springForce,\
                          "netForce":netForce,"perpSpringForce":perpSpringForce}
-            # variablesDict = {"points":points,"tangents":tangents,"springForce":springForce,\
-            #                  "netForce":netForce,"perpSpringForce":perpSpringForce}
+        
         self.logger.log(variablesDict)
             
         return netForce
