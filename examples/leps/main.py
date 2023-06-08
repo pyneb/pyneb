@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import time
 import sys, os
 
@@ -8,77 +9,131 @@ if pynebDir not in sys.path:
     sys.path.insert(0,pynebDir)
 import pyneb
 
-def muller_brown(coords):
-    assert isinstance(coords,np.ndarray)
-    assert coords.shape[-1] == 2
-    
-    ndims = coords.ndim
-    x, y = coords[(ndims-1)*(slice(None),)+(0,)], coords[(ndims-1)*(slice(None),)+(1,)]
-    
-    result = np.zeros(x.shape)
-    for i in range(4):
-        result += mbParams['A'][i]*np.exp(mbParams['a'][i]*(x-mbParams['x_bar'][i])**2 \
-                                          + mbParams['b'][i]*(x-mbParams['x_bar'][i])*(y-mbParams['y_bar'][i]) \
-                                              + mbParams['c'][i]*(y-mbParams['y_bar'][i])**2)
-    return result
+#TODO: For instructional purposes, can use this example to show different configurations
+#of NEB (different target functions, gradients, and Verlet optimizers)
 
-if __name__ == "__main__":
+class LepsPot():
+    def __init__(self,params={}):
+        defaultParams = {"a":0.05,"b":0.8,"c":0.05,"dab":4.746,"dbc":4.746,\
+                         "dac":3.445,"r0":0.742,"alpha":1.942,"rac":3.742,"kc":0.2025,\
+                         "c_ho":1.154}
+        for key in defaultParams.keys():
+            if key in params:
+                setattr(self,key,params[key])
+            else:
+                setattr(self,key,defaultParams[key])
+    
+    def _q(self,r,d,alpha,r0):
+        return d/2*(3/2*np.exp(-2*alpha*(r-r0)) - np.exp(-alpha*(r-r0)))
+    
+    def _j(self,r,d,alpha,r0):
+        return d/4*(np.exp(-2*alpha*(r-r0)) - 6*np.exp(-alpha*(r-r0)))
+    
+    def leps_pot(self,rab,rbc):
+        q = self._q
+        j = self._j
+                
+        rac = rab + rbc
+        
+        vOut = q(rab,self.dab,self.alpha,self.r0)/(1+self.a) +\
+            q(rbc,self.dbc,self.alpha,self.r0)/(1+self.b) +\
+            q(rac,self.dac,self.alpha,self.r0)/(1+self.c)
+        
+        jab = j(rab,self.dab,self.alpha,self.r0)
+        jbc = j(rbc,self.dbc,self.alpha,self.r0)
+        jac = j(rac,self.dac,self.alpha,self.r0)
+        
+        jTerm = jab**2/(1+self.a)**2+jbc**2/(1+self.b)**2+jac**2/(1+self.c)**2
+        jTerm = jTerm - jab*jbc/((1+self.a)*(1+self.b)) - jbc*jac/((1+self.b)*(1+self.c)) -\
+            jab*jac/((1+self.a)*(1+self.c))
+        
+        vOut = vOut - np.sqrt(jTerm)
+        
+        return vOut
+    
+    def __call__(self,coords):
+        """
+        
+        LEPs potential plus harmonic oscillator.
+        Taken from Parameters are from Bruce J. Berne, Giovanni Ciccotti,David F. Coker, \
+        Classical and Quantum Dynamics in Condensed Phase Simulations \
+        Proceedings of the International School of Physics (1998) Chapter 16 \
+        
+        Call this function with a numpy array of rab and x:
+        
+            xx, yy = np.meshgrid(np.arange(0,4,0.01),np.arange(-2,2,0.01))
+            zz = leps_plus_ho(xx,yy),
+        
+        and plot it as
+        
+            fig, ax = plt.subplots()
+            ax.contour(xx,yy,zz,np.arange(-10,70,1),colors="k")
+    
+        """
+        assert isinstance(coords,np.ndarray)
+        assert coords.shape[-1] == 2
+        
+        ndims = coords.ndim
+        rab, x = coords[(ndims-1)*(slice(None),)+(0,)], coords[(ndims-1)*(slice(None),)+(1,)]
+        
+        vOut = self.leps_pot(rab,self.rac-rab)
+        vOut += 2*self.kc*(rab-(self.rac/2-x/self.c_ho))**2
+        
+        return vOut
+
+if __name__ == '__main__':
     os.makedirs('logs',exist_ok=True)
     
-    mbParams = dict(A = [-200,-100,-170,15],
-                    a = [-1,-1,-6.5,0.7],
-                    b = [0,0,11,0.6],
-                    c = [-10,-10,-6.5,0.7],
-                    x_bar = [1,0,-0.5,-1],
-                    y_bar = [0,0.5,1.5,1])
+    """Setting up LEPS potential on a grid"""
+    leps = LepsPot()
     
-    """Setting up Muller-Brown potential, and subtracting ground state energy"""
     #Use unequal shapes to easily know shapes of arrays we're after
-    x = np.linspace(-1.5, 1,300)
-    y = np.linspace(-.25,2,290)
+    x = np.linspace(.5,3.25,500)
+    y = np.linspace(-3,3.05,490)
+    
     xx, yy = np.meshgrid(x,y)
-    zz = muller_brown(np.swapaxes(np.array([xx,yy]),0,-1))
+    zz = leps(np.swapaxes(np.array([xx,yy]),0,-1))
     
     gsInds = pyneb.SurfaceUtils.find_local_minimum(zz,searchPerc=[1,1])
     gsLoc = np.array((xx.T[gsInds],yy.T[gsInds]))
-    gsEneg = muller_brown(gsLoc)
+    gsEneg = leps(gsLoc)
     
     zz -= gsEneg
     
-    pes = pyneb.shift_func(muller_brown,gsEneg)
+    pes = pyneb.shift_func(leps,gsEneg)
     
-    """Plotting the Muller-Brown function"""
+    """Plotting the LEPS function"""
     pesFig, pesAx = plt.subplots()
-    cf = pesAx.contourf(xx,yy,zz.T.clip(max=200),cmap='Spectral_r',levels=30)
+    cf = pesAx.contourf(xx,yy,zz.T,cmap='Spectral_r',levels=30)
     plt.colorbar(cf,ax=pesAx)
     pesAx.scatter(*gsLoc,marker='x',color='black')
     
-    pesAx.set(xlabel='x',ylabel='y')
+    pesAx.set(xlabel='rAB',ylabel='x')
     
-    """NEB for the least action path"""
-    #NEB parameters
-    nPts = 32
+    """NEB parameters"""
+    nPts = 42
     nDims = 2
-    k = 3
+    k = 2
     kappa = 1
     
     #Optimization parameters
     dt = 0.01
     nIters = 500
     
-    initialPath = np.array([np.linspace(-0.55,0.62,nPts),np.linspace(1.44,0.03,nPts)]).T
+    initialPath = np.array([np.linspace(0.74,3,nPts),np.linspace(1.3,-1.3,nPts)]).T
     
+    """NEB for the least action path"""
     #Setting up
     lap = pyneb.LeastActionPath(pes,nPts,nDims,endpointSpringForce=False,
                                 endpointHarmonicForce=False,
                                 nebParams={'k':k,'kappa':kappa},
-                                loggerSettings={"logName":"logs/muller-brown"})
+                                loggerSettings={"logName":"logs/leps"})
     nebObj = pyneb.VerletMinimization(lap,initialPath)
     
     t0 = time.time()
     #Running
     tStepArr, alphaArr, stepsSinceReset, endsWithoutError = \
-        nebObj.fire(dt,nIters,useLocal=False,earlyStop=False)
+        nebObj.fire2(dt,nIters,useLocal=False,earlyStop=False)
     t1 = time.time()
     print('Finished running NEB-LAP in %.3f s'%(t1-t0))
     
@@ -103,18 +158,6 @@ if __name__ == "__main__":
     ax.legend()
     
     """NEB for the minimum energy path"""
-    #NEB parameters
-    nPts = 32
-    nDims = 2
-    k = 3
-    kappa = 1
-    
-    #Optimization parameters
-    dt = 0.01
-    nIters = 500
-    
-    initialPath = np.array([np.linspace(-0.55,0.62,nPts),np.linspace(1.44,0.03,nPts)]).T
-    
     #Setting up
     lap = pyneb.MinimumEnergyPath(pes,nPts,nDims,endpointSpringForce=False,
                                   endpointHarmonicForce=False,
@@ -153,3 +196,4 @@ if __name__ == "__main__":
     #maxima, minima, saddle = pyneb.get_crit_pnts(pes, nebObj.allPts[-1])
     
     pesAx.legend()
+    
