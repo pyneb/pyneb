@@ -1784,7 +1784,7 @@ def get_crit_pnts(V_func,path,method='central'):
     for i,pnt in enumerate(path):
         EnergyOnPath[i] = V_func(pnt)
     minima_pnts = SurfaceUtils.find_all_local_minimum(EnergyOnPath)[0]
-    maxima_pnts = SurfaceUtils.find_all_local_maximum(EnergyOnPath)[0]
+    maxima_pnts = SurfaceUtils.find_all_local_minimum(-EnergyOnPath)[0]
     crit_pnts = np.concatenate((minima_pnts,maxima_pnts))
     maxima = []
     minima = []

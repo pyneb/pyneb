@@ -477,6 +477,32 @@ class MinimumEnergyPath:
         
         return springForce
     
+    def _perpendicular_spring_force(self,points,tangents,springForce):
+        """
+        Computes a spring force acting perpendicular to the path, to prevent
+        images from bunching up. Taken from https://doi.org/10.1142/3816
+        pg 385, eqns 9-10
+        
+        New version takes from 0.14 s to 0.02 s, at 30 points, 500 iterations
+        """
+        cosphi = np.zeros(self.nPts)
+        diff = np.diff(points,axis=0)
+        diffMag = np.linalg.norm(diff,axis=1)
+        
+        # for i in range(self.nPts-2):
+        #     cosphi[i+1] = np.dot(diff[i],diff[i+1])/(diffMag[i] * diffMag[i+1])
+        #Numpy-ified version of the above is about twice as fast
+        cosphi[1:-1] = np.einsum("ij,ij->i",diff[:-1],diff[1:])/(diffMag[1:]*diffMag[:-1])
+        
+        fPhi = 1/2*(1+np.cos(np.pi*cosphi))
+        
+        sfDotTangents = springForce*tangents
+        projectedForce = springForce - sfDotTangents*tangents
+        
+        force = fPhi[:,None]*projectedForce
+        
+        return force
+    
     def compute_force(self,points):
         expectedShape = (self.nPts,self.nDims)
         if points.shape != expectedShape:
@@ -501,11 +527,14 @@ class MinimumEnergyPath:
         parallelForce = np.array([projection[i]*tangents[i] for i in range(self.nPts)])
         perpForce =  gradForce - parallelForce
         springForce = self._spring_force(points,tangents)
+        
+        perpSpringForce = self._perpendicular_spring_force(points,tangents,springForce)
+        
         #Computing optimal tunneling path force
         netForce = np.zeros(points.shape)
         
         for i in range(1,self.nPts-1):
-            netForce[i] = perpForce[i] + springForce[i]
+            netForce[i] = perpForce[i] + springForce[i] + perpSpringForce[i]
         #Avoids throwing divide-by-zero errors, but also deals with points with
             #gradient within the finite-difference error from 0. Simplest example
             #is V(x,y) = x^2+y^2, at the origin. There, the gradient is the finite
@@ -533,7 +562,9 @@ class MinimumEnergyPath:
             netForce[-1] = springForce[-1]
             
         variablesDict = {"points":points,"tangents":tangents,"springForce":springForce,\
-                         "netForce":netForce}
+                         "netForce":netForce,"perpSpringForce":perpSpringForce}
+            # variablesDict = {"points":points,"tangents":tangents,"springForce":springForce,\
+            #                  "netForce":netForce,"perpSpringForce":perpSpringForce}
         self.logger.log(variablesDict)
             
         return netForce
