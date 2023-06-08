@@ -596,6 +596,8 @@ class GradientApproximations:
 
         :Maintainer: Daniel
         """
+        warnings.warn('Deprecation warning: GradientApproximations.forward_action_grad\
+                      to be deprecated due to the large number of extra calculations being done')
         eps = fdTol
 
         gradOfPes = np.zeros(path.shape)

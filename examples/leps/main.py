@@ -125,6 +125,7 @@ if __name__ == '__main__':
     #Setting up
     lap = pyneb.LeastActionPath(pes,nPts,nDims,endpointSpringForce=False,
                                 endpointHarmonicForce=False,
+                                target_func=pyneb.TargetFunctions.action_squared,
                                 target_func_grad=pyneb.GradientApproximations().discrete_sqr_action_grad,
                                 nebParams={'k':k,'kappa':kappa},
                                 loggerSettings={"logName":"logs/leps"})
