@@ -1374,6 +1374,7 @@ class Dijkstra:
         self.initialPoint = initialPoint
         self.coordMeshTuple = coordMeshTuple
         self.uniqueCoords = [np.unique(c) for c in self.coordMeshTuple]
+        self.trimVals = trimVals
         
         expectedShape = np.array([len(c) for c in self.uniqueCoords])
         expectedShape[[1,0]] = expectedShape[[0,1]]
@@ -1439,8 +1440,8 @@ class Dijkstra:
         self.endpointIndices = [tuple(row) for row in self.endpointIndices]
         
         #Clip the potential to the min/max. Done after finding possible endpoints.
-        if trimVals != [None,None]:
-            self.potArr = self.potArr.clip(trimVals[0],trimVals[1])
+        if self.trimVals != [None,None]:
+            self.potArr = self.potArr.clip(self.trimVals[0],self.trimVals[1])
         
         #Getting indices for self.initialPoint
         self.initialInds = np.zeros(self.nDims,dtype=int)

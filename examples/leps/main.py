@@ -162,7 +162,7 @@ if __name__ == '__main__':
     lap = pyneb.MinimumEnergyPath(pes,nPts,nDims,endpointSpringForce=False,
                                   endpointHarmonicForce=False,
                                   nebParams={'k':k,'kappa':kappa},
-                                  loggerSettings={"logName":"logs/muller-brown"})
+                                  loggerSettings={"logName":"logs/leps"})
     nebObj = pyneb.VerletMinimization(lap,initialPath)
     
     t0 = time.time()
@@ -194,6 +194,25 @@ if __name__ == '__main__':
     
     #TODO: Finding and plotting critical points
     #maxima, minima, saddle = pyneb.get_crit_pnts(pes, nebObj.allPts[-1])
+    
+    """Dijkstra for the LAP"""
+    #Has to start and end on gridpoints near the real minima
+    gridMinInds = pyneb.SurfaceUtils.find_all_local_minimum(zz)
+    xMin, yMin = xx.T[gridMinInds],yy.T[gridMinInds]
+    
+    #We already know from looking at the surface which point is the beginning/end
+    initLoc = np.array([xMin[0],yMin[0]])
+    finalLoc = np.array([xMin[1],yMin[1]])
+    djk = pyneb.Dijkstra(initLoc,(xx,yy),zz,
+                         allowedEndpoints=finalLoc,
+                         logLevel=1,fName='logs/leps')
+    
+    t0 = time.time()
+    _, path, act = djk()
+    t1 = time.time()
+    print("Finished running Dijkstra's method in %.3f s"%(t1-t0))
+    
+    pesAx.plot(*path.T,color='pink',label='Dijkstra')
     
     pesAx.legend()
     

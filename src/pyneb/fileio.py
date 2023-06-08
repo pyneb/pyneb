@@ -276,13 +276,12 @@ class DijkstraLogger:
         
         self.initTime = datetime.datetime.now().isoformat()
         self.djkInst = djkInst
-        os.makedirs("logs",exist_ok=True)
         
         if self.logLevel in [1,2]:
             if fName is None:
-                self.fileName = "logs/"+self.initTime+".djk"
+                self.fileName = self.initTime+".djk"
             else:
-                self.fileName = "logs/"+fName+".djk"
+                self.fileName = fName+".djk"
             
             h5File = h5py.File(self.fileName,"w")
             
