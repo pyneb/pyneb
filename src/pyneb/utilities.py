@@ -1308,6 +1308,8 @@ class NDInterpWithBoundary:
             else:
                 self.gridVals = _get_correct_shape(gridPoints,gridVals,normalOrder=False)
                 self._call = self._call_nd
+                if self.nDims == 2:
+                    warnings.warn("To use linear interpolation in 2D, pass splKWargs={'kx':1,'ky':1} to initialization")
         else:
             self._call = custom_func
 
@@ -1533,6 +1535,8 @@ class PositiveSemidefInterpolator:
             self.gridValsList = [_get_correct_shape(gridPoints,l,normalOrder=False) for l in listOfVals]
             self._construct_interps_nd()
             self._call = self._call_nd
+            if self.nDims == 2:
+                warnings.warn("To use linear interpolation in 2D, pass ndInterpKWargs={'splKWargs':{'kx':1,'ky':1}} to initialization")
         else:
             raise NotImplementedError
 
