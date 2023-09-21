@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import itertools
 
 from scipy.interpolate import interpnd, RectBivariateSpline, splprep, splev
-from scipy.ndimage import filters, morphology #For minimum finding
+from scipy.ndimage import filters, morphology, map_coordinates #For minimum finding
 from pathos import helpers
 from pathos.multiprocessing import ProcessingPool as Pool
 import warnings
@@ -1307,6 +1307,15 @@ class NDInterpWithBoundary:
                 self._call = self._call_2d
             else:
                 self.gridVals = _get_correct_shape(gridPoints,gridVals,normalOrder=False)
+                #Arguments for scipy.ndimage.map_coordinates
+                self.xIntercept = np.array([u[0] for u in self.gridPoints])
+                self.dx = np.array([u[1]-u[0] for u in self.gridPoints])
+                
+                if 'order' in splKWargs:
+                    self.splOrder = splKWargs['order']
+                else:
+                    self.splOrder = 1
+                
                 self._call = self._call_nd
                 if self.nDims == 2:
                     warnings.warn("To use linear interpolation in 2D, pass splKWargs={'kx':1,'ky':1} to initialization")
@@ -1316,6 +1325,9 @@ class NDInterpWithBoundary:
         postEvalDict = {"identity":self._identity_transform_function,
                         "smooth_abs":self._smooth_abs_transform_function}
         self.post_eval = postEvalDict[transformFuncName]
+        
+    def _rescale_points(self,points):
+        return np.moveaxis((points - self.xIntercept)/self.dx,-1,0)
     
     def __call__(self,points):
         """
@@ -1376,82 +1388,87 @@ class NDInterpWithBoundary:
         """
         return self.rbv(points[:,0],points[:,1],grid=False)
 
+    # def _call_nd_old(self,points):
+    #     """
+    #     Repeated linear interpolation. For the 2D case, see e.g.
+    #     https://en.wikipedia.org/wiki/Bilinear_interpolation#Weighted_mean
+
+    #     Notes
+    #     -----
+    #     Original implementation, taken from scipy.interpolate.RegularGridInterpolator,
+    #     handled multiple points at a time. I've trimmed things down here so that
+    #     it only handles a single point at a time, since the loop in self.__call__
+    #     has to check every point individually anyways.
+
+    #     """
+    #     indices, normDistances = self._find_indices(points.T)
+    #     # print(indices)
+    #     # print(normDistances)
+        
+    #     vals = np.zeros(points.shape[0])
+    #     for ptIter in range(points.shape[0]):
+    #         # find relevant values
+    #         # each i and i+1 represents a edge
+    #         edges = itertools.product(*[[i, i + 1] for i in indices[:,ptIter]])
+    #         for edge_indices in edges:
+    #             weight = 1.
+    #             for ei, i, yi in zip(edge_indices, indices[:,ptIter], normDistances[:,ptIter]):
+    #                 weight *= np.where(ei == i, 1 - yi, yi).item()
+    #             vals[ptIter] += weight * self.gridVals[edge_indices].item()
+        
+    #     return vals
+    
     def _call_nd(self,points):
-        """
-        Repeated linear interpolation. For the 2D case, see e.g.
-        https://en.wikipedia.org/wiki/Bilinear_interpolation#Weighted_mean
+        return map_coordinates(self.gridVals,
+                               self._rescale_points(points),
+                               order=self.splOrder,mode='nearest')
 
-        Notes
-        -----
-        Original implementation, taken from scipy.interpolate.RegularGridInterpolator,
-        handled multiple points at a time. I've trimmed things down here so that
-        it only handles a single point at a time, since the loop in self.__call__
-        has to check every point individually anyways.
+    # def _find_indices(self,points):
+    #     """
+    #     Finds indices of nearest gridpoint, utilizing the regularity of the grid.
+    #     Also computes how far in each coordinate dimension every point is from
+    #     the previous gridpoint (not the nearest), normalized such that the next
+    #     gridpoint (in a particular dimension) is distance 1 from the nearest gridpoint
+    #     (called unity units). The distance is normed to make the interpolation
+    #     simpler
 
-        """
-        indices, normDistances = self._find_indices(points.T)
-        # print(indices)
-        # print(normDistances)
-        
-        vals = np.zeros(points.shape[0])
-        for ptIter in range(points.shape[0]):
-            # find relevant values
-            # each i and i+1 represents a edge
-            edges = itertools.product(*[[i, i + 1] for i in indices[:,ptIter]])
-            for edge_indices in edges:
-                weight = 1.
-                for ei, i, yi in zip(edge_indices, indices[:,ptIter], normDistances[:,ptIter]):
-                    weight *= np.where(ei == i, 1 - yi, yi).item()
-                vals[ptIter] += weight * self.gridVals[edge_indices].item()
-        
-        return vals
+    #     Taken from scipy.interpolate.RegularGridInterpolator.
 
-    def _find_indices(self,points):
-        """
-        Finds indices of nearest gridpoint, utilizing the regularity of the grid.
-        Also computes how far in each coordinate dimension every point is from
-        the previous gridpoint (not the nearest), normalized such that the next
-        gridpoint (in a particular dimension) is distance 1 from the nearest gridpoint
-        (called unity units). The distance is normed to make the interpolation
-        simpler
+    #     Example
+    #     -------
+    #     Returned indices of ([2,3],[1,7],[3,2]) indicates that the first point
+    #     has nearest grid index (2,1,3), and the second has nearest grid index
+    #     (3,7,2).
 
-        Taken from scipy.interpolate.RegularGridInterpolator.
+    #     Notes
+    #     -----
+    #     If the nearest edge is the outermost edge in a given coordinate, the inner
+    #     edge is return instead.
 
-        Example
-        -------
-        Returned indices of ([2,3],[1,7],[3,2]) indicates that the first point
-        has nearest grid index (2,1,3), and the second has nearest grid index
-        (3,7,2).
+    #     Requires points to have first dimension equal to self.nDims so that
+    #     this can zip points and self.gridPoints
 
-        Notes
-        -----
-        If the nearest edge is the outermost edge in a given coordinate, the inner
-        edge is return instead.
+    #     """
+    #     indices = []
+    #     normDistances = np.zeros(points.shape)
 
-        Requires points to have first dimension equal to self.nDims so that
-        this can zip points and self.gridPoints
-
-        """
-        indices = []
-        normDistances = np.zeros(points.shape)
-
-        for (coordIter,x,grid) in zip(np.arange(self.nDims),points,self.gridPoints):
-            #This is why the grid must be sorted - this search is now quick. All
-            #this does is find the index in which to place x such that the list
-            #self.grid[coordIter] remains sorted.
-            i = np.searchsorted(grid, x) - 1
+    #     for (coordIter,x,grid) in zip(np.arange(self.nDims),points,self.gridPoints):
+    #         #This is why the grid must be sorted - this search is now quick. All
+    #         #this does is find the index in which to place x such that the list
+    #         #self.grid[coordIter] remains sorted.
+    #         i = np.searchsorted(grid, x) - 1
             
-            #If x would be the new first element, index it as zero
-            i[i < 0] = 0
-            #If x would be the last element, make it not so. However, the way
-            #the interpolation scheme is set up, we need the nearest gridpoint
-            #that is not the outermost gridpoint. See below with grid[i+1]
-            i[i > grid.size - 2] = grid.size - 2
+    #         #If x would be the new first element, index it as zero
+    #         i[i < 0] = 0
+    #         #If x would be the last element, make it not so. However, the way
+    #         #the interpolation scheme is set up, we need the nearest gridpoint
+    #         #that is not the outermost gridpoint. See below with grid[i+1]
+    #         i[i > grid.size - 2] = grid.size - 2
 
-            indices.append(i)
-            normDistances[coordIter] = (x - grid[i]) / (grid[i + 1] - grid[i])
+    #         indices.append(i)
+    #         normDistances[coordIter] = (x - grid[i]) / (grid[i + 1] - grid[i])
 
-        return np.array(indices), normDistances
+    #     return np.array(indices), normDistances
     
     def _exp_boundary_handler(self,evalLoc,points):
         """
