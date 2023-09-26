@@ -232,3 +232,23 @@ def filter_path(path,pes_func,diffFilter=True,diffIsStrict=True,enegLowerThresh=
         return densePath, enegOnPath, indToTruncateAt, valid, errorReason
     else:
         return densePath, enegOnPath, -1, True, None
+    
+def action_is_relevant(actions,thresh=0.01):
+    actMin = np.min(actions)
+    relativeProbs = np.exp(-2*(actions-actMin))
+    sortInds = np.argsort(actions)
+    
+    cumulativeRelProbs = np.zeros(len(actions))
+    for i in range(len(actions)):
+        cumulativeRelProbs[i] = np.sum(relativeProbs[sortInds][:i+1])
+    percDiff = np.diff(cumulativeRelProbs)/cumulativeRelProbs[-1]
+    
+    pathIsRelevant = np.zeros(len(actions),dtype=bool)
+    pathIsRelevant[sortInds[0]] = True
+    for (pIter,p) in enumerate(percDiff):
+        if p > thresh:
+            pathIsRelevant[sortInds[pIter+1]] = True
+            
+    nRelevantPaths = np.sum(pathIsRelevant)
+            
+    return pathIsRelevant, cumulativeRelProbs, actMin, nRelevantPaths
