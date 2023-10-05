@@ -152,7 +152,8 @@ def find_most_similar_paths(firstList,secondList,removeDuplicates=False,
     return nearestIndsArr, distancesArr
 
 def filter_path(path,pes_func,diffFilter=True,diffIsStrict=True,enegLowerThresh=0.05,
-                enegUpperThresh=0.1,nSkip=100,enegFilter=True,silenceWarnings=False):
+                enegUpperThresh=0.1,nSkip=100,enegFilter=True,silenceWarnings=False,
+                minSkipCoord=None):
     """
     Filters a path according to a number of criteria. Currently checks if
     path is monotonic in the first coordinate. It then interpolates the path
@@ -213,6 +214,13 @@ def filter_path(path,pes_func,diffFilter=True,diffIsStrict=True,enegLowerThresh=
     enegOnPath = pes_func(densePath)
     
     if enegFilter:
+        if minSkipCoord is not None:
+            indsToUse = np.where(densePath[:,0]>minSkipCoord)[0]
+            if len(indsToUse)>0:
+                nSkip = indsToUse[0]
+            else:
+                nSkip = len(densePath)
+
         enegInds = np.where(np.abs(enegOnPath)[nSkip:] < enegLowerThresh)[0]
     
         if len(enegInds) > 0:
