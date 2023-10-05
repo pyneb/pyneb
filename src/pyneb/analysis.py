@@ -6,6 +6,11 @@ from sklearn.preprocessing import StandardScaler
 import utilities
 import fileio
 
+import os
+import shutil
+import subprocess
+import h5py
+
 import warnings
 
 def cluster_endpoints(allPaths,pathActions,meanshiftParams={},
@@ -260,3 +265,53 @@ def action_is_relevant(actions,thresh=0.01):
     nRelevantPaths = np.sum(pathIsRelevant)
             
     return pathIsRelevant, cumulativeRelProbs, actMin, nRelevantPaths
+
+def trim_neb_log(logFile,target_func):
+    """
+    Computes loss at each iteration using target_func, then deletes all but the
+    last iteration for each dataset that is saved on an iteration-by-iteration
+    basis (the names are hard-coded in). In this way, one can still track
+    convergence (e.g. for archival purposes).
+    
+    The original file is not deleted.
+    
+    Notes
+    -----
+    If the log level only saves data at the final iteration, do NOT run this.
+
+    Parameters
+    ----------
+    logFile : TYPE
+        DESCRIPTION.
+    target_func : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    None.
+
+    """
+    tmpFile = 'tmp.lap'
+    newFile = 'trimmed_'+logFile
+    
+    shutil.copy(logFile,tmpFile)
+    
+    with h5py.File(tmpFile,'a') as h5File:
+        tfEval = target_func(np.array(h5File['points']))
+        
+        h5File.create_dataset('loss_values',data=tfEval)
+        
+        for key in ['netForce','perpSpringForce','points','springForce',\
+                    'tStep','tangents',]:
+            lastVal = h5File[key][-1]
+            
+            del h5File[key]
+            
+            h5File.create_dataset(key,data=lastVal)
+    
+    subprocess.run(['h5repack',tmpFile,newFile])
+    
+    os.remove(tmpFile)
+    
+    
+
