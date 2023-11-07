@@ -10,13 +10,11 @@ authors = [
   {name="Daniel Lay"},
   {name="Eric Flynn"},
 ]
-description = The Python Nudged Elastic Band Package
-long_description = file: README.md
-long_description_content_type = text/markdown
+description = "The Python Nudged Elastic Band Package"
 readme = "README.md"
-url = https://github.com/pyneb/pyneb
+url = "https://github.com/pyneb/pyneb"
 project_urls =
-    Bug Tracker = https://github.com/pyneb/pyneb
+    Bug Tracker = "https://github.com/pyneb/pyneb"
 license = { file="LICENSE" }
 requires-python = ">=3.9"
 classifiers = [
