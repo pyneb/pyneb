@@ -12,7 +12,7 @@ authors = [
 ]
 description = "The Python Nudged Elastic Band Package"
 readme = "README.md"
-url = "https://github.com/pyneb/pyneb"
+homepage = "https://pyneb.dev"
 license = { file="LICENSE" }
 requires-python = ">=3.9"
 classifiers = [
