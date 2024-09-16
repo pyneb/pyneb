@@ -113,8 +113,7 @@ class TargetFunctions:
         dist = np.core.umath.clip(dist,0,dist.max())
         # dist = dist.clip(0)
         actOut = np.sum(np.sqrt(2*dist*potArr[1:]))
-        
-        return actOut, potArr, massArr
+        return actOut, potArr, massArr, dist
 
     @staticmethod
     def _term_in_action_sum(points,potential,masses=None):
