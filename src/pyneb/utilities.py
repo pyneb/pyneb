@@ -1240,6 +1240,14 @@ class NDInterpWithBoundary:
         splKWargs : dict, optional
             Extra arguments for spline interpolation, in the 2D case. The default
             is {}
+        _test_linear : bool, optional
+            Set to True to use _call_nd even with 2 coordinates. Should only be
+            used to validate that code
+        custom_func : None or function, optional
+            If not None, uses this function to evaluate the potential. Is useful
+            if you want to combine a custom interpolator with one of the implemented
+            boundaryHandler or transformFuncName - e.g. if you want to take the
+            smooth absolute value of your function
 
         Raises
         ------
@@ -1421,7 +1429,10 @@ class NDInterpWithBoundary:
     def _call_nd(self,points):
         return map_coordinates(self.gridVals,
                                self._rescale_points(points),
-                               order=self.splOrder,mode='nearest')
+                               order=self.splOrder,
+                               mode='nearest',
+                                # mode='reflect'
+                               )
 
     # def _find_indices(self,points):
     #     """
