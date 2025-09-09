@@ -39,7 +39,7 @@ class TargetFunctions:
     :Maintainer: Daniel
     """
     @staticmethod
-    def action(path,potential,masses=None):
+    def action(path,potential,masses=None, get_dist=False):
         """
         The standard action functional
 
@@ -113,8 +113,10 @@ class TargetFunctions:
         dist = np.core.umath.clip(dist,0,dist.max())
         # dist = dist.clip(0)
         actOut = np.sum(np.sqrt(2*dist*potArr[1:]))
-        
-        return actOut, potArr, massArr
+        if(get_dist):
+         return actOut, potArr, massArr, dist
+        else:
+         return actOut, potArr, massArr
 
     @staticmethod
     def _term_in_action_sum(points,potential,masses=None):
