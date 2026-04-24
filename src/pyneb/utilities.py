@@ -7,7 +7,10 @@ import matplotlib.pyplot as plt
 import itertools
 
 from scipy.interpolate import interpnd, RectBivariateSpline, splprep, splev
-from scipy.ndimage import filters, morphology, map_coordinates #For minimum finding
+# from scipy.ndimage import filters, morphology, map_coordinates #For minimum finding
+# fixing DeprecationWarnings (DL, 2026-04-08)
+from scipy.ndimage import map_coordinates #For minimum finding
+import scipy.ndimage
 from pathos import helpers
 from pathos.multiprocessing import ProcessingPool as Pool
 import warnings
@@ -16,7 +19,7 @@ global fdTol
 fdTol = 10**(-8)
 
 class TargetFunctions:
-    """
+    r"""
     Class containing integral-type functionals that are commonly minimized.
     Generically of the form
 
@@ -40,7 +43,7 @@ class TargetFunctions:
     """
     @staticmethod
     def action(path,potential,masses=None, get_dist=False):
-        """
+        r"""
         The standard action functional
 
         $$ S = \int_{s_0}^{s_1} \sqrt{2 M_{ij}\dot{x}_i\dot{x}_j E(x(s))} ds $$
@@ -170,7 +173,7 @@ class TargetFunctions:
     
     @staticmethod
     def action_squared(path,potential,masses=None):
-        '''
+        r'''
         The functional
 
         $$ S = \int_{s_0}^{s_1} M_{ij}\dot{x}_i\dot{x}_j E(x(s)) ds $$
@@ -823,14 +826,14 @@ class SurfaceUtils:
         coordinate; to find that, we must include the border indices. To exclude
         them, one can then call SurfaceUtils.find_local_minimum
         """
-        neighborhood = morphology.generate_binary_structure(len(arr.shape),1)
+        neighborhood = scipy.ndimage.generate_binary_structure(len(arr.shape),1)
         #Test case was giving floating-point differences along the outer edge of
         #the array
-        local_min = np.isclose(filters.minimum_filter(arr, footprint=neighborhood,\
-                                                      mode="nearest"),arr,atol=10**(-15))
+        local_min = np.isclose(scipy.ndimage.minimum_filter(arr, footprint=neighborhood,\
+                                                             mode="nearest"),arr,atol=10**(-15))
 
         background = (arr==0)
-        eroded_background = morphology.binary_erosion(background,\
+        eroded_background = scipy.ndimage.binary_erosion(background,\
                                                       structure=neighborhood,\
                                                       border_value=1)
 
@@ -1179,7 +1182,7 @@ def _get_correct_shape(gridPoints,arrToCheck,normalOrder=True):
     Utility for automatically correcting the shape of an array, to deal with
     nonsense regarding np.meshgrid's default setup
     """
-    warnings.warn('DeprecationWarning: Automatic array reshaping will be deprecated soon')
+    # warnings.warn('DeprecationWarning: Automatic array reshaping will be deprecated soon')
 
     defaultMeshgridShape = np.array([len(g) for g in gridPoints])
     possibleOtherShape = tuple(defaultMeshgridShape)

@@ -6,10 +6,12 @@ from sklearn.preprocessing import StandardScaler
 import utilities
 import fileio
 
-import os
+import sys, os
 import shutil
 import subprocess
 import h5py
+import pandas as pd
+import typing
 
 import warnings
 
@@ -40,8 +42,6 @@ def cluster_endpoints(allPaths,pathActions,meanshiftParams={},
         DESCRIPTION.
 
     """
-    if not silenceWarnings:
-        warnings.warn("Method 'cluster_endpoints' still in development")
     
     defaultMeanshiftParams = {'bandwidth':5}
     for (key,val) in defaultMeanshiftParams.items():
@@ -156,6 +156,102 @@ def find_most_similar_paths(firstList,secondList,removeDuplicates=False,
             
     return nearestIndsArr, distancesArr
 
+class LAPFilters:
+    @staticmethod
+    def correct_starting_point(path:np.ndarray[float],gsLoc:np.ndarray[float],
+                               tol:float=0.5) -> tuple[bool, np.ndarray[float], str]:
+        isValid = True
+        msg = 'Success'
+        pathOut = path
+
+        if np.any(np.abs(path[0] - gsLoc) > tol):
+            isValid = False
+            msg = 'Starting location to far from desired point'
+            pathOut = None
+        return isValid, pathOut, msg
+        
+    @staticmethod
+    def monotonic(path:np.ndarray[float],diffIsStrict:bool=True,
+                  coordinateIdx:int=0) -> tuple[bool, np.ndarray[float], str]:
+        diffArr = np.diff(path[:,coordinateIdx])
+    
+        isValid = True
+        msg = 'Success'
+        pathOut = path
+
+        if diffIsStrict:
+            if np.any(diffArr<0):
+                isValid = False
+                pathOut = None
+                msg = 'Non-monotonic in coordinate {:d}'.format(coordinateIdx)
+        else:
+            badInds = np.where(diffArr<=0)[0]
+            if len(badInds) > 0:
+                path = path[:badInds[0]]
+                if path.shape[0] <= 4: #Basically arbitrary
+                    isValid = False
+                    pathOut = None
+                    msg = 'Insufficient monotonic points in first coordinate'
+                else:
+                    isValid = True
+                    pathOut = path
+                    msg = 'Success with non-strict monotonic filter'
+                
+        return isValid, pathOut, msg
+    
+    @staticmethod
+    def out_of_bounds(path:np.ndarray[float],
+                      bounds:np.ndarray[float]) -> tuple[bool, np.ndarray[float], str]:
+        """
+        Does exactly what it says. path is shape [nPoints,nCoordinates],
+        bounds is shape [nCoordinates,2]
+        """
+        isValid = True
+        pathOut = path
+        msg = 'Success'
+        for coordIter in range(path.shape[1]):
+            if (np.any(path[:,coordIter] < bounds[coordIter,0])) or \
+                (np.any(path[:,coordIter] > bounds[coordIter,1])):
+                isValid = False
+                pathOut = []
+                msg = 'LAP goes out-of-bounds'
+        return isValid, pathOut, msg
+    
+    @staticmethod
+    def energy_within_tolerance(enegOnPath:np.ndarray[float],
+                                energyToMatch:float,energyTol:float=0.1):
+        """
+        TODO: don't like that this has a different return signature
+        than LAPFilters.monotonic
+        """
+        #Some parameter sets fail for initial guesses, and pull the endpoint off of
+        #the OTL
+        if (np.abs(enegOnPath[-1] - energyToMatch) > energyTol):
+            valid = False
+            msg = 'Final energy greater than enegUpperThresh'
+        else:
+            valid = True
+            msg = 'Success'
+        
+        return valid, msg
+
+def truncate_path_at_given_energy(path:np.ndarray[float],pes_func:callable,
+                                  energy:float=0.0,energyTol:tuple[float]=(0.05,0.1),
+                                  nSkip:int=100,nInterp:int=500):
+    interpPath = utilities.InterpolatedPath(path)
+    densePath = np.array(interpPath(np.linspace(0,1,nInterp))).T
+
+    enegOnPath = pes_func(densePath)
+
+    enegInds = np.where(np.abs(enegOnPath - energy)[nSkip:] < energyTol[0])[0]
+    
+    if len(enegInds) > 0:
+        indToTruncateAt = enegInds[0]+nSkip
+    else:
+        indToTruncateAt = -1
+    
+    return densePath[:indToTruncateAt], enegOnPath[:indToTruncateAt]
+
 def filter_path(path,pes_func,diffFilter=True,diffIsStrict=True,enegLowerThresh=0.05,
                 enegUpperThresh=0.1,nSkip=100,enegFilter=True,silenceWarnings=False,
                 minSkipCoord=None):
@@ -200,6 +296,8 @@ def filter_path(path,pes_func,diffFilter=True,diffIsStrict=True,enegLowerThresh=
         DESCRIPTION.
 
     """
+    warnings.warn("pyneb.analysis.filter_path is deprecated in favor of LAPFilters",
+                  category=DeprecationWarning,stacklevel=2)
     diffArr = np.diff(path[:,0])
     
     if diffFilter:
@@ -245,6 +343,12 @@ def filter_path(path,pes_func,diffFilter=True,diffIsStrict=True,enegLowerThresh=
         return densePath, enegOnPath, indToTruncateAt, valid, errorReason
     else:
         return densePath, enegOnPath, -1, True, None
+    
+def get_relative_probabilities(actions:np.ndarray):
+    actMin = np.min(actions)
+    relativeProbs = np.exp(-2*(actions-actMin))
+    probs = np.exp(-2*actions)
+    return probs, relativeProbs
     
 def action_is_relevant(actions,thresh=0.01):
     actMin = np.min(actions)
@@ -313,5 +417,45 @@ def trim_neb_log(logFile,target_func):
     
     os.remove(tmpFile)
     
-    
+def plot_pes_from_dataframe(pes:pd.DataFrame,
+                            plotCol:str,
+                            coordCols:typing.List[str]=['Q20','Q30'],
+                            cmap='Spectral_r',
+                            clipRange=None,
+                            maskCol:str=None,
+                            maskNegate:bool=False):
+    assert len(coordCols) == 2
 
+    uniqueCoords = [np.unique(pes[col].to_numpy()) for col in coordCols]
+    shp = [len(u) for u in uniqueCoords]
+
+    plotArr = pes[plotCol].to_numpy().reshape(shp)
+    
+    if clipRange is None:
+        clipRange = (np.nanmin(plotArr),np.nanmax(plotArr))
+    
+    if maskCol is not None:
+        maskArr = pes[maskCol].to_numpy().reshape(shp)
+        if maskNegate:
+            plotArr = np.ma.masked_array(plotArr,mask=~maskArr)
+        else:
+            plotArr = np.ma.masked_array(plotArr,mask=maskArr)
+
+    fig, ax = plt.subplots()
+    cf = ax.contourf(*uniqueCoords,plotArr.T.clip(*clipRange),cmap=cmap,
+                     levels=30)
+    plt.colorbar(cf,ax=ax)
+
+    ax.set(xlabel=coordCols[0],ylabel=coordCols[1],
+           title=plotCol)
+    return fig, ax
+
+def standard_annotations_on_fig(fig,ax,pes,addGSloc=True,
+                                addGScontour=True,
+                                markInterpolatedPoints=True,
+                                coordCols:typing.List[str]=['Q20','Q30']):
+    if markInterpolatedPoints:
+        ax.scatter(pes[pes['isInterpolated']][coordCols[0]],
+                   pes[pes['isInterpolated']][coordCols[1]],
+                   marker='x',color='k')
+    return fig, ax
