@@ -229,6 +229,9 @@ class LAPFilters:
         if (np.abs(enegOnPath[-1] - energyToMatch) > energyTol):
             valid = False
             msg = 'Final energy greater than enegUpperThresh'
+        elif (np.abs(enegOnPath[0] - energyToMatch) > energyTol):
+            valid = False
+            msg = 'Initial energy greater than enegUpperThresh'
         else:
             valid = True
             msg = 'Success'
