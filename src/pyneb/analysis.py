@@ -219,19 +219,17 @@ class LAPFilters:
     
     @staticmethod
     def energy_within_tolerance(enegOnPath:np.ndarray[float],
-                                energyToMatch:float,energyTol:float=0.1):
+                                energyToMatch:float,
+                                index:int,energyTol:float=0.1):
         """
         TODO: don't like that this has a different return signature
         than LAPFilters.monotonic
         """
         #Some parameter sets fail for initial guesses, and pull the endpoint off of
         #the OTL
-        if (np.abs(enegOnPath[-1] - energyToMatch) > energyTol):
+        if (np.abs(enegOnPath[index] - energyToMatch) > energyTol):
             valid = False
-            msg = 'Final energy greater than enegUpperThresh'
-        elif (np.abs(enegOnPath[0] - energyToMatch) > energyTol):
-            valid = False
-            msg = 'Initial energy greater than enegUpperThresh'
+            msg = 'Energy at index {:d} greater than enegUpperThresh'.format(index)
         else:
             valid = True
             msg = 'Success'
